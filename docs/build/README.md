@@ -17,25 +17,46 @@ The terminal client (`templar`) needs only Rust:
 
 ## The checkout
 
-The wallet engine lives in its own repository,
-[templarlib](https://github.com/0xB4LdW1n/templarlib). Until the library's
-first tag, `apps/tui/Cargo.toml` and `crates/wallet-ffi/Cargo.toml` read it by
-path from a sibling checkout, so the two repositories must sit side by side
-and the library's folder must be named `templarlib`:
+One clone:
 
-```text
-<any folder>/
-├── templarlib/       git clone https://github.com/0xB4LdW1n/templarlib.git
-└── TemplarWallet/    git clone https://github.com/0xB4LdW1n/TemplarWallet.git
+```bash
+git clone https://github.com/0xB4LdW1n/templar-wallet.git
+cd templar-wallet
 ```
 
 Every command in these guides runs from the wallet checkout's root, where
 the workspace `Cargo.toml` is, unless it says otherwise.
 
-The GitHub workflows check out this repository alone, so CI and the release
-builds cannot build until the manifests switch to a `git` + `tag` dependency
-(the TODO in those two manifests). The helper scripts have the same limit
-(see `HELPER_BUILDS.md`).
+The wallet engine lives in its own repository,
+[templarlib](https://github.com/0xB4LdW1n/templarlib).
+`apps/tui/Cargo.toml` and `crates/wallet-ffi/Cargo.toml` name it by git tag
+(`tag = "vX.Y.Z"`) and `Cargo.lock` pins that tag's commit, so the first
+build fetches it from GitHub like any other dependency. CI, the release
+workflow and the helper scripts build the same way.
+
+**Building against a local templarlib.** To try engine changes in the
+wallet before they are tagged, clone templarlib next to the wallet and
+override the git source with a Cargo patch:
+
+```bash
+cargo build --config 'patch."https://github.com/0xB4LdW1n/templarlib".templarlib.path="../templarlib/crates/templarlib"'
+```
+
+or put the same table in an untracked `.cargo/config.toml`:
+
+```toml
+[patch."https://github.com/0xB4LdW1n/templarlib"]
+templarlib = { path = "../templarlib/crates/templarlib" }
+```
+
+While the patch is active Cargo rewrites `Cargo.lock` (the `source` lines
+of `templarlib` and `templar-core` disappear), so `--locked` builds fail.
+Never commit that `Cargo.lock` or the config file; drop the patch and
+`git restore Cargo.lock` when done.
+
+**Bumping the engine.** Tag the new version in templarlib, change
+`tag = "vX.Y.Z"` in both manifests, run `cargo update -p templarlib`, and
+commit the manifests and `Cargo.lock` together.
 
 ## Toolchains
 

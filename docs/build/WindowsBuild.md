@@ -2,7 +2,7 @@
 
 Builds two artifacts: the Rust FFI library (`wallet_ffi.dll`) and the Flutter
 desktop app (`templar_wallet.exe`). Read [`README.md`](README.md) first: the
-engine must be checked out beside this repository. Commands run from the
+checkout, where the engine comes from, and the toolchains. Commands run from the
 wallet checkout's root, where the workspace `Cargo.toml` lives, in
 PowerShell.
 
@@ -67,8 +67,8 @@ cargo build --release -p wallet-ffi
 
 Output: `target\release\wallet_ffi.dll`
 
-The first build compiles the whole engine (BDK, LWK and their dependencies)
-from `..\templarlib` and takes several minutes.
+The first build fetches the engine (templarlib, at the pinned tag), compiles
+it with BDK, LWK and their dependencies, and takes several minutes.
 
 ## 3. Build the Flutter app
 
