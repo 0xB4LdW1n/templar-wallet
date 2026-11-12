@@ -16,12 +16,16 @@ Install Rust stable from <https://rustup.rs>. Platform build requirements:
 - Linux: a C toolchain, `pkg-config`, and `libudev-dev`.
 - Windows: Visual Studio Build Tools with the Desktop development with C++ workload.
 
-Clone the repository and install the binary:
+Clone the repository next to a checkout of
+[templarlib](https://github.com/0xB4LdW1n/templarlib) — until the library's
+first tag the build reads the engine from `../templarlib` — and install the
+binary:
 
 ```bash
-git clone https://github.com/0xMrtnz/TemplarWallet.git
+git clone https://github.com/0xB4LdW1n/templarlib.git
+git clone https://github.com/0xB4LdW1n/TemplarWallet.git
 cd TemplarWallet
-cargo install --locked --path crates/templar-tui
+cargo install --locked --path apps/tui
 templar --version
 templar --help
 ```
@@ -33,7 +37,7 @@ Update an existing installation:
 
 ```bash
 git pull --ff-only
-cargo install --locked --force --path crates/templar-tui
+cargo install --locked --force --path apps/tui
 ```
 
 For development without installation, replace `templar` below with:
@@ -269,7 +273,10 @@ Network environment overrides include:
   `TEMPLAR_ELEMENTS_RPC_PASS`
 - `TEMPLAR_HWI_BIN`
 
-See [`../../CLAUDE.md`](../../CLAUDE.md#env-overrides) for complete defaults.
+The complete list, with defaults, is in templarlib's
+[`docs/INTEGRATION.md`](https://github.com/0xB4LdW1n/templarlib/blob/main/docs/INTEGRATION.md).
+Every method and its parameters:
+[`docs/API.md`](https://github.com/0xB4LdW1n/templarlib/blob/main/docs/API.md).
 
 ## Delete a wallet
 

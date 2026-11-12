@@ -1,0 +1,282 @@
+/* Templar Wallet — motion layer.
+   Effects modeled on 21st.dev component patterns:
+   aurora background · border beam · spotlight card · shimmer button ·
+   number ticker (fx.js) · marquee · particles · meteors-lite · page transitions.
+   All effects are additive: base styles.css never depends on this file.
+*/
+
+/* ============ aurora background ============ */
+.app::before {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 32% at 18% 22%, color-mix(in oklab, var(--accent) 16%, transparent), transparent 70%),
+    radial-gradient(30% 28% at 82% 12%, color-mix(in oklab, var(--lq) 13%, transparent), transparent 70%),
+    radial-gradient(34% 30% at 70% 86%, color-mix(in oklab, var(--accent-deep) 12%, transparent), transparent 72%),
+    radial-gradient(26% 24% at 12% 78%, color-mix(in oklab, var(--btc) 8%, transparent), transparent 70%);
+  filter: blur(46px) saturate(1.15);
+  opacity: 0.55;
+  animation: aurora-drift 26s ease-in-out infinite alternate;
+}
+[data-theme="dark"] .app::before { opacity: 0.4; }
+@keyframes aurora-drift {
+  0%   { transform: translate3d(-2%, -1%, 0) rotate(0.001deg) scale(1); }
+  50%  { transform: translate3d(2.5%, 2%, 0) scale(1.06); }
+  100% { transform: translate3d(-1.5%, 3%, 0) scale(1.02); }
+}
+/* keep chrome above the aurora */
+.app > .sb, .app > .main { position: relative; z-index: 1; }
+.main { background: color-mix(in srgb, var(--bg) 82%, transparent); }
+.topbar { background: color-mix(in srgb, var(--surface) 86%, transparent); backdrop-filter: blur(10px); }
+
+/* ============ page transition (main is keyed by screen) ============ */
+.main.fx-page { animation: page-in 340ms cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.995); filter: blur(3px); }
+  to   { opacity: 1; transform: none; filter: none; }
+}
+
+/* ============ staggered entrance (fx.js assigns --fx-i per element) ============ */
+.fx-in {
+  animation: fx-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--fx-i, 0) * 45ms);
+}
+@keyframes fx-rise {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ============ spotlight card (21st.dev "spotlight") ============ */
+.fx-spot { position: relative; overflow: hidden; }
+.fx-spot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 260ms ease;
+  background: radial-gradient(
+    220px circle at var(--mx, 50%) var(--my, 50%),
+    color-mix(in oklab, var(--accent) 14%, transparent),
+    transparent 65%
+  );
+}
+.fx-spot:hover::before { opacity: 1; }
+.fx-spot > * { position: relative; z-index: 1; }
+
+/* ============ 3D tilt (fx.js drives --rx / --ry) ============ */
+.fx-tilt {
+  transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateZ(0);
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), border-color 100ms ease, box-shadow 100ms ease;
+  will-change: transform;
+}
+.fx-tilt:hover { box-shadow: var(--shadow-3); }
+.banknote.fx-tilt:hover { box-shadow: var(--shadow-2); }
+
+/* ============ border beam (21st.dev "border beam") ============ */
+.fx-beam { position: relative; }
+.fx-beam::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--beam, 0deg),
+    transparent 0 78%,
+    color-mix(in oklab, var(--accent) 85%, white) 88%,
+    var(--lq) 94%,
+    transparent 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask-composite: exclude;
+  animation: beam-spin 5s linear infinite;
+}
+@property --beam { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+@keyframes beam-spin { to { --beam: 360deg; } }
+
+/* ============ shimmer / shine on primary buttons (21st.dev "shimmer button") ============ */
+.btn.primary { position: relative; overflow: hidden; }
+.btn.primary::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  left: -80%;
+  width: 60%;
+  background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,0.35) 50%, transparent 80%);
+  transform: skewX(-18deg);
+  animation: sheen 3.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes sheen {
+  0%, 64% { left: -80%; }
+  100%    { left: 130%; }
+}
+.btn.primary:hover { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(127,119,221,0.45); }
+.btn.primary:active { transform: translateY(0.5px); }
+.btn { transition: background 80ms ease, border-color 80ms ease, transform 120ms ease, box-shadow 160ms ease; }
+
+/* ============ ripple (fx.js injects the span) ============ */
+.fx-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.22;
+  transform: scale(0);
+  animation: ripple 520ms ease-out forwards;
+  pointer-events: none;
+}
+@keyframes ripple { to { transform: scale(2.6); opacity: 0; } }
+
+/* ============ hero: animated gradient text + orbiting particles ============ */
+.hero { position: relative; }
+.hero-num {
+  background: linear-gradient(110deg,
+    var(--accent-deep) 0%, var(--accent) 28%, var(--lq) 52%, var(--accent) 72%, var(--accent-deep) 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: grad-slide 7s ease-in-out infinite;
+}
+@keyframes grad-slide {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+.fx-particles { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.fx-particles i {
+  position: absolute;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  animation: float-up var(--fd, 9s) ease-in-out var(--fdel, 0s) infinite;
+}
+.fx-particles i:nth-child(2n) { background: var(--lq); width: 4px; height: 4px; }
+.fx-particles i:nth-child(3n) { background: var(--btc); width: 3px; height: 3px; }
+@keyframes float-up {
+  0%   { transform: translateY(18px) scale(0.4); opacity: 0; }
+  12%  { opacity: 0.85; }
+  70%  { opacity: 0.5; }
+  100% { transform: translateY(-90px) translateX(var(--fx, 8px)) scale(1); opacity: 0; }
+}
+
+/* ============ marquee (21st.dev "marquee") ============ */
+.fx-marquee {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  backdrop-filter: blur(6px);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+  position: relative;
+  -webkit-mask: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+          mask: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+.fx-marquee .track {
+  display: inline-flex;
+  gap: 34px;
+  padding: 7px 17px;
+  white-space: nowrap;
+  animation: marquee 26s linear infinite;
+  will-change: transform;
+}
+.fx-marquee:hover .track { animation-play-state: paused; }
+.fx-marquee .up { color: var(--ok-ink); }
+.fx-marquee .down { color: var(--danger-ink); }
+.fx-marquee b { color: var(--ink-2); font-weight: 600; }
+@keyframes marquee { to { transform: translateX(-50%); } }
+
+/* ============ number ticker target (fx.js) ============ */
+.fx-tick { font-variant-numeric: tabular-nums; }
+
+/* ============ success check: pop + ring ============ */
+.big-check {
+  position: relative;
+  animation: check-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.big-check::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--ok);
+  animation: check-ring 900ms ease-out forwards;
+}
+@keyframes check-ring {
+  from { transform: scale(0.6); opacity: 0.9; }
+  to   { transform: scale(1.7); opacity: 0; }
+}
+
+/* ============ sidebar niceties ============ */
+.sb-item { transition: background 140ms ease, color 140ms ease, transform 140ms ease; }
+.sb-item:hover { transform: translateX(2px); }
+.sb-item.active { animation: nav-pop 260ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes nav-pop { from { transform: scale(0.96); } }
+.sb-mark {
+  animation: mark-glow 4s ease-in-out infinite;
+}
+@keyframes mark-glow {
+  0%, 100% { box-shadow: 0 6px 20px rgba(127,119,221,0.30); }
+  50%      { box-shadow: 0 6px 28px rgba(127,119,221,0.62); }
+}
+
+/* ============ QR idle pulse ============ */
+.qr { animation: qr-breathe 3.2s ease-in-out infinite; }
+@keyframes qr-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 0%, transparent); }
+  50%      { box-shadow: 0 0 0 6px color-mix(in oklab, var(--accent) 12%, transparent); }
+}
+
+/* ============ table rows / timeline hover lift ============ */
+.tl-row { transition: transform 140ms ease, border-color 100ms ease, box-shadow 160ms ease; }
+.tl-row:hover { transform: translateX(3px); box-shadow: var(--shadow-2); }
+
+/* ============ modal & toast springs (override base) ============ */
+.modal { animation: modal-spring 300ms cubic-bezier(0.34, 1.4, 0.64, 1); }
+@keyframes modal-spring {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+.toast { animation: toast-spring 320ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes toast-spring {
+  from { opacity: 0; transform: translateY(16px) scale(0.9); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ============ confetti canvas (fx.js) ============ */
+.fx-confetti {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 400;
+}
+
+/* ============ banknote stamp shimmer on hover ============ */
+.banknote:hover .denom-stamp {
+  background: linear-gradient(100deg, color-mix(in oklab, var(--ink) 8%, transparent) 40%, color-mix(in oklab, var(--ink) 22%, transparent) 50%, color-mix(in oklab, var(--ink) 8%, transparent) 60%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: grad-slide 1.6s linear infinite;
+}
+
+/* ============ reduced motion: kill it all ============ */
+@media (prefers-reduced-motion: reduce) {
+  .app::before, .hero-num, .btn.primary::after, .fx-beam::after,
+  .fx-particles i, .fx-marquee .track, .qr, .sb-mark, .big-check::after,
+  .main.fx-page, .fx-in, .sb-item.active, .banknote:hover .denom-stamp {
+    animation: none !important;
+  }
+  .fx-tilt { transform: none !important; }
+  .fx-in { opacity: 1 !important; transform: none !important; }
+}

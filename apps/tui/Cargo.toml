@@ -1,0 +1,24 @@
+[package]
+name = "templar-tui"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/0xB4LdW1n/templar-wallet"
+publish = false
+edition = "2021"
+
+[[bin]]
+name = "templar"
+path = "src/main.rs"
+
+[dependencies]
+# TODO: switch to `git = "https://github.com/0xB4LdW1n/templarlib", tag = "v…"`
+# at the first published tag of the library. Until then the engine is read from
+# a sibling checkout (`../templarlib` next to this repository), and the GitHub
+# workflows — which check out this repository alone — cannot build.
+templarlib = { path = "../../../templarlib/crates/templarlib" }
+clap = { version = "4.5", features = ["derive"] }
+crossterm = "0.28"
+ratatui = "0.29"
+rpassword = "7.4"
+serde_json = "1.0"
+zeroize = "1"

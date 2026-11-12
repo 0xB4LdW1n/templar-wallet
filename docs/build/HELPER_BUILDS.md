@@ -6,6 +6,13 @@ that is not pushed yet, a second build to compare with CI's, or a build when
 CI is unavailable. The helper needs no GitHub access and no knowledge of the
 project: they get a zip, run one script, and send the results back.
 
+> **Not usable until templarlib is tagged.** The source zip carries this
+> repository only, and the scripts build the engine from the sibling
+> `../templarlib` checkout the manifests point at, which a helper does not
+> have. Once the manifests depend on a tagged `git` release of the library
+> (the TODO in `apps/tui/Cargo.toml` and `crates/wallet-ffi/Cargo.toml`),
+> Cargo fetches it and the round trip below works as written.
+
 ## The round trip
 
 1. **Pack, on the Mac.**
@@ -60,7 +67,7 @@ When a build fails, the helper sends `dist/build-linux-x64.log` or
 
 Both follow the `linux` / `windows` jobs of `.github/workflows/release.yml`
 step for step (Rust engine, Flutter app, library copied beside the executable,
-`docs/RELEASE_NOTES.md` as `README.md`, packaging), with `--locked` Cargo and
+`INSTALL.md` as `README.md`, packaging), with `--locked` Cargo and
 `--enforce-lockfile` pub so the lockfiles decide every dependency version.
 Only names and layout differ: the scripts put the version in their file
 names and give the tarball and the zip a `TemplarWallet-<version>-…` top

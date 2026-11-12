@@ -10,18 +10,33 @@ regtest for development). It refuses mainnet by design, so no report can put
 real funds at risk today — but the key handling, the encrypted vault and the
 signing checks are the ones mainnet will use, and that is what matters.
 
-Particularly interesting:
+This repository is the wallet: the Flutter app (`apps/gui`), the terminal
+client (`apps/tui`) and the C ABI adapter between the app and the engine
+(`crates/wallet-ffi`). Particularly interesting here:
 
-- anything that reads a recovery phrase or private key without the app
-  password (the vault is Argon2id + XChaCha20-Poly1305, see
-  `crates/templar-core/src/vault.rs`);
-- a transaction the review screen shows one way and the signature commits to
-  another (PSBT / PSET inspection in `crates/templar-core/src/bitcoin/psbt.rs`
-  and `crates/templar-core/src/liquid/pset.rs`);
-- a way to spend a frozen coin, or to make the wallet sign for a coin it
-  should not;
-- a `templar://` link or a QR code that makes the app do something the user
-  did not confirm.
+- a screen that shows a transaction one way while the engine signs another —
+  the review, co-sign and Templar Protocol request screens
+  (`apps/gui/lib/features/`);
+- a `templar://` link, a QR code or a pasted file that makes the app do
+  something the user did not confirm, or skips the password gate;
+- a recovery phrase or private key that leaks through the app: logs,
+  screenshots of secure screens, the clipboard, an export, the biometric
+  unlock path, Android backups;
+- memory or string handling at the FFI boundary (`crates/wallet-ffi`):
+  secrets not wiped, a panic that crosses into Dart;
+- a release build that runs with fake data instead of the engine;
+- the build and release pipeline (`.github/workflows/`, `scripts/`,
+  `packaging/`).
+
+**Engine issues go to the library.** Vault encryption (Argon2id +
+XChaCha20-Poly1305), PSBT / PSET inspection, frozen-coin enforcement,
+Miniscript, device drivers and the JSON methods live in
+[templarlib](https://github.com/0xB4LdW1n/templarlib); report those through
+that repository's private reporting. If you are not sure which side a
+problem is on, report it here.
+
+The Templar Protocol site and its services are a separate product: a flaw
+there that does not involve the wallet is out of scope here.
 
 ## Reporting
 

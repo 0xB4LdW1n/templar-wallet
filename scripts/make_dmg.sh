@@ -4,7 +4,7 @@
 #
 #   ./scripts/make_dmg.sh [path/to/templar_wallet.app]
 #
-# Defaults to the release build under src/templar_wallet/build. Output lands in
+# Defaults to the release build under apps/gui/build. Output lands in
 # dist/TemplarWallet-<version>-macos.dmg.
 #
 # SIGNING (optional, set in the environment):
@@ -27,7 +27,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 
-APP="${1:-src/templar_wallet/build/macos/Build/Products/Release/templar_wallet.app}"
+APP="${1:-apps/gui/build/macos/Build/Products/Release/templar_wallet.app}"
 VOLNAME="Templar Wallet"
 STAGE="$(mktemp -d)"
 MOUNT=""
@@ -39,7 +39,7 @@ trap cleanup EXIT
 
 if [ ! -d "$APP" ]; then
   echo "No app bundle at: $APP" >&2
-  echo "Build one first:  cd src/templar_wallet && flutter build macos --release" >&2
+  echo "Build one first:  cd apps/gui && flutter build macos --release" >&2
   exit 1
 fi
 
@@ -88,7 +88,7 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
         --sign "$SIGN_IDENTITY" "$lib"
     done
   codesign --force --timestamp --options runtime \
-    --entitlements src/templar_wallet/macos/Runner/Release.entitlements \
+    --entitlements apps/gui/macos/Runner/Release.entitlements \
     --sign "$SIGN_IDENTITY" "$STAGE/vol/$VOLNAME.app"
   # --deep is fine for checking: it fails on any nested binary left unsigned.
   codesign --verify --deep --strict --verbose=2 "$STAGE/vol/$VOLNAME.app"

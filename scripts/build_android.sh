@@ -6,7 +6,7 @@
 #   ./scripts/build_android.sh --so-only    # just refresh jniLibs
 #   ./scripts/build_android.sh --apk-only   # APKs from the jniLibs already built
 #
-# One APK per ABI in src/templar_wallet/build/app/outputs/flutter-apk/:
+# One APK per ABI in apps/gui/build/app/outputs/flutter-apk/:
 # app-arm64-v8a-<mode>.apk (phones) and app-x86_64-<mode>.apk (emulators).
 #
 # --release signs with the release key when one is configured (the TEMPLAR_*
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="$ROOT/src/templar_wallet"
+APP="$ROOT/apps/gui"
 JNI="$APP/android/app/src/main/jniLibs"
 # Same version app/build.gradle.kts pins (16 KB page alignment).
 NDK_VER="28.2.13676358"

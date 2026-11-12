@@ -1,8 +1,8 @@
 # Design — Templar Wallet
 
 The rules every screen is held to. Read this before changing a pixel. The
-tokens named here live in `src/templar_wallet/lib/theme/`; the widgets that
-carry them live in `lib/shared/widgets/`.
+tokens named here live in `apps/gui/lib/theme/`; the widgets that
+carry them live in `apps/gui/lib/shared/widgets/`.
 
 ## The direction
 

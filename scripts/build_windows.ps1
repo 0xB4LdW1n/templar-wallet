@@ -509,7 +509,7 @@ function Invoke-Build {
         Write-Step 'bundle'
         # The Dart loader opens wallet_ffi.dll from the exe directory.
         Copy-Item -LiteralPath $dll -Destination $bundle -Force
-        Copy-Item -LiteralPath (Join-Parts @($root, 'docs', 'RELEASE_NOTES.md')) -Destination (Join-Parts @($bundle, 'README.md')) -Force
+        Copy-Item -LiteralPath (Join-Parts @($root, 'INSTALL.md')) -Destination (Join-Parts @($bundle, 'README.md')) -Force
 
         $name = "TemplarWallet-$version-$Label"
         $zipName = "$name.zip"

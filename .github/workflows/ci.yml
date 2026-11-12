@@ -1,5 +1,10 @@
 # The checks every change must pass: formatting, lints and tests of the Rust
-# Rust workspace (core, reusable library, TUI, FFI) and Flutter app.
+# workspace (TUI, FFI) and the Flutter app.
+#
+# The engine (templar-core, templarlib) lives in its own repository. Until the
+# manifests name it by `git` + `tag` (see the TODO in apps/tui/Cargo.toml and
+# crates/wallet-ffi/Cargo.toml) they read it from a sibling checkout, which a
+# runner does not have: the Rust job cannot pass here before that switch.
 #
 # Runs on every push to main and on every pull request, forks included, and
 # release.yml calls it as the gate in front of the platform builds: a tag can
@@ -68,9 +73,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Format
         run: cargo fmt --all -- --check
-      # Explicit packages, not --workspace: the gate stays on the two crates
-      # that ship if others are ever added. --locked: a Cargo.lock that no
-      # longer matches the manifests fails here instead of being rewritten.
+      # --locked: a Cargo.lock that no longer matches the manifests fails
+      # here instead of being rewritten.
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Tests
@@ -82,7 +86,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: src/templar_wallet
+        working-directory: apps/gui
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

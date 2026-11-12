@@ -56,7 +56,7 @@ say() { printf '\n== %s\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
 
 app_version() {
-  sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' "$1/src/templar_wallet/pubspec.yaml" | head -1
+  sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' "$1/apps/gui/pubspec.yaml" | head -1
 }
 
 # The line of `flutter --version` that names the version ("Flutter 3.44.1 •
@@ -81,9 +81,9 @@ flutter_version_line() {
 # $4 the pristine source to check against the manifest (defaults to $1).
 build_bundle() {
   local src="$1" out="$2" host="$3" pristine="${4:-$1}"
-  local app="$src/src/templar_wallet"
+  local app="$src/apps/gui"
   local version; version="$(app_version "$src")"
-  [[ -n "$version" ]] || die "no version line in src/templar_wallet/pubspec.yaml"
+  [[ -n "$version" ]] || die "no version line in apps/gui/pubspec.yaml"
   local cargo=(cargo)
   [[ -n "${CARGO_TOOLCHAIN:-}" ]] && cargo=(cargo "+$CARGO_TOOLCHAIN")
 
@@ -119,7 +119,7 @@ build_bundle() {
   say "bundle"
   # The Dart loader looks for <exe dir>/lib/libwallet_ffi.so.
   cp "$so" "$bundle/lib/"
-  cp "$src/docs/RELEASE_NOTES.md" "$bundle/README.md"
+  cp "$src/INSTALL.md" "$bundle/README.md"
   cp "$src/packaging/linux/dev.templarwallet.templar_wallet.desktop" "$bundle/"
 
   # Every library the app loads must resolve on this system: a missing one
@@ -203,8 +203,8 @@ if [[ "$MODE" == inside ]]; then
   # what makes the second run incremental.
   rsync -a --delete \
     --exclude=/.git/ --exclude=/target/ --exclude=/dist/ \
-    --exclude=/src/templar_wallet/build/ --exclude=.dart_tool/ \
-    --exclude=/src/templar_wallet/linux/flutter/ephemeral/ \
+    --exclude=/apps/gui/build/ --exclude=.dart_tool/ \
+    --exclude=/apps/gui/linux/flutter/ephemeral/ \
     /src/ /work/src/
   # A crash anywhere still hands the files already written back to the host
   # user instead of leaving them owned by root.

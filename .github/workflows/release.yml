@@ -77,7 +77,7 @@ jobs:
       - id: read
         name: Read pubspec.yaml, check the tag
         run: |
-          pubspec=src/templar_wallet/pubspec.yaml
+          pubspec=apps/gui/pubspec.yaml
           line="$(grep -m1 -E '^version:' "$pubspec" || true)"
           full="$(sed -E 's/^version:[[:space:]]*//; s/[[:space:]#].*$//' <<<"$line")"
           version="${full%%+*}"
@@ -114,7 +114,7 @@ jobs:
         with:
           persist-credentials: false
       # Flutter builds the app universal (arm64 + x86_64). The Xcode Run
-      # Script phase (src/templar_wallet/macos/copy_wallet_ffi.sh) builds
+      # Script phase (apps/gui/macos/copy_wallet_ffi.sh) builds
       # libwallet_ffi.dylib once per Rust target installed on rustup's default
       # toolchain and lipo-s the slices together, so the x86_64 target here is
       # what gives the dylib its Intel slice. Without it an Intel Mac cannot
@@ -128,13 +128,13 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
       - name: Build the app
-        working-directory: src/templar_wallet
+        working-directory: apps/gui
         run: |
           flutter pub get --enforce-lockfile
           flutter build macos --release
       - name: Check both architectures are inside
         run: |
-          app=src/templar_wallet/build/macos/Build/Products/Release/templar_wallet.app
+          app=apps/gui/build/macos/Build/Products/Release/templar_wallet.app
           for bin in "$app/Contents/MacOS/templar_wallet" "$app/Contents/Frameworks/libwallet_ffi.dylib"; do
             archs="$(lipo -archs "$bin")"
             echo "$(basename "$bin"): $archs"
@@ -250,7 +250,7 @@ jobs:
         name: Check the signatures, name the files
         run: |
           apksigner="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name apksigner -type f | sort -V | tail -n 1)"
-          built=src/templar_wallet/build/app/outputs/flutter-apk
+          built=apps/gui/build/app/outputs/flutter-apk
           mkdir -p out
           digests=()
           for pair in arm64-v8a:arm64 x86_64:x86_64; do
@@ -318,16 +318,16 @@ jobs:
             grep -qE " T $sym\$" <<<"$exports" || { echo "::error::libwallet_ffi.so does not export $sym"; exit 1; }
           done
       - name: Build the app
-        working-directory: src/templar_wallet
+        working-directory: apps/gui
         run: |
           flutter pub get --enforce-lockfile
           flutter build linux --release
       - name: Bundle and pack
         run: |
-          bundle=src/templar_wallet/build/linux/x64/release/bundle
+          bundle=apps/gui/build/linux/x64/release/bundle
           # The Dart loader looks for <exe dir>/lib/libwallet_ffi.so.
           cp target/release/libwallet_ffi.so "$bundle/lib/"
-          cp docs/RELEASE_NOTES.md "$bundle/README.md"
+          cp INSTALL.md "$bundle/README.md"
           # templar:// handler registration (docs/guides/PROTOCOL_CONNECTOR.md)
           cp packaging/linux/dev.templarwallet.templar_wallet.desktop "$bundle/"
           # Every library the app loads must resolve here: one that does not
@@ -376,7 +376,7 @@ jobs:
       - name: Rust engine
         run: cargo build --locked --release -p wallet-ffi
       - name: Build the app
-        working-directory: src/templar_wallet
+        working-directory: apps/gui
         run: |
           # A failing native command stops the step (pwsh otherwise carries on).
           $PSNativeCommandUseErrorActionPreference = $true
@@ -384,10 +384,10 @@ jobs:
           flutter build windows --release
       - name: Bundle and zip
         run: |
-          $bundle = (Resolve-Path 'src/templar_wallet/build/windows/x64/runner/Release').Path
+          $bundle = (Resolve-Path 'apps/gui/build/windows/x64/runner/Release').Path
           # The Dart loader opens wallet_ffi.dll from the exe's folder.
           Copy-Item target/release/wallet_ffi.dll $bundle
-          Copy-Item docs/RELEASE_NOTES.md (Join-Path $bundle 'README.md')
+          Copy-Item INSTALL.md (Join-Path $bundle 'README.md')
           $out = New-Item -ItemType Directory -Force -Path out
           # The portable build, files at the root of the zip: Explorer's
           # "Extract All" then gives one TemplarWallet-windows-x64 folder with

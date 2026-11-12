@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tiny stand-in for a Templar Protocol site's web side (docs/connector-protocol.md §5).
+"""Tiny stand-in for a Templar Protocol site's web side (templarlib docs/CONNECTOR.md §5).
 
 Serves the JSON fixtures in docs/fixtures/protocol/ and accepts the wallet's
 callbacks, printing every POST body so the connect / sign flows can be

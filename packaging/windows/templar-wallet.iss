@@ -24,7 +24,7 @@
 #endif
 
 ; Path to the Flutter release bundle, relative to this .iss file.
-#define BundleDir "..\..\src\templar_wallet\build\windows\x64\runner\Release"
+#define BundleDir "..\..\apps\gui\build\windows\x64\runner\Release"
 
 [Setup]
 ; Never reuse this GUID for another product — it is the identity Windows uses
@@ -59,7 +59,7 @@ InfoBeforeFile=info-before.txt
 DisableWelcomePage=no
 OutputDir=..\..\dist
 OutputBaseFilename=TemplarWallet-{#MyAppVersion}-windows-x64-setup
-SetupIconFile=..\..\src\templar_wallet\windows\runner\resources\app_icon.ico
+SetupIconFile=..\..\apps\gui\windows\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
 SolidCompression=yes
@@ -94,7 +94,7 @@ Source: "{#BundleDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleDir}\*.dll";           DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleDir}\data\*";          DestDir: "{app}\data"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\docs\RELEASE_NOTES.md";  DestDir: "{app}"; \
+Source: "..\..\INSTALL.md";            DestDir: "{app}"; \
   DestName: "README.md"; Flags: ignoreversion
 
 [Icons]
@@ -149,7 +149,7 @@ SelectDirDesc=Where should [name] be installed?%n%nThis folder holds the program
 //
 // The choice is handed to the app in install.conf beside the executable,
 // which wallet-ffi reads ONCE — on the first run of a fresh install, when it
-// has no config of its own yet (AppState, crates/templarlib/src/state.rs).
+// has no config of its own yet (AppState, templarlib/crates/templarlib/src/state.rs).
 // From then on the app remembers the location itself, so a later reinstall can
 // never redirect an existing user away from the wallets they already have.
 //
