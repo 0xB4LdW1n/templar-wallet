@@ -1,8 +1,8 @@
 # Templar Wallet — macOS build guide
 
 Builds `templar_wallet.app` with the Rust library inside, and optionally the
-DMG. Read [`README.md`](README.md) first: the engine must be checked out
-beside this repository.
+DMG. Read [`README.md`](README.md) first: the checkout, where the engine
+comes from, and the toolchains.
 
 ## 1. Requirements
 

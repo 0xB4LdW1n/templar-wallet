@@ -10,8 +10,9 @@ only owns C-string conversion, panic containment and zeroizing the strings
 that cross it. The boundary is described in
 [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md#the-ffi-boundary).
 
-Until templarlib's first tag the dependency is a path to a sibling checkout
-(`../templarlib` next to this repository); see the TODO in `Cargo.toml`.
+templarlib comes from its git tag (`Cargo.toml`), at the commit `Cargo.lock`
+pins; Cargo fetches it. Building against a local templarlib working copy:
+[`docs/build/README.md`](../../docs/build/README.md#the-checkout).
 
 | Feature | Default | Effect |
 |---|---|---|

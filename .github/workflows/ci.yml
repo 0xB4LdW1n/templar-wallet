@@ -1,10 +1,8 @@
 # The checks every change must pass: formatting, lints and tests of the Rust
 # workspace (TUI, FFI) and the Flutter app.
 #
-# The engine (templar-core, templarlib) lives in its own repository. Until the
-# manifests name it by `git` + `tag` (see the TODO in apps/tui/Cargo.toml and
-# crates/wallet-ffi/Cargo.toml) they read it from a sibling checkout, which a
-# runner does not have: the Rust job cannot pass here before that switch.
+# The engine (templar-core, templarlib) lives in its own repository; the
+# manifests pin it by git tag and Cargo.lock by commit, so Cargo fetches it.
 #
 # Runs on every push to main and on every pull request, forks included, and
 # release.yml calls it as the gate in front of the platform builds: a tag can
@@ -103,5 +101,8 @@ jobs:
       # Infos count too: the tree is kept at zero analyzer issues of any level.
       - name: Analyze
         run: flutter analyze --fatal-infos --fatal-warnings
+      # The `golden` tests compare pixels against images rendered on macOS;
+      # Linux rasterises text differently, so they run on a Mac only
+      # (apps/gui/dart_test.yaml).
       - name: Tests
-        run: flutter test
+        run: flutter test --exclude-tags golden

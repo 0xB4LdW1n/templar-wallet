@@ -13,6 +13,10 @@ any release may change anything.
   with their own documentation. Until its first tag this repository reads it
   from a sibling `../templarlib` checkout, so the GitHub workflows cannot
   build until the manifests switch to the tagged release.
+- **The engine comes from its tag.** `apps/tui` and `crates/wallet-ffi` now
+  take templarlib from its `v0.1.0` git tag (commit pinned in `Cargo.lock`),
+  so a single clone builds and the GitHub workflows build again. The
+  repository is now `0xB4LdW1n/templar-wallet`.
 - **New layout.** The Flutter app moved from `src/templar_wallet` to
   `apps/gui`, the C ABI adapter from `src/wallet-ffi` to `crates/wallet-ffi`,
   and the terminal client (binary `templar`) from `crates/templar-tui` to

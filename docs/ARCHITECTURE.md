@@ -14,7 +14,7 @@ templarlib's
         │  dart:ffi, two JSON strings in, one out                    │ Rust call
  crates/wallet-ffi (C ABI: libwallet_ffi.{dylib,so} / wallet_ffi.dll)│
         └──────────────── TemplarLib::call(method, params) ──────────┘
-                          templarlib    (../templarlib: state, workflows, dispatch)
+                          templarlib    (git tag: state, workflows, dispatch)
                           templar-core  (BDK, LWK, Miniscript, vault, devices)
 ```
 

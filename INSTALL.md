@@ -10,7 +10,7 @@ This file also ships inside the Linux tarball and the Windows downloads as
 ## Download
 
 Download from the
-[latest release](https://github.com/0xB4LdW1n/TemplarWallet/releases/latest)
+[latest release](https://github.com/0xB4LdW1n/templar-wallet/releases/latest)
 and check the file against `SHA256SUMS.txt` on the same page
 (`shasum -a 256 <file>` on macOS and Linux, `certutil -hashfile <file> SHA256`
 on Windows).
@@ -155,7 +155,7 @@ Settings › Vault & backup › Storage shows the folder actually in use.
 
 ## Reporting a problem
 
-Open an issue at <https://github.com/0xB4LdW1n/TemplarWallet/issues> with your
+Open an issue at <https://github.com/0xB4LdW1n/templar-wallet/issues> with your
 system and version, what you did, what you expected and what happened.
 Attach `logs/templar.log` from the wallet data folder (and `templar.log.1` if
 there is one). Security problems go through private reporting instead — see

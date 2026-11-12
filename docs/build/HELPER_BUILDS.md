@@ -3,15 +3,17 @@
 Releases are built by CI (`RELEASE.md`). These two scripts make the same
 Linux and Windows bundles on someone else's PC instead: a test build of work
 that is not pushed yet, a second build to compare with CI's, or a build when
-CI is unavailable. The helper needs no GitHub access and no knowledge of the
-project: they get a zip, run one script, and send the results back.
+CI is unavailable. The helper needs no GitHub account and no knowledge of
+the project: they get a zip, run one script, and send the results back.
 
-> **Not usable until templarlib is tagged.** The source zip carries this
-> repository only, and the scripts build the engine from the sibling
-> `../templarlib` checkout the manifests point at, which a helper does not
-> have. Once the manifests depend on a tagged `git` release of the library
-> (the TODO in `apps/tui/Cargo.toml` and `crates/wallet-ffi/Cargo.toml`),
-> Cargo fetches it and the round trip below works as written.
+The zip carries this repository only. The engine,
+[templarlib](https://github.com/0xB4LdW1n/templarlib), is public: Cargo
+fetches it during the build at the tag the manifests name and the commit
+`Cargo.lock` pins, like every other dependency, so the helper's PC needs
+internet access and nothing more. Pack from a tree without a local templarlib
+override (`README.md`, "The checkout"): the zip takes untracked files too, so
+an override in `.cargo/config.toml` and the `Cargo.lock` it rewrote would
+travel with it and fail the scripts' `--locked` build.
 
 ## The round trip
 

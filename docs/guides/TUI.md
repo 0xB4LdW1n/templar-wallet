@@ -16,15 +16,13 @@ Install Rust stable from <https://rustup.rs>. Platform build requirements:
 - Linux: a C toolchain, `pkg-config`, and `libudev-dev`.
 - Windows: Visual Studio Build Tools with the Desktop development with C++ workload.
 
-Clone the repository next to a checkout of
-[templarlib](https://github.com/0xB4LdW1n/templarlib) — until the library's
-first tag the build reads the engine from `../templarlib` — and install the
-binary:
+Clone the repository and install the binary. Cargo fetches the engine,
+[templarlib](https://github.com/0xB4LdW1n/templarlib), at the tag the
+manifests pin:
 
 ```bash
-git clone https://github.com/0xB4LdW1n/templarlib.git
-git clone https://github.com/0xB4LdW1n/TemplarWallet.git
-cd TemplarWallet
+git clone https://github.com/0xB4LdW1n/templar-wallet.git
+cd templar-wallet
 cargo install --locked --path apps/tui
 templar --version
 templar --help

@@ -10,12 +10,6 @@ version to version.
 > publishes the release. The website's links (§ 2) then serve the new files
 > without anyone touching the site.
 
-> **Blocked until templarlib is tagged.** The workflows check out this
-> repository alone, while `apps/tui/Cargo.toml` and
-> `crates/wallet-ffi/Cargo.toml` still read the engine from a sibling
-> `../templarlib` checkout. No `ci` or `release` run can build until those
-> manifests name a tagged `git` release of the library.
-
 ---
 
 ## 1. Cut a release
@@ -60,7 +54,10 @@ version to version.
    ```
    CI runs clippy with the Rust version pinned in the workflows
    (`RUST_TOOLCHAIN`); run it with that one, since a newer clippy may know
-   lints the pinned one does not.
+   lints the pinned one does not. The release builds the engine at the
+   templarlib tag the manifests name; to ship engine changes, bump that tag
+   first ([`README.md`](README.md#the-checkout)). `--locked` fails while a
+   local templarlib override has rewritten `Cargo.lock`: drop it first.
 6. **Commit, push to `main`**, and wait for the `ci` run to go green.
 7. **Tag and push the tag:**
    ```bash
@@ -105,16 +102,19 @@ published, non-pre-release version:
 
 | For | Link |
 |---|---|
-| macOS, Apple silicon and Intel | <https://github.com/0xB4LdW1n/TemplarWallet/releases/latest/download/TemplarWallet-macos.dmg> |
-| Windows x64, installer | <https://github.com/0xB4LdW1n/TemplarWallet/releases/latest/download/TemplarWallet-windows-x64-setup.exe> |
-| Windows x64, portable | <https://github.com/0xB4LdW1n/TemplarWallet/releases/latest/download/TemplarWallet-windows-x64.zip> |
-| Linux x64 | <https://github.com/0xB4LdW1n/TemplarWallet/releases/latest/download/TemplarWallet-linux-x64.tar.gz> |
-| Android phones (arm64) | <https://github.com/0xB4LdW1n/TemplarWallet/releases/latest/download/TemplarWallet-android-arm64.apk> |
-| Android emulators, x86_64 Chromebooks | <https://github.com/0xB4LdW1n/TemplarWallet/releases/latest/download/TemplarWallet-android-x86_64.apk> |
-| SHA-256 of all six | <https://github.com/0xB4LdW1n/TemplarWallet/releases/latest/download/SHA256SUMS.txt> |
+| macOS, Apple silicon and Intel | <https://github.com/0xB4LdW1n/templar-wallet/releases/latest/download/TemplarWallet-macos.dmg> |
+| Windows x64, installer | <https://github.com/0xB4LdW1n/templar-wallet/releases/latest/download/TemplarWallet-windows-x64-setup.exe> |
+| Windows x64, portable | <https://github.com/0xB4LdW1n/templar-wallet/releases/latest/download/TemplarWallet-windows-x64.zip> |
+| Linux x64 | <https://github.com/0xB4LdW1n/templar-wallet/releases/latest/download/TemplarWallet-linux-x64.tar.gz> |
+| Android phones (arm64) | <https://github.com/0xB4LdW1n/templar-wallet/releases/latest/download/TemplarWallet-android-arm64.apk> |
+| Android emulators, x86_64 Chromebooks | <https://github.com/0xB4LdW1n/templar-wallet/releases/latest/download/TemplarWallet-android-x86_64.apk> |
+| SHA-256 of all six | <https://github.com/0xB4LdW1n/templar-wallet/releases/latest/download/SHA256SUMS.txt> |
 
-The release page itself: <https://github.com/0xB4LdW1n/TemplarWallet/releases/latest>.
+The release page itself: <https://github.com/0xB4LdW1n/templar-wallet/releases/latest>.
 A specific version's file: `…/releases/download/vX.Y.Z/<file>`.
+The repository was renamed from `TemplarWallet`; links that still use the old
+name keep working through GitHub's redirect, as long as no new repository
+takes that name.
 
 What is inside:
 
@@ -235,7 +235,7 @@ Four repository secrets (*Settings → Secrets and variables → Actions*, or
 | `ANDROID_KEY_PASSWORD` | the key password; for PKCS12, the keystore password again |
 
 ```bash
-R=0xB4LdW1n/TemplarWallet
+R=0xB4LdW1n/templar-wallet
 base64 -i ~/templar-upload.jks | gh secret set ANDROID_KEYSTORE_BASE64 -R $R   # macOS
 # Linux: base64 -w0 ~/templar-upload.jks | gh secret set ANDROID_KEYSTORE_BASE64 -R $R
 gh secret set ANDROID_KEYSTORE_PASSWORD -R $R      # prompts for the value

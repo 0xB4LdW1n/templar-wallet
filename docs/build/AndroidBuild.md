@@ -2,8 +2,8 @@
 
 Builds one APK per ABI: `arm64-v8a` for phones and `x86_64` for emulators
 ([decision 0003](../decisions/0003-android-abis.md)). Read
-[`README.md`](README.md) first: the engine must be checked out beside this
-repository.
+[`README.md`](README.md) first: the checkout, where the engine comes from,
+and the toolchains.
 
 ## 1. Requirements
 
