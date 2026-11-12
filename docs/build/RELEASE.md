@@ -24,7 +24,9 @@ version to version.
    The number after `+` is Android's `versionCode` and must be higher than
    the last release's: Android refuses an update whose code is not. (Each
    split APK's code is derived from it: `2000 + N` for arm64, `4000 + N` for
-   x86_64.)
+   x86_64.) Set `kAppVersion` in `apps/gui/lib/app/app_version.dart` to the
+   same `X.Y.Z`: it is what Settings › About shows, and
+   `test/app_version_test.dart` fails until the two agree.
 3. **Write the CHANGELOG section** at the top of `CHANGELOG.md`:
    ```markdown
    ## [0.1.1] — 2026-10-15
