@@ -13,6 +13,17 @@ any release may change anything.
   with their own documentation. Until its first tag this repository reads it
   from a sibling `../templarlib` checkout, so the GitHub workflows cannot
   build until the manifests switch to the tagged release.
+- **Reproducible Linux and Android builds.** The release builds the Linux
+  bundle and the APKs in a container whose every input is pinned
+  (`reproducible/Dockerfile`), rebuilds them on a second runner and publishes
+  only when both builds agree (the APKs signature aside). Anyone can check a
+  release with `scripts/repro_verify.sh <tag>`
+  ([docs/build/REPRODUCIBLE.md](docs/build/REPRODUCIBLE.md)). The release key
+  now signs in a separate, offline step with `apksigner`; no build code runs
+  next to it.
+- **CI fixed.** The golden tests (macOS-rendered images) carry a `golden` tag
+  that CI on Ubuntu skips, and the macOS build finds cargo wherever rustup
+  installed it.
 - **The engine comes from its tag.** `apps/tui` and `crates/wallet-ffi` now
   take templarlib from its `v0.1.0` git tag (commit pinned in `Cargo.lock`),
   so a single clone builds and the GitHub workflows build again. The

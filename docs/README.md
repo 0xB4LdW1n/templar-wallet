@@ -19,6 +19,7 @@ ships inside the release bundles is the root [`INSTALL.md`](../INSTALL.md).
 | [`build/README.md`](build/README.md) | Build from source: the checkout and the engine's tag, toolchains, then one guide per platform |
 | [`build/HELPER_BUILDS.md`](build/HELPER_BUILDS.md) | Have someone else build Linux and Windows from a source zip |
 | [`build/RELEASE.md`](build/RELEASE.md) | Cut a release, the download links, signing keys, code signing |
+| [`build/REPRODUCIBLE.md`](build/REPRODUCIBLE.md) | Check that a release's Linux and Android files were built from its tag |
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | Set up a working tree and pass the gate |
 
 ## How it works

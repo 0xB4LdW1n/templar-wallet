@@ -1,0 +1,45 @@
+#!/bin/bash
+# apt-install PACKAGE...
+#
+# Installs packages at exactly the versions of the Ubuntu snapshot in
+# /etc/apt/sources.list, without waiting on the snapshot service for every
+# file (it answers each request in seconds, and an install pulls hundreds).
+#
+# What gets installed is decided by the snapshot alone: the versions, and the
+# hash of every .deb, come from its signed index, as with a plain apt-get
+# install. Only where the bytes come from changes:
+#   1. apt lists the files the install needs, with their hashes;
+#   2. each is fetched from the regular archive's pool, which has the same
+#      paths and still carries most of them; apt-helper checks every file
+#      against its hash and keeps none that differs;
+#   3. apt-get install checks the files again and downloads whatever is
+#      missing (versions the archive has since dropped) from the snapshot.
+# A file is kept only if it is byte for byte the one the snapshot lists, so
+# the result does not depend on which server sent it.
+#
+# APT_FAST_MIRROR overrides the archive (an Ubuntu mirror's base URL).
+set -euo pipefail
+
+mirror="${APT_FAST_MIRROR:-http://archive.ubuntu.com/ubuntu}"
+archives=/var/cache/apt/archives
+
+apt-get update
+
+# --print-uris lines: 'URI' file size HASHTYPE:hex
+fetch=()
+while read -r uri file _size hash; do
+  uri="${uri#\'}"; uri="${uri%\'}"
+  case "$uri" in
+    */pool/*) fetch+=("$mirror/pool/${uri#*/pool/}" "$archives/$file" "$hash") ;;
+  esac
+done < <(apt-get install -y --no-install-recommends --print-uris -qq "$@")
+
+if (( ${#fetch[@]} )); then
+  echo "apt-install: $(( ${#fetch[@]} / 3 )) files from $mirror"
+  # A file the archive no longer has fails here and is fetched below.
+  /usr/lib/apt/apt-helper -o Acquire::Retries=3 download-file "${fetch[@]}" >/dev/null \
+    || echo "apt-install: some files are not on $mirror; apt takes them from the snapshot"
+fi
+
+apt-get install -y --no-install-recommends "$@"
+rm -rf /var/lib/apt/lists/* "$archives"/*.FAILED
