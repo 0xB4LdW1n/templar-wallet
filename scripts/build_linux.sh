@@ -119,7 +119,7 @@ build_bundle() {
   say "bundle"
   # The Dart loader looks for <exe dir>/lib/libwallet_ffi.so.
   cp "$so" "$bundle/lib/"
-  cp "$src/docs/RELEASE_NOTES.md" "$bundle/README.md"
+  cp "$src/INSTALL.md" "$bundle/README.md"
   cp "$src/packaging/linux/dev.templarwallet.templar_wallet.desktop" "$bundle/"
 
   # Every library the app loads must resolve on this system: a missing one

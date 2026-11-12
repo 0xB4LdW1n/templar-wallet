@@ -94,7 +94,7 @@ Source: "{#BundleDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleDir}\*.dll";           DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleDir}\data\*";          DestDir: "{app}\data"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\docs\RELEASE_NOTES.md";  DestDir: "{app}"; \
+Source: "..\..\INSTALL.md";            DestDir: "{app}"; \
   DestName: "README.md"; Flags: ignoreversion
 
 [Icons]

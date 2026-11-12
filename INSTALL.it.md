@@ -1,8 +1,8 @@
 # Templar Wallet — Guida all'installazione (italiano)
 
 Guida per chi deve **solo installare e usare** il wallet, su macOS, Windows,
-Linux o Android. Se invece vuoi compilare dal codice sorgente, vai al
-[`README.md`](../README.md) principale.
+Linux o Android. In inglese: [INSTALL.md](INSTALL.md). Per compilare dal
+codice sorgente: [`docs/build/`](docs/build/README.md).
 
 > ⚠️ **Solo testnet.** Templar Wallet lavora esclusivamente su Bitcoin testnet e
 > Liquid testnet. Le monete che vedrai non hanno alcun valore e non esiste
@@ -108,6 +108,9 @@ e riprova.
    ```bash
    tar xzf TemplarWallet-linux-x64.tar.gz
    ```
+   ```bash
+   ./TemplarWallet-linux-x64/templar_wallet
+   ```
    La cartella estratta è autonoma: spostala dove vuoi, ma **tienila intera**
    (l'eseguibile carica `lib/libwallet_ffi.so` e i dati accanto a sé).
 2. Unica dipendenza di sistema: **GTK 3**. Se il binario lamenta librerie
@@ -119,24 +122,19 @@ e riprova.
 3. La build è compilata su Ubuntu 22.04, quindi richiede **glibc ≥ 2.35**. Un
    errore del tipo `` version `GLIBC_2.xx' not found `` significa che la tua
    distribuzione è più vecchia: in quel caso serve compilare dai sorgenti
-   (vedi il [`README.md`](../README.md)).
+   (vedi [`docs/build/LinuxBuild.md`](docs/build/LinuxBuild.md)).
 
-### Voce nel menu applicazioni (opzionale)
+### Link `templar://` e voce nel menu applicazioni (opzionale)
+
+Per aprire dal browser i link `templar://` del Templar Protocol, metti
+`templar_wallet` della cartella estratta nel `PATH` e installa la voce desktop
+che si trova accanto all'eseguibile:
 
 ```bash
-cat > ~/.local/share/applications/templar-wallet.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Templar Wallet
-Exec=/percorso/completo/templar_wallet
-Icon=/percorso/completo/data/flutter_assets/assets/images/templar-wallet-logo.png
-Categories=Finance;
-Terminal=false
-EOF
+cp dev.templarwallet.templar_wallet.desktop ~/.local/share/applications/
+update-desktop-database ~/.local/share/applications
+xdg-mime default dev.templarwallet.templar_wallet.desktop x-scheme-handler/templar
 ```
-
-Sostituisci `/percorso/completo/` con la posizione reale della cartella
-estratta.
 
 ---
 
@@ -162,7 +160,7 @@ Salta questa sezione se usi solo wallet software.
 |---|---|
 | **Ledger** (Nano S / S Plus / X / Stax / Flex) | Niente — driver nativo integrato, su tutti e tre i sistemi |
 | **Blockstream Jade** (v1, v1.1, Plus) | Niente — driver nativo integrato |
-| **Trezor, Coldcard, KeepKey, BitBox02** | Vengono **rilevati ma non pilotati**: serve `hwi` su Windows/Linux (`pipx install hwi` oppure `pip install hwi`, con `hwi` nel PATH). Su macOS non sono utilizzabili (la sandbox di sistema impedisce l'esecuzione di HWI). |
+| **Trezor, Coldcard, KeepKey, BitBox02** | Passano dallo strumento `hwi` su Windows/Linux: l'app offre di scaricarlo (in alternativa `hwi` nel PATH). Su macOS vengono **rilevati ma non pilotati** (la sandbox di sistema impedisce l'esecuzione di HWI). |
 
 **Su Linux** i dispositivi USB appartengono a root finché non sono installate le
 regole udev. L'app se ne accorge da sola: nella schermata hardware compare il
@@ -199,13 +197,16 @@ sono supportati: usa la firma via QR.
 4. Attendi la sincronizzazione. La **prima** sincronizzazione Liquid fa una
    scansione completa e può richiedere qualche minuto.
 
+Per usare il wallet con un sito Templar Protocol (guida in inglese):
+[`docs/guides/TEMPLAR_PROTOCOL.md`](docs/guides/TEMPLAR_PROTOCOL.md).
+
 ---
 
 ## 8. Dove finiscono i dati (e come azzerare tutto)
 
 | Sistema | Cartella dati wallet | File di configurazione |
 |---|---|---|
-| macOS | `~/Library/Containers/dev.templarwallet.templarWallet/Data/Library/Application Support/templar_wallet` | `templar_wallet.json` nella stessa cartella |
+| macOS | `~/Library/Containers/dev.templarwallet.templarWallet/Data/Library/Application Support/templar_wallet` | `templar_wallet.json` in `Library/Application Support` del container |
 | Linux | `~/.local/share/templar_wallet` | `~/.config/templar_wallet.json` |
 | Windows | `%APPDATA%\templar_wallet`, o la cartella scelta nell'installazione | `%APPDATA%\templar_wallet.json` |
 
@@ -267,7 +268,7 @@ e tre i sistemi. In alternativa, per vedere gli errori a schermo:
 - Su Liquid, un pagamento che muove un asset diverso da LBTC non può ancora
   escludere le monete congelate: viene rifiutato finché non le scongeli.
 - Con hardware wallet, Liquid è supportato **solo da Blockstream Jade**.
-- Trezor, Coldcard, KeepKey e BitBox02 vengono rilevati ma non pilotati
-  nativamente: richiedono `hwi` su Windows/Linux e non sono usabili su macOS.
+- Trezor, Coldcard, KeepKey e BitBox02 richiedono `hwi` su Windows/Linux e
+  non sono usabili su macOS.
 - **Una sola istanza per volta** dell'applicazione.
 - Le build desktop non sono ancora firmate né notarizzate.

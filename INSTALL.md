@@ -1,7 +1,13 @@
 # Templar Wallet — install and first run
 
-Templar Wallet runs on **Bitcoin testnet and Liquid testnet** only. It refuses
-mainnet by design: use free test coins, never real funds.
+Templar Wallet runs on **Bitcoin testnet and Liquid testnet** only (plus a
+local Liquid regtest for development). It refuses mainnet by design: use free
+test coins, never real funds.
+
+This file also ships inside the Linux tarball and the Windows downloads as
+`README.md`. In Italian: [INSTALL.it.md](INSTALL.it.md).
+
+## Download
 
 Download from the
 [latest release](https://github.com/0xB4LdW1n/TemplarWallet/releases/latest)
@@ -32,6 +38,8 @@ xattr -rc "/Applications/Templar Wallet.app"
 open "/Applications/Templar Wallet.app"
 ```
 
+`-r` matters: the quarantine flag is also set on the files inside the bundle.
+
 **Method 2 — System Settings (macOS 15 Sequoia and older):** open the app
 once and let it be blocked, then System Settings › Privacy & Security › scroll
 to *"Templar Wallet was blocked…"* › **Open Anyway**.
@@ -53,20 +61,29 @@ The first time you scan a QR code macOS asks for the camera — allow it.
 
 ```bash
 tar xzf TemplarWallet-linux-x64.tar.gz
+./TemplarWallet-linux-x64/templar_wallet
 ```
 
-Then run `templar_wallet` from the extracted folder. The only system
-dependency is GTK 3 (`sudo apt install libgtk-3-0` or `sudo dnf install gtk3`
-if it is missing). The build comes from Ubuntu 22.04, so it needs that
-generation or newer — Ubuntu 22.04+, Debian 12+, Fedora 36+, current Arch.
-An error like `` version `GLIBC_2.xx' not found `` means the distribution is
-older than that.
+Keep the extracted folder whole: the executable loads `lib/libwallet_ffi.so`
+and its data from beside itself. The only system dependency is GTK 3
+(`sudo apt install libgtk-3-0` or `sudo dnf install gtk3` if it is missing).
+The build comes from Ubuntu 22.04, so it needs that generation or newer —
+Ubuntu 22.04+, Debian 12+, Fedora 36+, current Arch. An error like
+`` version `GLIBC_2.xx' not found `` means the distribution is older than that.
 
-To open `templar://` links from the browser, install the desktop entry from
-the extracted folder (see
-[the connector guide](guides/PROTOCOL_CONNECTOR.md#url-scheme-registration)).
+To open `templar://` links from the browser, put the folder's
+`templar_wallet` on your `PATH` and install the desktop entry that sits next
+to it:
+
+```bash
+cp dev.templarwallet.templar_wallet.desktop ~/.local/share/applications/
+update-desktop-database ~/.local/share/applications
+xdg-mime default dev.templarwallet.templar_wallet.desktop x-scheme-handler/templar
+```
+
 Hardware wallets need udev rules; the app's hardware screen offers **Fix
-device permissions** to install them.
+device permissions** to install them (one password prompt), then replug the
+device.
 
 ## Android
 
@@ -83,6 +100,8 @@ Desktop tester builds update in place.
 
 1. Set the **app password**. It encrypts every recovery phrase on the device
    and is asked again before a send is signed and before a phrase is shown.
+   If you lose it, the stored wallets cannot be opened: keep each recovery
+   phrase on paper as well.
 2. Create or restore a wallet, open **Receive**, and fund it from a faucet:
    - Bitcoin testnet: https://coinfaucet.eu/en/btc-testnet/
    - Liquid testnet (LBTC and test assets): https://liquidtestnet.com/faucet
@@ -90,11 +109,16 @@ Desktop tester builds update in place.
 3. Press **Sync**. The first Liquid sync scans the whole history and can take
    a minute.
 
+Using the wallet with a Templar Protocol site:
+[docs/guides/TEMPLAR_PROTOCOL.md](docs/guides/TEMPLAR_PROTOCOL.md).
+
 ## Hardware wallets
 
 - Ledger and Jade sign over USB on macOS, Windows and Linux with nothing to
   install. Trezor, Coldcard, KeepKey and BitBox go through the `hwi` tool on
-  Windows and Linux (the app offers to download it).
+  Windows and Linux (the app offers to download it); on macOS they are
+  detected but cannot be driven.
+- Liquid on a hardware wallet works with a Jade only.
 - Air-gapped signing works over animated QR codes; where there is no camera,
   import the signed transaction with **Paste** or **File**.
 - Android has no USB hardware-wallet support; use QR signing there.
@@ -114,6 +138,7 @@ Desktop tester builds update in place.
 - The peg-in / peg-out flow runs against a simulated provider.
 - One instance at a time: a second copy of the app on the same data folder
   refuses to open it.
+- The desktop builds are not code-signed or notarized yet.
 
 ## App data and a clean reset
 
@@ -134,4 +159,4 @@ Open an issue at <https://github.com/0xB4LdW1n/TemplarWallet/issues> with your
 system and version, what you did, what you expected and what happened.
 Attach `logs/templar.log` from the wallet data folder (and `templar.log.1` if
 there is one). Security problems go through private reporting instead — see
-[SECURITY.md](../SECURITY.md).
+[SECURITY.md](SECURITY.md).

@@ -327,7 +327,7 @@ jobs:
           bundle=apps/gui/build/linux/x64/release/bundle
           # The Dart loader looks for <exe dir>/lib/libwallet_ffi.so.
           cp target/release/libwallet_ffi.so "$bundle/lib/"
-          cp docs/RELEASE_NOTES.md "$bundle/README.md"
+          cp INSTALL.md "$bundle/README.md"
           # templar:// handler registration (docs/guides/PROTOCOL_CONNECTOR.md)
           cp packaging/linux/dev.templarwallet.templar_wallet.desktop "$bundle/"
           # Every library the app loads must resolve here: one that does not
@@ -387,7 +387,7 @@ jobs:
           $bundle = (Resolve-Path 'apps/gui/build/windows/x64/runner/Release').Path
           # The Dart loader opens wallet_ffi.dll from the exe's folder.
           Copy-Item target/release/wallet_ffi.dll $bundle
-          Copy-Item docs/RELEASE_NOTES.md (Join-Path $bundle 'README.md')
+          Copy-Item INSTALL.md (Join-Path $bundle 'README.md')
           $out = New-Item -ItemType Directory -Force -Path out
           # The portable build, files at the root of the zip: Explorer's
           # "Extract All" then gives one TemplarWallet-windows-x64 folder with
