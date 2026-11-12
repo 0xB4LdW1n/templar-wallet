@@ -5,7 +5,7 @@ repository: https://github.com/0xB4LdW1n/templar-wallet
 # License: MIT OR Apache-2.0 (LICENSE-MIT and LICENSE-APACHE at the repository
 # root). pubspec has no licence field; this line is the record.
 
-version: 0.1.0+16
+version: 0.1.1+17
 
 environment:
   sdk: ^3.12.0
