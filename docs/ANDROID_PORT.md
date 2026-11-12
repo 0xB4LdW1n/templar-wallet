@@ -20,10 +20,10 @@ asset-registry submission; `templar://` connector mobile UX (plumbing stays).
 
 ## 2. Layout — no reorganization
 
-- `src/wallet-ffi` is already `crate-type = ["cdylib"]` → `libwallet_ffi.so`.
+- `crates/wallet-ffi` is already `crate-type = ["cdylib"]` → `libwallet_ffi.so`.
 - Flutter platform folders are siblings (`macos/ linux/ windows/`); add
   `android/` next to them:
-  `cd src/templar_wallet && flutter create --platforms=android --org dev.templarwallet .`
+  `cd apps/gui && flutter create --platforms=android --org dev.templarwallet .`
   then `applicationId = "dev.templarwallet.templarWallet"`.
 
 ## 3. Blockers, in order (each verifiable on desktop, no Android toolchain)
@@ -60,7 +60,7 @@ cargo install cargo-ndk            # 4.x: platform flag is --platform, not -p
 ./scripts/build_android.sh [--release|--so-only]   # .so per ABI → jniLibs,
 #   checks wallet_call/wallet_free_string/wallet_set_data_dir are exported,
 #   then `flutter build apk`. Needs NDK 28.2.13676358 under $ANDROID_HOME/ndk.
-# Output: one APK per ABI in src/templar_wallet/build/app/outputs/flutter-apk/
+# Output: one APK per ABI in apps/gui/build/app/outputs/flutter-apk/
 # (app-arm64-v8a-<mode>.apk for phones, app-x86_64-… for an x86 AVD). Debug
 # .so ~57 MB/ABI (debuginfo stripped). Gradle warns that mobile_scanner,
 # shared_preferences and url_launcher still apply KGP — plugin bumps, later.

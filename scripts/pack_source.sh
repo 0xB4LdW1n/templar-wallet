@@ -26,8 +26,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 
-VERSION="$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' src/templar_wallet/pubspec.yaml | head -1)"
-[[ -n "$VERSION" ]] || { echo "no version line in src/templar_wallet/pubspec.yaml" >&2; exit 1; }
+VERSION="$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' apps/gui/pubspec.yaml | head -1)"
+[[ -n "$VERSION" ]] || { echo "no version line in apps/gui/pubspec.yaml" >&2; exit 1; }
 COMMIT="$(git rev-parse --short=12 HEAD)"
 BRANCH="$(git branch --show-current 2>/dev/null || true)"
 DIRTY=""

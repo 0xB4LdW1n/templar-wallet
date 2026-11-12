@@ -19,9 +19,9 @@ Reference material only — nothing here is compiled or shipped except
 ## Start here for…
 
 - **What the app should look like** → [`../design.md`](../design.md), the rules
-  every screen is held to; the tokens live in `src/templar_wallet/lib/theme/`.
-- **How the UI talks to the engine** → `src/templar_wallet/lib/bridge/wallet_bridge.dart`
-  (the Dart interface) and `crates/templarlib/src/dispatch.rs` (every JSON method).
+  every screen is held to; the tokens live in `apps/gui/lib/theme/`.
+- **How the UI talks to the engine** → `apps/gui/lib/bridge/wallet_bridge.dart`
+  (the Dart interface) and `templarlib/crates/templarlib/src/dispatch.rs` (every JSON method).
 - **Testing with a Jade / Ledger** → `guides/HARDWARE_TESTING.md`,
   `guides/JADE_TESTING.md`.
 - **Installing and using the terminal client** → [`guides/TUI.md`](guides/TUI.md).

@@ -8,7 +8,7 @@
 # libwallet_ffi.dylib, so this picks up Rust changes too.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT/src/templar_wallet"
+cd "$ROOT/apps/gui"
 flutter pub get >/dev/null
 flutter build macos --debug
 SRC="build/macos/Build/Products/Debug/templar_wallet.app"

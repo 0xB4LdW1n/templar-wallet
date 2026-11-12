@@ -1,0 +1,33 @@
+[package]
+name = "wallet-ffi"
+version = "0.1.0"
+license = "MIT"
+repository = "https://github.com/0xB4LdW1n/TemplarWallet"
+publish = false
+edition = "2021"
+
+[lib]
+name = "wallet_ffi"
+crate-type = ["cdylib"]
+
+[dependencies]
+# The reusable engine owns all wallet workflows. This crate only adapts its
+# JSON API to the C ABI consumed by Flutter.
+# TODO: switch to `git = "https://github.com/0xB4LdW1n/templarlib", tag = "v…"`
+# at the first published tag of the library. Until then the engine is read from
+# a sibling checkout (`../templarlib` next to this repository), and the GitHub
+# workflows — which check out this repository alone — cannot build.
+# `protocol` (the Templar Protocol connector methods) is always on: the app
+# offers Loans on every platform. `hardware` is this crate's own switch.
+templarlib = { path = "../../../templarlib/crates/templarlib", default-features = false, features = ["protocol"] }
+serde_json = "1.0"
+once_cell = "1.20"
+# Wipes response buffers that carried seed/xprv material before they are freed.
+zeroize = "1"
+
+[features]
+default = ["hardware"]
+# USB hardware wallets (see templar-core). Off on Android: every hardware
+# route stays in the JSON contract but answers `HW_UNSUPPORTED`, and
+# `hwi_status` reports `hardware_supported: false` so the UI hides the flow.
+hardware = ["templarlib/hardware"]

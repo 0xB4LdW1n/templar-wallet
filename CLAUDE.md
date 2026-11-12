@@ -21,7 +21,7 @@ the terminal client is a second first-party host.
 ```
 TemplarWallet/
 ├── Cargo.toml                  # Rust workspace
-├── crates/templar-core/        # Chain and wallet primitives. ZERO GUI deps.
+├── templarlib/crates/templar-core/        # Chain and wallet primitives. ZERO GUI deps.
 │   └── src/
 │       ├── lib.rs  error.rs (TemplarError)  config.rs  registry.rs
 │       ├── types.rs  derivation.rs (SLIP-77)  qr.rs (UR2/SeedQR)
@@ -37,7 +37,7 @@ TemplarWallet/
 │                               #   liquidex.rs + book.rs (v0 swaps),
 │                               #   protocol.rs (Templar Protocol escrow key,
 │                               #   proof-of-key check PSET)
-├── crates/templarlib/          # Reusable application engine. ZERO UI deps.
+├── templarlib/crates/templarlib/          # Reusable application engine. ZERO UI deps.
 │   └── src/
 │       ├── lib.rs              # TemplarLib public facade + method catalog
 │       ├── dispatch.rs         # stable JSON method router
@@ -45,12 +45,12 @@ TemplarWallet/
 │       ├── types.rs            # shared request/response DTOs
 │       └── handlers/           # application workflows over templar-core
 │
-├── crates/templar-tui/         # `templar` CLI and interactive terminal UI
+├── apps/tui/         # `templar` CLI and interactive terminal UI
 │
-├── src/wallet-ffi/             # thin C ABI adapter for Flutter
+├── crates/wallet-ffi/             # thin C ABI adapter for Flutter
 │   └── src/lib.rs              # wallet_call, wallet_free_string, data-dir setup
 │
-└── src/templar_wallet/         # Flutter app (macOS / Linux / Windows / Android)
+└── apps/gui/         # Flutter app (macOS / Linux / Windows / Android)
     ├── lib/
     │   ├── main.dart  app/shell.dart
     │   ├── bridge/             # ffi_wallet_bridge.dart (DynamicLibrary),
@@ -179,7 +179,7 @@ file_selector, shared_preferences, app_links, share_plus, url_launcher.
 `TEMPLAR_SWAP_MARKETS_URL`, `TEMPLAR_SWAP_ADMIN_URL`,
 `TEMPLAR_ORDERBOOK_DB`.
 
-Liquid network (`crates/templar-core/src/liquid/{network,chain}.rs`):
+Liquid network (`templarlib/crates/templar-core/src/liquid/{network,chain}.rs`):
 `TEMPLAR_LIQUID_NETWORK=testnet|regtest` (locks the Settings switch; default =
 the value saved in `AppConfig`, else testnet), `TEMPLAR_LIQUID_REGTEST_POLICY_ASSET`,
 `TEMPLAR_LIQUID_BACKEND=electrum|elements_rpc` (default: electrum on testnet,
@@ -210,7 +210,7 @@ cargo run -p templar-tui -- methods
 cargo run -p templar-tui
 
 # App — the Xcode Run Script phase builds and bundles libwallet_ffi.dylib
-cd src/templar_wallet
+cd apps/gui
 flutter pub get
 flutter analyze            # zero issues, infos included
 flutter test

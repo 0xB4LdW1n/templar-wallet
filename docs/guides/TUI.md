@@ -21,7 +21,7 @@ Clone the repository and install the binary:
 ```bash
 git clone https://github.com/0xMrtnz/TemplarWallet.git
 cd TemplarWallet
-cargo install --locked --path crates/templar-tui
+cargo install --locked --path apps/tui
 templar --version
 templar --help
 ```
@@ -33,7 +33,7 @@ Update an existing installation:
 
 ```bash
 git pull --ff-only
-cargo install --locked --force --path crates/templar-tui
+cargo install --locked --force --path apps/tui
 ```
 
 For development without installation, replace `templar` below with:

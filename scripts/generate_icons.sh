@@ -24,7 +24,7 @@ ROOT="$PWD"
 
 SRC="assets/brand/templar-icon.svg"
 CROSS="assets/brand/templar-cross.svg"
-FLUTTER="src/templar_wallet"
+FLUTTER="apps/gui"
 MACOS_ICONSET="$FLUTTER/macos/Runner/Assets.xcassets/AppIcon.appiconset"
 ANDROID_RES="$FLUTTER/android/app/src/main/res"
 TMP="$(mktemp -d)"

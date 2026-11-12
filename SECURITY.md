@@ -14,10 +14,10 @@ Particularly interesting:
 
 - anything that reads a recovery phrase or private key without the app
   password (the vault is Argon2id + XChaCha20-Poly1305, see
-  `crates/templar-core/src/vault.rs`);
+  `templarlib/crates/templar-core/src/vault.rs`);
 - a transaction the review screen shows one way and the signature commits to
-  another (PSBT / PSET inspection in `crates/templar-core/src/bitcoin/psbt.rs`
-  and `crates/templar-core/src/liquid/pset.rs`);
+  another (PSBT / PSET inspection in `templarlib/crates/templar-core/src/bitcoin/psbt.rs`
+  and `templarlib/crates/templar-core/src/liquid/pset.rs`);
 - a way to spend a frozen coin, or to make the wallet sign for a coin it
   should not;
 - a `templar://` link or a QR code that makes the app do something the user

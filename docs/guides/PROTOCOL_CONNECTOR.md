@@ -195,7 +195,7 @@ opens through `templar://sign`.
 
 ### Headless acceptance
 
-Two ignored contract tests in `src/wallet-ffi/src/contract_tests.rs` drive
+Two ignored contract tests in `crates/wallet-ffi/src/contract_tests.rs` drive
 the exact FFI dispatch the app calls against the running site, so the wire
 contract can be checked without the GUI:
 

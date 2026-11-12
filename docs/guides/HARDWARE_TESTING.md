@@ -19,7 +19,7 @@ from earlier ones.
 > | Air-gap QR / file / paste (Bitcoin only) | ✅ | ✅ | ✅ |
 > | Camera QR scanning | ❌ (paste/file) | ❌ (paste/file) | ✅ |
 >
-> Ledger and Jade are driven by `crates/templar-core/src/bitcoin/device/` inside
+> Ledger and Jade are driven by `templarlib/crates/templar-core/src/bitcoin/device/` inside
 > this process — Ledger over USB HID (Ledger's own `ledger_bitcoin_client` on
 > our 64-byte framing), Jade over USB serial (its CBOR dialect on `lwk_jade`'s
 > transport). No subprocess is involved, so they behave the same on all three
@@ -126,7 +126,7 @@ only applies to new sessions).
 ```bash
 # One instance only — the sled DB lock is exclusive; a second instance makes
 # every BDK call fail with "Bitcoin wallet not open".
-cd src/templar_wallet && flutter run -d macos --debug   # or -d windows / -d linux
+cd apps/gui && flutter run -d macos --debug   # or -d windows / -d linux
 ```
 
 Keep the console visible: every HWI invocation logs `[hw] <bin> <args>` on
@@ -353,7 +353,7 @@ Only a Jade can contribute to the Liquid half:
 
 ## 5b. Native device layer (the HWI replacement)
 
-`crates/templar-core/src/bitcoin/device/` talks to devices from our own process,
+`templarlib/crates/templar-core/src/bitcoin/device/` talks to devices from our own process,
 with no subprocess — the only design that can work under the macOS sandbox,
 and one that removes the HWI install step from every platform.
 

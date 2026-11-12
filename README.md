@@ -61,12 +61,12 @@ Windows warn on first launch. How to get past that, per platform:
 
 | Path | What |
 |------|------|
-| `crates/templar-core/` | Chain primitives — BDK 0.30, LWK 0.9, Miniscript, and encrypted storage. No UI dependencies. |
-| `crates/templarlib/` | Reusable application engine — state, workflows, DTOs, and the stable JSON method contract. |
-| `crates/templar-tui/` | Terminal client and TUI. Builds the `templar` binary against `templarlib`. |
+| `templarlib/crates/templar-core/` | Chain primitives — BDK 0.30, LWK 0.9, Miniscript, and encrypted storage. No UI dependencies. |
+| `templarlib/crates/templarlib/` | Reusable application engine — state, workflows, DTOs, and the stable JSON method contract. |
+| `apps/tui/` | Terminal client and TUI. Builds the `templar` binary against `templarlib`. |
 | `crates/templar-orderbook/` | Localhost LiquiDEX order book, SQLite database, and admin dashboard. |
-| `src/wallet-ffi/` | Thin C ABI adapter → `libwallet_ffi.{dylib,so,dll}` for Flutter. |
-| `src/templar_wallet/` | Flutter app (macOS, Windows, Linux, Android) |
+| `crates/wallet-ffi/` | Thin C ABI adapter → `libwallet_ffi.{dylib,so,dll}` for Flutter. |
+| `apps/gui/` | Flutter app (macOS, Windows, Linux, Android) |
 | `assets/brand/` | Logo SVGs — the source of every icon raster |
 | `packaging/` | DMG artwork, Inno Setup script, Linux desktop entry |
 | `scripts/` | Build, packaging and icon scripts |
@@ -77,7 +77,7 @@ Windows warn on first launch. How to get past that, per platform:
 Install the `templar` CLI and TUI from a source checkout:
 
 ```bash
-cargo install --locked --path crates/templar-tui
+cargo install --locked --path apps/tui
 templar --help
 templar methods
 templar
@@ -134,7 +134,7 @@ First Rust build compiles ~500 crates (BDK, LWK) and takes several minutes.
 Needs Xcode + command line tools (`xcode-select --install`).
 
 ```bash
-cd src/templar_wallet
+cd apps/gui
 flutter pub get
 flutter build macos --release
 ```
@@ -177,7 +177,7 @@ no USB metadata, and a Blockstream Jade is never recognised.
 cargo build --release -p wallet-ffi
 
 # 2. app bundle
-cd src/templar_wallet
+cd apps/gui
 flutter pub get
 flutter build linux --release
 
@@ -244,7 +244,7 @@ Full notes: [`docs/build/WindowsBuild.md`](docs/build/WindowsBuild.md).
 | Linux | `<exe dir>/lib/`, `<exe dir>/`, then `target/release/` |
 | Windows | `<exe dir>/`, `<exe dir>\lib\`, cwd, then `target\{release,debug}\` |
 
-The dev fallbacks are why `flutter run` works from `src/templar_wallet` after a
+The dev fallbacks are why `flutter run` works from `apps/gui` after a
 plain `cargo build --release -p wallet-ffi`.
 
 ---
@@ -260,7 +260,7 @@ cargo run -p templar-tui -- --help
 cargo run -p templar-tui -- methods
 cargo run -p templar-tui                         # interactive TUI
 
-cd src/templar_wallet
+cd apps/gui
 flutter analyze
 flutter test
 flutter run -d macos                          # or -d linux / -d windows / an Android device
@@ -286,4 +286,4 @@ Please report vulnerabilities privately — see [`SECURITY.md`](SECURITY.md).
 ## License
 
 [MIT](LICENSE). The vendored `biometric_storage` plugin under
-`src/templar_wallet/packages/` keeps its own MIT license.
+`apps/gui/packages/` keeps its own MIT license.

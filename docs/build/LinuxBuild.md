@@ -43,7 +43,7 @@ comes back empty for a normal user. The app installs the rules for you — the
 hardware setup screen offers **Fix device permissions**, which writes the
 bundled HWI rules to `/etc/udev/rules.d/` behind one `pkexec` prompt and
 reloads udev. Replug the device afterwards, and log out and back in once so
-the `plugdev` group takes effect. See `src/templar_wallet/assets/udev/README.md`.
+the `plugdev` group takes effect. See `apps/gui/assets/udev/README.md`.
 
 ### Rust
 
@@ -81,7 +81,7 @@ desktop crate no longer exists.
 ## 3. Build the Flutter app
 
 ```bash
-cd src/templar_wallet
+cd apps/gui
 flutter pub get
 flutter build linux --release
 ```
