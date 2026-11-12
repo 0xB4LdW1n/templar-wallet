@@ -31,17 +31,17 @@ from a template or a policy builder.
   it really does, sign, merge co-signers' copies, broadcast.
 - **Liquid** — confidential assets, issuance / reissuance / burn on testnet,
   LiquiDEX swaps and a peg-in / peg-out flow (simulated provider).
-- **Templar Protocol** — the wallet is the signing side of the Templar
-  Protocol, a peer-to-peer Liquid lending protocol: a site hands over loan
+- **Templar Protocol** — the wallet is the signing side of Templar Protocol,
+  a peer-to-peer lending protocol on Liquid: a site hands over loan
   transactions through `templar://` links, the wallet shows them and signs
-  only what you confirm ([connector guide](docs/guides/PROTOCOL_CONNECTOR.md)).
+  only what you confirm. Today the protocol runs on a test regtest; in beta
+  it will run on a server of ours; then Liquid mainnet.
 
 ## Download
 
 Every release is built by CI from a tagged commit and published on the
 [Releases](https://github.com/0xB4LdW1n/TemplarWallet/releases) page, with a
-`SHA256SUMS.txt` beside the files. Every build is an alpha and runs on testnet
-only. The newest build is always at these links:
+`SHA256SUMS.txt` beside the files. The newest build is always at these links:
 
 | Platform | File |
 |---|---|
@@ -54,234 +54,50 @@ only. The newest build is always at these links:
 
 The desktop builds are not signed with a paid certificate yet, so macOS and
 Windows warn on first launch. How to get past that, per platform:
-[`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md) (English) ·
-[`docs/INSTALLAZIONE.md`](docs/INSTALLAZIONE.md) (italiano).
+[INSTALL.md](INSTALL.md) (English) · [INSTALL.it.md](INSTALL.it.md) (italiano).
 
-## Layout
+## Try it in five minutes
 
-| Path | What |
-|------|------|
-| `templarlib/crates/templar-core/` | Chain primitives — BDK 0.30, LWK 0.9, Miniscript, and encrypted storage. No UI dependencies. |
-| `templarlib/crates/templarlib/` | Reusable application engine — state, workflows, DTOs, and the stable JSON method contract. |
-| `apps/tui/` | Terminal client and TUI. Builds the `templar` binary against `templarlib`. |
-| `crates/templar-orderbook/` | Localhost LiquiDEX order book, SQLite database, and admin dashboard. |
-| `crates/wallet-ffi/` | Thin C ABI adapter → `libwallet_ffi.{dylib,so,dll}` for Flutter. |
-| `apps/gui/` | Flutter app (macOS, Windows, Linux, Android) |
-| `assets/brand/` | Logo SVGs — the source of every icon raster |
-| `packaging/` | DMG artwork, Inno Setup script, Linux desktop entry |
-| `scripts/` | Build, packaging and icon scripts |
-| `docs/` | Reference material — start at [`docs/README.md`](docs/README.md) |
+1. Download and install the file for your system (see above; on macOS and
+   Windows, [INSTALL.md](INSTALL.md) shows how to open an unsigned build).
+2. Launch it and set an **app password** — it encrypts every recovery phrase
+   on the device.
+3. **Create a wallet** with Liquid enabled. Write the recovery phrase down.
+4. Open **Receive** and fund the wallet from a faucet:
+   [Bitcoin testnet](https://coinfaucet.eu/en/btc-testnet/),
+   [Liquid testnet](https://liquidtestnet.com/faucet).
+   Press **Sync**.
+5. Send a few sats back to yourself, look at the coins in **UTXOs**, freeze
+   one, and try to spend it.
 
-## Terminal client
+Using it with a Templar Protocol site:
+[docs/guides/TEMPLAR_PROTOCOL.md](docs/guides/TEMPLAR_PROTOCOL.md).
 
-Install the `templar` CLI and TUI from a source checkout:
+## From source
 
-```bash
-cargo install --locked --path apps/tui
-templar --help
-templar methods
-templar
-```
-
-See [`docs/guides/TUI.md`](docs/guides/TUI.md) for wallet storage, vault setup,
-wallet creation, receiving, sending, coin freezing, and network configuration.
-
-## Local LiquiDEX market
-
-Start the testnet/regtest order book and admin dashboard:
+The engine lives in its own repository,
+[templarlib](https://github.com/0xB4LdW1n/templarlib); this repository holds
+the two clients built on it — the Flutter app (`apps/gui`) and the `templar`
+terminal client (`apps/tui`). Until the library's first tag it must be
+checked out beside this one:
 
 ```bash
-./scripts/run_local_orderbook.sh
-```
-
-Open <http://127.0.0.1:3210>, then use LiquiDEX in the wallet. The service is
-localhost-only, stores no private keys, and persists real Liquid offers,
-multiple token metadata, real Bitcoin-testnet ↔ Liquid-testnet HTLC swaps, and
-clearly labelled non-settling BTC/Liquid demo quotes in SQLite. Full workflow,
-limitations, and DB instructions:
-[`docs/guides/LOCAL_ORDERBOOK.md`](docs/guides/LOCAL_ORDERBOOK.md).
-
----
-
-## Build the executable from source
-
-The app is two artifacts that must ship together:
-
-1. the Rust FFI library — `libwallet_ffi.dylib` / `libwallet_ffi.so` / `wallet_ffi.dll`
-2. the Flutter desktop bundle
-
-**Flutter desktop does not cross-compile — each OS must be built on that OS.**
-If the native library is missing at runtime, a release build stops on a fatal
-error screen (it never falls back to fake data), so step "bundle the library"
-below is not optional.
-
-### Prerequisites (all platforms)
-
-| Tool | Version |
-|------|---------|
-| Rust | stable (edition 2021) — <https://rustup.rs> |
-| Flutter | **3.44.1** stable (pinned by CI; Dart SDK `^3.12.0`) |
-
-```bash
+git clone https://github.com/0xB4LdW1n/templarlib.git
 git clone https://github.com/0xB4LdW1n/TemplarWallet.git
 cd TemplarWallet
+cargo install --locked --path apps/tui     # the terminal client
+templar --help
 ```
 
-First Rust build compiles ~500 crates (BDK, LWK) and takes several minutes.
-
-### macOS
-
-Needs Xcode + command line tools (`xcode-select --install`).
-
-```bash
-cd apps/gui
-flutter pub get
-flutter build macos --release
-```
-
-Nothing else to do: the Xcode **Run Script** phase builds `libwallet_ffi.dylib`
-for every installed Rust target, `lipo`s them into one universal binary, and
-drops it in `templar_wallet.app/Contents/Frameworks/`.
-
-Run it:
-
-```bash
-open build/macos/Build/Products/Release/templar_wallet.app
-```
-
-Optional, for Intel-Mac compatibility of your own build:
-`rustup target add x86_64-apple-darwin aarch64-apple-darwin`.
-
-To produce a DMG: `./scripts/make_dmg.sh` from the repo root → `dist/`.
-
-Hardware wallets on macOS need the app-managed HWI venv:
-`./scripts/setup_hwi_macos.sh`.
-
-### Linux
-
-Deps (Debian/Ubuntu — 22.04 or newer):
-
-```bash
-sudo apt update
-sudo apt install -y build-essential clang cmake ninja-build pkg-config \
-                    libgtk-3-dev libssl-dev libudev-dev curl git unzip
-flutter config --enable-linux-desktop
-```
-
-Fedora: `clang cmake ninja-build pkgconf-devel gtk3-devel openssl-devel systemd-devel`.
-`libudev-dev` matters at build time: without it `serialport` compiles but reports
-no USB metadata, and a Blockstream Jade is never recognised.
-
-```bash
-# 1. native library
-cargo build --release -p wallet-ffi
-
-# 2. app bundle
-cd apps/gui
-flutter pub get
-flutter build linux --release
-
-# 3. bundle the library next to the executable
-cp ../../target/release/libwallet_ffi.so build/linux/x64/release/bundle/lib/
-
-# 4. run
-./build/linux/x64/release/bundle/templar_wallet
-```
-
-Ship the whole `bundle/` directory — it is self-contained apart from GTK 3
-(`libgtk-3-0`) on the target machine. The binary is linked against the build
-host's glibc; CI builds on Ubuntu 22.04 (glibc 2.35) for Ubuntu 22.04+/Debian 12+.
-
-Hardware-wallet device nodes are root-only until udev rules are installed — the
-in-app hardware screen has a **Fix device permissions** button that writes them
-via one `pkexec` prompt. Replug the device afterwards.
-
-Full notes: [`docs/build/LinuxBuild.md`](docs/build/LinuxBuild.md).
-
-### Windows
-
-Install **Visual Studio 2022** with the **"Desktop development with C++"**
-workload (MSVC + Windows SDK + CMake), Git for Windows, and Rust via
-`rustup-init.exe` (default `stable-x86_64-pc-windows-msvc`). Then:
-
-```powershell
-flutter config --enable-windows-desktop
-flutter doctor    # "Visual Studio" must be green
-```
-
-No OpenSSL/vcpkg setup is needed — TLS uses SChannel and rustls.
-
-```powershell
-# 1. native library
-cargo build --release -p wallet-ffi
-
-# 2. app bundle
-cd src\templar_wallet
-flutter pub get
-flutter build windows --release
-
-# 3. bundle the DLL next to the exe
-Copy-Item ..\..\target\release\wallet_ffi.dll build\windows\x64\runner\Release\
-
-# 4. run
-.\build\windows\x64\runner\Release\templar_wallet.exe
-```
-
-Ship the whole `Release\` folder (exe + `data\` + Flutter and plugin DLLs +
-`wallet_ffi.dll`). Machines without Visual Studio may also need the
-[VC++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe).
-
-Installer: `packaging\windows\templar-wallet.iss` (Inno Setup 6 or 7) →
-`ISCC.exe /DMyAppVersion=<version> packaging\windows\templar-wallet.iss`.
-
-Full notes: [`docs/build/WindowsBuild.md`](docs/build/WindowsBuild.md).
-
-### Where the app looks for the native library
-
-| OS | Search order |
-|----|--------------|
-| macOS | `<app>/Contents/Frameworks/`, next to the executable, then `target/{release,debug}/` |
-| Linux | `<exe dir>/lib/`, `<exe dir>/`, then `target/release/` |
-| Windows | `<exe dir>/`, `<exe dir>\lib\`, cwd, then `target\{release,debug}\` |
-
-The dev fallbacks are why `flutter run` works from `apps/gui` after a
-plain `cargo build --release -p wallet-ffi`.
-
----
-
-## Develop
-
-```bash
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-cargo fmt --all
-
-cargo run -p templar-tui -- --help
-cargo run -p templar-tui -- methods
-cargo run -p templar-tui                         # interactive TUI
-
-cd apps/gui
-flutter analyze
-flutter test
-flutter run -d macos                          # or -d linux / -d windows / an Android device
-```
-
-`templar call <METHOD> --params <JSON>` exposes the complete application API.
-Use `--params -` for secrets, so they do not enter shell history. See
-[`docs/TEMPLARLIB.md`](docs/TEMPLARLIB.md) for boundaries and examples.
-
-Runtime endpoints can be overridden with `TEMPLAR_ELECTRUM_URL`,
-`TEMPLAR_LIQUID_ELECTRUM_URL`, `TEMPLAR_DATA_DIR`, `TEMPLAR_HWI_BIN` (the full
-list is in [`CLAUDE.md`](CLAUDE.md#env-overrides)).
-
-Brand rasters are build products: edit `assets/brand/*.svg`, then run
-`./scripts/generate_icons.sh` (macOS only).
-
-How releases are cut and published: [`docs/build/RELEASE.md`](docs/build/RELEASE.md).
+- Building the app for each platform: [docs/build/](docs/build/README.md).
+- The terminal client: [docs/guides/TUI.md](docs/guides/TUI.md).
+- How the pieces fit: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- Working on the code: [CONTRIBUTING.md](CONTRIBUTING.md).
+- Everything else: [docs/README.md](docs/README.md).
 
 ## Security
 
-Please report vulnerabilities privately — see [`SECURITY.md`](SECURITY.md).
+Please report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -6,6 +6,31 @@ any release may change anything.
 
 ## [Unreleased]
 
+### Repository
+
+- **The engine moved out.** `templar-core` and `templarlib` now live in their
+  own public repository, [templarlib](https://github.com/0xB4LdW1n/templarlib),
+  with their own documentation. Until its first tag this repository reads it
+  from a sibling `../templarlib` checkout, so the GitHub workflows cannot
+  build until the manifests switch to the tagged release.
+- **New layout.** The Flutter app moved from `src/templar_wallet` to
+  `apps/gui`, the C ABI adapter from `src/wallet-ffi` to `crates/wallet-ffi`,
+  and the terminal client (binary `templar`) from `crates/templar-tui` to
+  `apps/tui`. `crates/wallet-ffi` turns on the library's `protocol` feature
+  everywhere and keeps its own `hardware` feature (off on Android).
+- **The local order book left.** The localhost LiquiDEX order book is now a
+  Templar Protocol service and is no longer built here; the wallet only needs
+  its address (`docs/guides/LOCAL_ORDERBOOK.md`).
+- **Dual licence.** The wallet is licensed under `MIT OR Apache-2.0`
+  (`LICENSE-MIT`, `LICENSE-APACHE`). The vendored `biometric_storage` plugin
+  stays MIT; the bundled fonts keep the SIL Open Font License.
+- **Docs reorganised.** Install guides are now `INSTALL.md` and
+  `INSTALL.it.md` (the release bundles carry `INSTALL.md` as `README.md`);
+  build guides for every platform are under `docs/build/`; the Android port
+  notes became decision records in `docs/decisions/`; the Templar Protocol
+  docs are one user guide and one connector guide; `docs/README.md` is the
+  index.
+
 ### Templar Protocol
 
 - **Loans**, a destination beside the Dashboard (a carousel tab on a phone):

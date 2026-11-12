@@ -1,242 +1,133 @@
 # CLAUDE.md — Templar Wallet
 
-## What This Is
+## What this is
 
-Templar Wallet is a Bitcoin + Liquid Network wallet for macOS, Windows, Linux
-and Android. Its differentiator is
-**Miniscript-powered custody**: wallets with real spending policies (timelocks,
-hashlocks, thresholds, AND/OR logic) via predefined templates or a custom policy
-builder — not just singlesig and basic multisig.
+Templar Wallet is a Bitcoin + Liquid wallet for macOS, Windows, Linux and
+Android, built around **Miniscript custody**, and the signing wallet of
+Templar Protocol (`templar://` links). **Test networks only**: Bitcoin
+testnet, Liquid testnet, a local Liquid regtest. No mainnet path, ever.
 
-It is also the signing wallet of the Templar Protocol, a peer-to-peer lending
-protocol on Liquid (`templar://` links, `docs/guides/PROTOCOL_CONNECTOR.md`).
+This repository is the wallet's two clients and the adapter between them and
+the engine. The engine (`templar-core`, `templarlib`: BDK, LWK, Miniscript,
+vault, devices, every JSON method) is the sibling repository
+`../templarlib`, with its own `CLAUDE.md` — engine work happens there, not
+here.
 
-**Testnet only.** Bitcoin testnet + Liquid testnet. No mainnet spending path.
+## Layout
 
-## Architecture
-
-Shared Rust engine with two host adapters. Flutter remains the main product;
-the terminal client is a second first-party host.
-
-```
-TemplarWallet/
-├── Cargo.toml                  # Rust workspace
-├── templarlib/crates/templar-core/        # Chain and wallet primitives. ZERO GUI deps.
-│   └── src/
-│       ├── lib.rs  error.rs (TemplarError)  config.rs  registry.rs
-│       ├── types.rs  derivation.rs (SLIP-77)  qr.rs (UR2/SeedQR)
-│       ├── frozen.rs           # frozen coins: per-wallet set + checks
-│       ├── vault.rs            # Argon2id + XChaCha20 at-rest encryption
-│       ├── policy/             # Miniscript engine: engine, templates,
-│       │                       #   fragments, validator
-│       ├── bitcoin/            # wallet (BDK), multisig, psbt, watch_only,
-│       │   └── device/         #   hardware (hwi CLI) + native drivers:
-│       │                       #   hid.rs, ledger.rs, jade_btc.rs
-│       └── liquid/             # wallet (LWK), multisig, pset, assets,
-│                               #   watch_only, hardware (Jade),
-│                               #   liquidex.rs + book.rs (v0 swaps),
-│                               #   protocol.rs (Templar Protocol escrow key,
-│                               #   proof-of-key check PSET)
-├── templarlib/crates/templarlib/          # Reusable application engine. ZERO UI deps.
-│   └── src/
-│       ├── lib.rs              # TemplarLib public facade + method catalog
-│       ├── dispatch.rs         # stable JSON method router
-│       ├── state.rs            # data dir, vault, wallet state, instance lock
-│       ├── types.rs            # shared request/response DTOs
-│       └── handlers/           # application workflows over templar-core
-│
-├── apps/tui/         # `templar` CLI and interactive terminal UI
-│
-├── crates/wallet-ffi/             # thin C ABI adapter for Flutter
-│   └── src/lib.rs              # wallet_call, wallet_free_string, data-dir setup
-│
-└── apps/gui/         # Flutter app (macOS / Linux / Windows / Android)
-    ├── lib/
-    │   ├── main.dart  app/shell.dart
-    │   ├── bridge/             # ffi_wallet_bridge.dart (DynamicLibrary),
-    │   │                       #   bridge_provider.dart
-    │   ├── theme/              # app_colors, app_scheme, app_theme,
-    │   │                       #   app_typography, app_motion, asset_palette
-    │   ├── shared/widgets/     # design-system kit (glass_card, value_chart,
-    │   │                       #   utxo_views, ur_qr, step_flow_scaffold, …)
-    │   └── features/           # welcome, wallet_picker, create_wallet,
-    │                           #   import_wallet, dashboard, loans, send,
-    │                           #   receive, history, utxos, wallet_info, psbt,
-    │                           #   liquid, peg, swap, hardware, vault,
-    │                           #   protocol, settings
-    ├── assets/images/          # templar-wallet-logo.png, templar-cross.svg
-    └── macos/ linux/ windows/ android/  # platform runners
+```text
+apps/gui/            Flutter app (macOS / Windows / Linux / Android)
+  lib/bridge/        wallet_bridge.dart (typed interface), ffi_wallet_bridge.dart
+                     (dart:ffi), bridge_provider.dart (which bridge), mock_wallet_bridge.dart
+  lib/features/      one folder per destination (dashboard, send, receive, utxos,
+                     psbt, liquid, protocol, loans, settings, …)
+  lib/shared/widgets/  the design-system kit
+  lib/theme/         tokens: app_colors, app_scheme, app_typography, app_layout, …
+  lib/services/      platform services and SharedPreferences stores
+  macos/ windows/ linux/ android/   platform runners
+  packages/biometric_storage/       vendored plugin (MIT)
+apps/tui/            `templar` CLI + read-only TUI (package templar-tui)
+crates/wallet-ffi/   C ABI adapter over templarlib → libwallet_ffi.{dylib,so} / wallet_ffi.dll
+assets/brand/        logo SVGs, source of every icon raster
+packaging/           DMG art, Inno Setup script, Linux desktop entry
+scripts/             build, packaging, icons, protocol fixture server
+docs/                index at docs/README.md
+design.md            the design rules
 ```
 
-### Data flow
+## The engine dependency
 
-Flutter → `wallet_call(json)` → `templarlib` → `templar-core` → BDK/LWK.
-Terminal → `TemplarLib::call` → `templarlib` → `templar-core` → BDK/LWK.
-`bridge_provider.dart` falls back to `MockWalletBridge` when the dylib fails to
-load — **a mock fallback can look like a working wallet**; check which bridge is
-live before trusting any on-screen balance.
+`apps/tui/Cargo.toml` and `crates/wallet-ffi/Cargo.toml` depend on templarlib
+**by path** (`../templarlib/crates/templarlib` from the repo root) until the
+library's first tag; the TODO there switches to `git` + `tag`. Until then the
+GitHub workflows cannot build. Never vendor or copy engine code into this
+repository.
 
-## Critical Constraints
+`crates/wallet-ffi` takes templarlib with `default-features = false` and:
 
-1. **BDK 0.30** — RefCell internally, NOT thread-safe. During `sync()` no other
-   wallet method may run. Wrapped in `Arc<Mutex<Option<WalletManager>>>`.
-   Miniscript works inside `wsh()` but NOT inside `tr()` (needs BDK 1.x).
-2. **LWK 0.9 modern API** — `Wollet::without_persist()`, `get_details(&pset)`,
-   `finalize(&mut pset)`, `combine()`. Thread-safe. Never the old MemoryPersist
-   pattern.
-3. **Offline-first** — Electrum clients are constructed only in sync/broadcast
-   paths, never in wallet constructors. Opening a wallet must work with no net.
-4. **Vault encryption** — Argon2id + XChaCha20 at rest (`vault.rs`). Seed
-   material is never written plaintext to the registry.
-5. **Cross-OS parity** — runtime deps must resolve identically on macOS, Windows
-   and Linux. No platform-divergent flows.
-6. **English only** — code, comments, UI strings.
-7. **Asset issuance is testnet-only** — Liquid › Issue / Reissue / Burn ship for
-   testnet assets; the registry submission is refused on regtest.
-8. **Frozen coins are never spent** — the set lives on the registry entry
-   (`WalletEntry.frozen`, `frozen.rs`). Every builder takes it
-   (`AppState::frozen_on`): BDK leaves it out with `unspendable`, LWK with
-   `set_wallet_utxos` where LWK allows it (LBTC-only payments) and refuses
-   otherwise; every signer runs `refuse_frozen_inputs` first. A new spend or
-   sign path must do both.
+- `protocol` — always on: the Templar Protocol connector methods (Loans on
+  every platform);
+- `hardware` — its own feature, default on, forwarding to
+  `templarlib/hardware`. Android builds with `--no-default-features`: hardware
+  methods answer `HW_UNSUPPORTED`, `hwi_status` says
+  `hardware_supported: false`, and the UI hides the flows.
+
+## The bridge
+
+- `wallet-ffi` exports `wallet_call(method, params_json)`,
+  `wallet_free_string`, `wallet_set_data_dir`. It owns C strings, panic
+  containment (`catch_unwind`; the workspace pins `panic = "unwind"` — keep
+  it) and zeroizing request/response strings. No workflows here.
+- Every answer is `{"ok": …}` or `{"err": "…"}`. Method list:
+  `templar methods`, or templarlib's `docs/API.md`.
+- Dart: screens talk to `WalletBridge` only. `FfiWalletBridge` runs each call
+  in `Isolate.run`. A new engine method needs a `WalletBridge` member, its
+  `FfiWalletBridge` mapping and a `MockWalletBridge` answer.
+- **A mock can look like a working wallet.** Debug builds fall back to
+  `MockWalletBridge` when the library fails to load (persistent badge);
+  `--dart-define=TEMPLAR_MOCK_BRIDGE=true` forces it; widget tests always use
+  it. Release builds never do: fatal error screen. Check which bridge is live
+  before trusting a balance.
+- Library search paths: `apps/gui/lib/bridge/ffi_wallet_bridge.dart`; the
+  macOS Xcode run script (`apps/gui/macos/copy_wallet_ffi.sh`) builds and
+  bundles the dylib.
+
+## Platforms
+
+- Desktop: sidebar shell. Android (iOS too in code; there is no iOS runner):
+  `MobileShell` with the
+  carousel; every phone layout behind `AppLayout.isPhone`, desktop trees
+  untouched (`docs/decisions/0005-mobile-shell.md`).
+- macOS runs sandboxed: Ledger and Jade work natively, HWI cannot run.
+  Windows/Linux: HWI families too (in-app installer; Linux udev rules via
+  `pkexec`). Android: no USB hardware, QR air-gap only.
+- Camera QR scanning: macOS and Android only; elsewhere paste or file.
+- Flutter desktop does not cross-compile. Build guides: `docs/build/`.
 
 ## Brand
 
-- Name: **Templar Wallet**. Bundle id `dev.templarwallet.templarWallet`.
-  Binary/product name stays snake_case `templar_wallet`; CI renames the macOS
-  bundle to `Templar Wallet.app`.
-- Accent: **Templar crimson `#C1121F`** (`AppColors.accentDefault`). Every other
-  accent shade derives from it — re-tint by changing that one constant.
-- `danger` is `#EF4444`: brighter and lighter than the accent on purpose, since
-  the brand colour is also red. Never darken it toward the accent.
-- Logo source of truth: `assets/brand/templar-icon.svg` (badge) and
-  `assets/brand/templar-cross.svg` (bare mark). All PNG/ICO rasters are build
-  products — edit the SVG then run `./scripts/generate_icons.sh`.
-- **`design.md` (repo root) is the rule set every screen is held to** — the
-  gallery of surfaces, the single Action colour, chrome that recedes, the one
-  shadow, and the small rewards. Read it before changing a pixel.
+- Name **Templar Wallet**. Bundle id `dev.templarwallet.templarWallet`;
+  binary/product name `templar_wallet`; inside the DMG the bundle is
+  `Templar Wallet.app`.
+- Accent: **Templar crimson `#C1121F`** (`AppColors.accentDefault`); every
+  other accent shade derives from it. `danger` is `#EF4444`, brighter on
+  purpose — never darken it toward the accent.
+- Logo sources: `assets/brand/templar-icon.svg` (badge),
+  `assets/brand/templar-cross.svg` (bare mark). Rasters are build products:
+  edit the SVG, run `./scripts/generate_icons.sh` (macOS).
+- **`design.md` is the rule set every screen is held to.** Read it before
+  changing a pixel.
 
-## Miniscript in BDK 0.30
+## Rules
 
-Supported inside `wsh()`: `pk`, `multi(k,…)`, `and_v(v:pk(A),older(N))`,
-`and_v(v:pk(A),after(N))`, `and_v(v:pk(A),sha256(H))`,
-`or_d(pk(A),and_v(v:pk(B),older(N)))`, `thresh(k,…)`, `andor(A,B,C)`.
+1. English only: code, comments, UI strings, docs (except `INSTALL.it.md`).
+2. No wallet-critical logic in Dart.
+3. Frozen coins are never spent and nothing is signed without the user's
+   confirmation (password gate): keep both in every new flow.
+4. Cross-OS parity: no platform-divergent flows beyond the documented
+   platform limits.
+5. The product name is "Templar Protocol"; network status of the protocol,
+   when stated: "Today the protocol runs on a test regtest; in beta it will
+   run on a server of ours; then Liquid mainnet."
 
-Not supported (deferred to BDK 1.x): `tr(...)` Taproot script paths, `musig(...)`.
-
-## LWK 0.9 patterns
-
-```rust
-// Singlesig
-let signer = SwSigner::new(mnemonic, false)?;      // false = testnet
-let desc   = signer.wpkh_slip77_descriptor()?;
-let wollet = Wollet::without_persist(ElementsNetwork::LiquidTestnet, desc)?;
-
-// Multisig 2-of-3 — ct() only accepts ELEMENTS scripts (elwsh/elwpkh),
-// plain wpkh inside ct() is rejected.
-let desc = format!(
-    "ct(slip77({blinding}),elwsh(multi(2,{a}/<0;1>/*,{b}/<0;1>/*,{c}/<0;1>/*)))"
-);
-
-// PSET: inspect before signing — this is the multi-party security gate.
-let details = wollet.get_details(&pset)?;   // fee, recipients,
-                                            // fingerprints_has/_missing
-let n = signer.sign(&mut pset)?;
-wollet.combine(&mut base, &signed_by_bob)?; // parallel signing
-let tx = wollet.finalize(&mut pset)?;
-```
-
-Jade descriptors must use the **device's** slip77 key, never elip151.
-Liquid hardware support is **Jade-only**.
-
-## Key Dependencies
-
-| Crate | Version | Role |
-|-------|---------|------|
-| bdk | 0.30 | Bitcoin wallet engine (Miniscript wsh) |
-| lwk_wollet / lwk_signer / lwk_common | 0.9 | Liquid |
-| lwk_jade | 0.9 (serial) | Jade transport |
-| hidapi | 2.6 | Ledger + HID signers, in-process |
-| serialport | 4.9 | Jade (USB-CDC) |
-| sled | 0.34 | BDK embedded DB |
-| thiserror | 1.0 | Typed errors |
-
-Flutter: go_router, provider, qr_flutter, mobile_scanner, google_fonts, ffi,
-file_selector, shared_preferences, app_links, share_plus, url_launcher.
-
-## Servers & faucets
-
-- Bitcoin testnet Electrum: `ssl://electrum.blockstream.info:60002`
-  (`TEMPLAR_ELECTRUM_URL` overrides)
-- Liquid testnet Electrum: `elements-testnet.blockstream.info:50002`
-  (`TEMPLAR_LIQUID_ELECTRUM_URL` overrides)
-- Faucets: https://liquidtestnet.com/faucet · https://faucet.vulpem.com
-
-## Env overrides
-
-`TEMPLAR_DATA_DIR`, `TEMPLAR_HWI_BIN`, `TEMPLAR_ELECTRUM_URL`,
-`TEMPLAR_LIQUID_ELECTRUM_URL`, `TEMPLAR_SWAP_BOOK_URL`,
-`TEMPLAR_SWAP_MARKETS_URL`, `TEMPLAR_SWAP_ADMIN_URL`,
-`TEMPLAR_ORDERBOOK_DB`.
-
-Liquid network (`templarlib/crates/templar-core/src/liquid/{network,chain}.rs`):
-`TEMPLAR_LIQUID_NETWORK=testnet|regtest` (locks the Settings switch; default =
-the value saved in `AppConfig`, else testnet), `TEMPLAR_LIQUID_REGTEST_POLICY_ASSET`,
-`TEMPLAR_LIQUID_BACKEND=electrum|elements_rpc` (default: electrum on testnet,
-`elementsd` RPC on regtest), `TEMPLAR_LIQUID_ELECTRUM_TLS=0|1`,
-`TEMPLAR_ELEMENTS_RPC_URL/USER/PASS` (default `http://127.0.0.1:18884`,
-`templar`/`templar` — the Templar Protocol's local regtest node). Core keeps no
-global network:
-the templarlib state passes it to the `*_on` constructors; the no-suffix constructors
-read the env and default to testnet (what the Templar Protocol relies on). Peg,
-public order books and asset-registry submission are refused on regtest. The
-localhost `templar-orderbook` service supports both testnet and regtest; see
-`docs/guides/LOCAL_ORDERBOOK.md`. Its unified market feed can also carry
-testnet-only BTC/Liquid `htlc-demo` quotes. These are UI data only: they never
-sign, broadcast, or settle, and must not be presented as production atomic
-swaps.
-
-## Build & Run
+## Gate
 
 ```bash
-# Rust
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-cargo fmt --all
-
-# Terminal
-cargo run -p templar-tui -- --help
-cargo run -p templar-tui -- methods
-cargo run -p templar-tui
-
-# App — the Xcode Run Script phase builds and bundles libwallet_ffi.dylib
+cargo fmt --all -- --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace
 cd apps/gui
-flutter pub get
-flutter analyze            # zero issues, infos included
+flutter pub get --enforce-lockfile
+flutter analyze --fatal-infos --fatal-warnings   # zero issues, infos included
 flutter test
-flutter run -d macos
-
-# Brand rasters, after editing assets/brand/*.svg (macOS only)
-./scripts/generate_icons.sh
 ```
 
-`scripts/setup_hwi_macos.sh` installs the app-managed HWI venv.
-`scripts/build_android.sh --release` builds the APKs (one per ABI).
-`scripts/pack_source.sh` zips the working tree for someone else's PC, where
-`scripts/build_linux.sh` (Docker, Ubuntu 22.04) and `scripts/build_windows.ps1`
-build the Linux and Windows bundles CI would (`docs/build/HELPER_BUILDS.md`).
-
-CI, all on GitHub-hosted runners (never attach a self-hosted runner to this
-public repo): `.github/workflows/ci.yml` gates every push to `main` and every
-PR with the Rust and Flutter checks above (Rust and Flutter versions pinned
-in the workflow). `.github/workflows/release.yml` builds macOS (universal
-DMG), Windows (installer + zip), Linux (tarball, Ubuntu 22.04) and Android
-(two APKs, release-signed from repository secrets) and, on a `vX.Y.Z` tag
-matching the pubspec version, publishes the release only if every build
-passed, under version-less names the website links to via
-`/releases/latest/download/`. Runbook, signing key and stable links:
-`docs/build/RELEASE.md`.
+CI (`.github/workflows/ci.yml`, `release.yml`) runs on GitHub-hosted runners
+only — never attach a self-hosted runner to this public repository. Release
+runbook: `docs/build/RELEASE.md`.
 
 ## Docs
 
-Everything reference-only lives under `docs/` — see `docs/README.md` for the map.
+`docs/README.md` is the map. Architecture of the wallet side:
+`docs/ARCHITECTURE.md`. Decisions: `docs/decisions/`. Engine internals,
+environment variables and the connector contract: templarlib's docs.

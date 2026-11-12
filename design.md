@@ -2,7 +2,7 @@
 
 The rules every screen is held to. Read this before changing a pixel. The
 tokens named here live in `apps/gui/lib/theme/`; the widgets that
-carry them live in `lib/shared/widgets/`.
+carry them live in `apps/gui/lib/shared/widgets/`.
 
 ## The direction
 

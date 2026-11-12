@@ -1,8 +1,14 @@
 # templar_wallet
 
-The Flutter app of Templar Wallet — macOS, Windows, Linux and Android. It
-drives the Rust engine (`templarlib/crates/templar-core`) through the C ABI in
-`crates/wallet-ffi`.
+The Flutter app of Templar Wallet — macOS, Windows, Linux and Android. Every
+wallet operation goes to the Rust engine ([templarlib](https://github.com/0xB4LdW1n/templarlib))
+through the C ABI in [`crates/wallet-ffi`](../../crates/wallet-ffi/README.md);
+the Dart side of that boundary is `lib/bridge/`.
 
-Build, run and test instructions live in the [repository README](../../README.md);
-the visual rules every screen follows are in [`design.md`](../../design.md).
+- Build and run, per platform: [`docs/build/`](../../docs/build/README.md).
+- The checks every change passes: [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
+- How the app, the adapter and the engine fit: [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md).
+- The visual rules every screen follows: [`design.md`](../../design.md).
+
+`packages/biometric_storage` is a vendored copy of a plugin and keeps its own
+MIT licence.
