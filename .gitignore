@@ -25,3 +25,6 @@ __pycache__/
 *.keystore
 *.p12
 key.properties
+
+# A local [patch] of templarlib (docs/build/README.md, "The checkout")
+.cargo/config.toml
