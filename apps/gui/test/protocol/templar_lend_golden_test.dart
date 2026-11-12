@@ -1,3 +1,10 @@
+// Pixel comparison against images rendered on macOS: text rasterises
+// differently on Linux and Windows, so CI (Ubuntu) skips the `golden` tag.
+// Run them on a Mac: `flutter test --tags golden`; regenerate after a
+// deliberate visual change with `--update-goldens`.
+@Tags(['golden'])
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:templar_wallet/features/loans/loan_detail_screen.dart';

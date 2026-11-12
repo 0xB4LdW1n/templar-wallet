@@ -101,5 +101,8 @@ jobs:
       # Infos count too: the tree is kept at zero analyzer issues of any level.
       - name: Analyze
         run: flutter analyze --fatal-infos --fatal-warnings
+      # The `golden` tests compare pixels against images rendered on macOS;
+      # Linux rasterises text differently, so they run on a Mac only
+      # (apps/gui/dart_test.yaml).
       - name: Tests
-        run: flutter test
+        run: flutter test --exclude-tags golden

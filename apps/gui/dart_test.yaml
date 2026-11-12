@@ -1,0 +1,4 @@
+# Test tags. `golden`: pixel comparisons against images rendered on macOS
+# (docs/images/). CI runs on Ubuntu with `--exclude-tags golden`.
+tags:
+  golden:
