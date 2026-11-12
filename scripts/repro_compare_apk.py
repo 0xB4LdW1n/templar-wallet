@@ -7,7 +7,7 @@ An APK signed with scheme v2/v3 is a zip file with an "APK Signing Block"
 between the last file entry and the central directory. Signing with another
 key, or another signing tool, changes three things only: that block, zero
 padding a signer may put before it (apksigner pads the entries to a 4 KiB
-boundary, Gradle's signer does not), and the central directory's offset in
+boundary; Gradle's own signer need not), and the central directory's offset in
 the end record. Templar Wallet's minSdk is 24, so there is no v1 JAR
 signature inside the zip.
 

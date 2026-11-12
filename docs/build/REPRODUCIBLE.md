@@ -61,7 +61,7 @@ between the files and the zip's central directory.
 
 - the APK Signing Block;
 - zero padding a signer may place before it (`apksigner` pads the files to a
-  4 KiB boundary, Gradle does not);
+  4 KiB boundary; Gradle's own signer need not);
 - the central directory's offset in the zip's end record, which moves with
   the block.
 
