@@ -285,5 +285,7 @@ Please report vulnerabilities privately — see [`SECURITY.md`](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE). The vendored `biometric_storage` plugin under
-`apps/gui/packages/` keeps its own MIT license.
+Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at
+your option. The vendored `biometric_storage` plugin under `apps/gui/packages/`
+keeps its own MIT license, and the bundled fonts their SIL Open Font License
+(`apps/gui/assets/fonts/OFL-*.txt`).
