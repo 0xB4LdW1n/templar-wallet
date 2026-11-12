@@ -47,7 +47,8 @@ The engine has its own documentation in
 | [`fixtures/protocol/`](fixtures/protocol/connect.json) | Stand-in Templar Protocol requests, served by `scripts/protocol_fixture_server.py` |
 
 `images/` holds the golden images the Flutter protocol tests compare
-against.
+against. They are rendered on macOS, so those tests carry the `golden` tag
+and CI (Ubuntu) skips them: `flutter test --tags golden` on a Mac.
 
 ## Decisions
 
