@@ -1,4 +1,4 @@
-// The portfolio token on a connected-site record (connector-protocol.md §7):
+// The portfolio token on a connected-site record (CONNECTOR.md §7):
 // it round-trips, a record written before v1.1 reads back without one, and
 // the store can set and drop it on its own.
 

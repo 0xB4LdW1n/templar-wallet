@@ -24,7 +24,7 @@
 #endif
 
 ; Path to the Flutter release bundle, relative to this .iss file.
-#define BundleDir "..\..\src\templar_wallet\build\windows\x64\runner\Release"
+#define BundleDir "..\..\apps\gui\build\windows\x64\runner\Release"
 
 [Setup]
 ; Never reuse this GUID for another product — it is the identity Windows uses
@@ -59,7 +59,7 @@ InfoBeforeFile=info-before.txt
 DisableWelcomePage=no
 OutputDir=..\..\dist
 OutputBaseFilename=TemplarWallet-{#MyAppVersion}-windows-x64-setup
-SetupIconFile=..\..\src\templar_wallet\windows\runner\resources\app_icon.ico
+SetupIconFile=..\..\apps\gui\windows\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
 SolidCompression=yes

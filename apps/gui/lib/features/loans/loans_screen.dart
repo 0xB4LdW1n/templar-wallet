@@ -1,5 +1,5 @@
 // Loans — the wallet's view of its Templar Protocol loans, fed by the site
-// (`GET /connector/portfolio`, connector-protocol.md §7).
+// (`GET /connector/portfolio`, CONNECTOR.md §7).
 //
 // The wallet knows nothing about a loan on its own: it signs what the site
 // asks and keeps a thin history. This screen asks the site, with the token

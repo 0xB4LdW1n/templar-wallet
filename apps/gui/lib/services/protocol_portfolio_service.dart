@@ -1,5 +1,5 @@
 // The wallet's side of `GET /connector/portfolio`, `POST /connector/open`
-// and `DELETE /connector/portfolio` (connector-protocol.md §7–§8): one HTTP
+// and `DELETE /connector/portfolio` (CONNECTOR.md §7–§8): one HTTP
 // client, one in-memory cache per connected site, and the hooks the rest of
 // the app pulls to keep the Loans screen current.
 //

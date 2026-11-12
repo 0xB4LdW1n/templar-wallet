@@ -1,7 +1,7 @@
 // Receive lists the newest eight previous addresses and hands the rest to
 // the All addresses page; Liquid, with its one reused address, lists none.
 // Desktop arm only: AppLayout.isPhone needs a mobile platform, which a host
-// test cannot be (see docs/ANDROID_PORT.md).
+// test cannot be (see docs/decisions/0005-mobile-shell.md).
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

@@ -9,7 +9,7 @@
 // until the wallet is removed there.
 //
 // One thing here is a secret of a lesser kind: the portfolio token a v1.1
-// site hands back at connect (connector-protocol.md §7). It reads the
+// site hands back at connect (CONNECTOR.md §7). It reads the
 // wallet's loans and mints one-time browser links; it cannot sign or move
 // anything, and the site revokes it on «Remove this wallet». It is kept with
 // the site record, sent only as a bearer header to the URL the site gave,

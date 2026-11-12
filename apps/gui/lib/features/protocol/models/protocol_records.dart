@@ -86,7 +86,7 @@ class ProtocolConnectedSite {
   /// v1; the flag keeps the row honest if that ever changes).
   final bool sharedDescriptor;
 
-  /// `GET /connector/portfolio` of the site (connector-protocol.md §7),
+  /// `GET /connector/portfolio` of the site (CONNECTOR.md §7),
   /// handed back by the connect callback since v1.1. Null for a site
   /// connected by Templar 0.1.0, which has no loans view to feed.
   final String? portfolioUrl;

@@ -10,7 +10,7 @@ import '../../wallet_picker/models/wallet_summary.dart';
 /// A software seed derives the escrow key at `m/2121'/1'/0'`; a Jade offers
 /// its BIP87 account (`m/87'/1'/0'`) instead, which the site accepts as a
 /// loan key too, and signs a PSET whose inputs name that key. What a Jade
-/// cannot do yet is sign the proof of key (connector-protocol.md §9) — the
+/// cannot do yet is sign the proof of key (CONNECTOR.md §9) — the
 /// screens say so where it matters, rather than hiding the wallet here.
 bool protocolWalletFits(WalletSummary w, {required bool connect}) {
   if (!w.liquidEnabled || w.isViewOnlyWallet || w.isAirgapWallet) return false;

@@ -1,6 +1,6 @@
 /// The wallet's loans as a Templar Protocol site reports them —
-/// `GET /connector/portfolio`, `docs/connector-protocol.md` §7 in the Templar
-/// Protocol repository.
+/// `GET /connector/portfolio`, `docs/CONNECTOR.md` §7 in the templarlib
+/// repository.
 ///
 /// Pure Dart, no bridge, no network: the Loans screen renders exactly what
 /// is here, and the tests can feed it the contract's JSON. Field names are

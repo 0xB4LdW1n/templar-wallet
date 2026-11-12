@@ -1,4 +1,4 @@
-// The wallet's calls to a Templar Protocol site (connector-protocol.md
+// The wallet's calls to a Templar Protocol site (CONNECTOR.md
 // §7–§8), against a scripted HTTP client: what goes on the wire — the token
 // in the Authorization header and nowhere else — and what each answer turns
 // into for the Loans screen.

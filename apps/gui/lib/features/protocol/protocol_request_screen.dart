@@ -42,7 +42,7 @@ import 'protocol_paste_card.dart';
 import 'protocol_network_mismatch_card.dart';
 
 /// Handles a `templar://connect` or `templar://sign` request from a Templar Protocol
-/// site (docs/connector-protocol.md §3–§4 in the Templar Protocol repository).
+/// site (docs/CONNECTOR.md §3–§4 in the templarlib repository).
 ///
 /// Lives outside the wallet shell so a link can be answered before any
 /// wallet is open: the screen always asks which wallet answers (with the

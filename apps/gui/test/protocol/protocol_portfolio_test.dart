@@ -1,4 +1,4 @@
-// The portfolio JSON of connector-protocol.md §7, as the Loans screen reads
+// The portfolio JSON of CONNECTOR.md §7, as the Loans screen reads
 // it: every field of the contract's example, the nulls a loan may carry, and
 // the words a newer site might send that this build does not know.
 

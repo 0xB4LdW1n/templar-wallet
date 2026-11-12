@@ -616,7 +616,7 @@ abstract class WalletBridge {
   /// software seed, `[fp/87h/1h/0h]tpub…` from a Jade (plugged in).
   Future<String> getProtocolEscrowXpub(String walletId);
 
-  /// The unsigned proof-of-key check (connector-protocol.md §9.1) for this
+  /// The unsigned proof-of-key check (CONNECTOR.md §9.1) for this
   /// wallet's loan key and a site's challenge text. Signed with [signPset]
   /// like any PSET naming the key. Software wallets only.
   Future<ProtocolCheck> protocolCheckPset(String walletId, String challenge);

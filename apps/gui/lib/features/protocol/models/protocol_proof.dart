@@ -1,4 +1,4 @@
-/// Proof of key (connector-protocol.md §9), as the bridge reports it.
+/// Proof of key (CONNECTOR.md §9), as the bridge reports it.
 ///
 /// The check PSET itself is built and judged by the engine
 /// (`protocol_check_pset`, `protocol_is_check_pset`); the app only carries

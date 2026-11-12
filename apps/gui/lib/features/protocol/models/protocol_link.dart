@@ -1,5 +1,5 @@
-/// Templar Protocol deep links and requests — the wallet side of the Templar Protocol's
-/// `docs/connector-protocol.md` (§3 connect, §4 sign).
+/// Templar Protocol deep links and requests — the wallet side of the Templar
+/// Protocol contract, templarlib's `docs/CONNECTOR.md` (§3 connect, §4 sign).
 ///
 /// Pure Dart: no bridge, no network. Parsing and validation live here so
 /// they can be unit-tested without an app, and so the screen that acts on a
@@ -165,7 +165,7 @@ class ProtocolRequest {
   final String? pset;
   final ProtocolEscrow? escrow;
 
-  /// The proof-of-key challenge (connector-protocol.md §9.1): `Templar
+  /// The proof-of-key challenge (CONNECTOR.md §9.1): `Templar
   /// Protocol · access · origin · nonce=… · expires=… · this signature
   /// never moves funds`. On a connect request (v1.1) the wallet signs the
   /// check it builds from this; on a `proof` signing request the wallet

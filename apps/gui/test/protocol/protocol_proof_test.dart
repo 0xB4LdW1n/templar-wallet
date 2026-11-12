@@ -1,4 +1,4 @@
-// Proof of key on the app side (connector-protocol.md §9): the challenge
+// Proof of key on the app side (CONNECTOR.md §9): the challenge
 // rides on both request kinds and is kept verbatim, a `proof` request is
 // recognised, the bridge's two answers decode, and the wallet rule now lets
 // a Jade connect while every proof route tells it why it cannot prove yet.
