@@ -10,6 +10,12 @@ version to version.
 > publishes the release. The website's links (§ 2) then serve the new files
 > without anyone touching the site.
 
+> **Blocked until templarlib is tagged.** The workflows check out this
+> repository alone, while `apps/tui/Cargo.toml` and
+> `crates/wallet-ffi/Cargo.toml` still read the engine from a sibling
+> `../templarlib` checkout. No `ci` or `release` run can build until those
+> manifests name a tagged `git` release of the library.
+
 ---
 
 ## 1. Cut a release
@@ -39,15 +45,18 @@ version to version.
    `## [X.Y.Z]` (plain `## X.Y.Z` works too), and takes everything up to the
    next `## ` heading. Without a section the release says only "see
    CHANGELOG.md", and the run shows a warning.
-4. **Update `docs/RELEASE_NOTES.md`.** It ships inside the Linux tarball and
-   the Windows zip and installer as `README.md`; check that its install steps
-   and file names still match § 2.
+4. **Update `INSTALL.md`** (and `INSTALL.it.md`). `INSTALL.md` ships inside
+   the Linux tarball and the Windows zip and installer as `README.md`; check
+   that its install steps and file names still match § 2.
 5. **Run the checks** CI will run (`.github/workflows/ci.yml`):
    ```bash
    cargo fmt --all -- --check
-   cargo clippy --locked -p templar-core -p wallet-ffi --all-targets -- -D warnings
-   cargo test --locked -p templar-core -p wallet-ffi
-   cd apps/gui && flutter analyze && flutter test
+   cargo clippy --locked --workspace --all-targets -- -D warnings
+   cargo test --locked --workspace
+   cd apps/gui
+   flutter pub get --enforce-lockfile
+   flutter analyze --fatal-infos --fatal-warnings
+   flutter test
    ```
    CI runs clippy with the Rust version pinned in the workflows
    (`RUST_TOOLCHAIN`); run it with that one, since a newer clippy may know
@@ -329,8 +338,9 @@ version=0.1.0
 data_dir=%APPDATA%\templar_wallet
 ```
 
-`wallet-ffi` reads it **once**, on the first run of a fresh install, when it
-has no config of its own yet (`AppState`, `templarlib/crates/templarlib/src/state.rs`).
+The engine reads it **once**, on the first run of a fresh install, when it
+has no config of its own yet (`AppState` in templarlib,
+`crates/templarlib/src/state.rs`).
 After that the app records the location in `templar_wallet.json` and stops
 consulting the file, so a later reinstall can never redirect an existing user
 away from the wallets they already have. Precedence, highest first:
@@ -357,15 +367,15 @@ upgrade proposes the same one.
 
 The DMG and the installer CI publishes are unsigned. macOS says "Apple could
 not verify…" and Windows SmartScreen "Windows protected your PC";
-`docs/RELEASE_NOTES.md` tells users the way past each. No code can remove
+`INSTALL.md` tells users the way past each. No code can remove
 these warnings: both need a paid identity certificate.
 
 | Platform | Requirement | Cost | Without it |
 |---|---|---|---|
-| macOS | **Developer ID Application** certificate from the Apple Developer Program, plus **notarization** | $99/year | "Apple could not verify… is free of malware." Opening takes the steps in RELEASE_NOTES.md. |
+| macOS | **Developer ID Application** certificate from the Apple Developer Program, plus **notarization** | $99/year | "Apple could not verify… is free of malware." Opening takes the steps in INSTALL.md. |
 | Windows | **Authenticode** signature: Azure Trusted Signing, or an OV certificate from a CA (§ 6b) | ~$120–400/year | SmartScreen: "Windows protected your PC" → *More info* → *Run anyway*. |
 
-Two things worth knowing before spending money:
+Three things worth knowing before spending money:
 
 - **macOS notarization is all-or-nothing, and it works.** Sign, notarize and
   staple, and the warning is gone for every user, offline.
@@ -509,7 +519,7 @@ Sign the app itself first, so it is trusted and not just its wrapper, then
 compile with signing enabled:
 
 ```powershell
-$rel = 'src\templar_wallet\build\windows\x64\runner\Release'
+$rel = 'apps\gui\build\windows\x64\runner\Release'
 Get-ChildItem $rel -Recurse -Include *.exe,*.dll | ForEach-Object {
   signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a $_.FullName
 }
@@ -562,7 +572,8 @@ files of a release only ever come from CI.
   28.2.13676358, cargo-ndk and the Rust targets when they are missing, and
   signs as described in § 4c.
 - **Linux and Windows** on someone else's PC, from a source zip:
-  `HELPER_BUILDS.md`. Step by step by hand: `LinuxBuild.md`, `WindowsBuild.md`.
+  `HELPER_BUILDS.md`. Step by step by hand: `MacOSBuild.md`, `LinuxBuild.md`,
+  `WindowsBuild.md`, `AndroidBuild.md`.
 
 ---
 
@@ -570,7 +581,7 @@ files of a release only ever come from CI.
 
 - [ ] `version:` in `apps/gui/pubspec.yaml` bumped, `+N` higher than the last release's
 - [ ] `CHANGELOG.md` has a `## [X.Y.Z] — date` section
-- [ ] `docs/RELEASE_NOTES.md` current: it ships in the bundles as `README.md`
+- [ ] `INSTALL.md` and `INSTALL.it.md` current: `INSTALL.md` ships in the bundles as `README.md`
 - [ ] `ci` green on `main`
 - [ ] tag `vX.Y.Z` pushed; the `release` run green; the release is *Latest* with seven files
 - [ ] the stable links download the new version; the files match `SHA256SUMS.txt`

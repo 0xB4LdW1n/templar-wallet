@@ -1,15 +1,16 @@
 # Templar Wallet — Windows Build Guide
 
 Builds two artifacts: the Rust FFI library (`wallet_ffi.dll`) and the Flutter
-desktop app (`templar_wallet.exe`). Assumes you cloned the repository and work
-at its root, where the workspace `Cargo.toml` lives. All commands are for
+desktop app (`templar_wallet.exe`). Read [`README.md`](README.md) first: the
+engine must be checked out beside this repository. Commands run from the
+wallet checkout's root, where the workspace `Cargo.toml` lives, in
 PowerShell.
 
 > Rather not do this by hand? `scripts/build_windows.cmd` checks and installs the
 > requirements and runs every step below: see `HELPER_BUILDS.md`. The published
 > installer and zip come from the `windows` job of
 > `.github/workflows/release.yml`, which runs these same steps and then Inno
-> Setup (`docs/build/RELEASE.md` § 5).
+> Setup ([`RELEASE.md`](RELEASE.md) § 5).
 
 ## 1. Requirements
 
@@ -32,7 +33,7 @@ Download and run `rustup-init.exe` from https://rustup.rs — accept the
 default `stable-x86_64-pc-windows-msvc` toolchain. Then verify:
 
 ```powershell
-rustc --version   # any recent stable (edition 2021)
+rustc --version   # see README.md, "Toolchains", for the version CI pins
 ```
 
 No OpenSSL/vcpkg setup is needed: on Windows the TLS stack uses the built-in
@@ -45,7 +46,7 @@ driver on Windows 10 or later.
 
 ### Flutter
 
-Requires **Flutter stable ≥ 3.44** (project pins Dart SDK `^3.12.0`).
+The version CI pins (see [`README.md`](README.md#toolchains)).
 
 ```powershell
 git clone https://github.com/flutter/flutter.git -b stable $env:USERPROFILE\flutter
@@ -66,28 +67,24 @@ cargo build --release -p wallet-ffi
 
 Output: `target\release\wallet_ffi.dll`
 
-Note: compiles ~500 crates (BDK, LWK, etc.) — first build takes several
-minutes. The workspace is only `templar-core` + `wallet-ffi`; the legacy egui
-desktop crate no longer exists.
+The first build compiles the whole engine (BDK, LWK and their dependencies)
+from `..\templarlib` and takes several minutes.
 
 ## 3. Build the Flutter app
 
 ```powershell
-cd src\templar_wallet
+cd apps\gui
 flutter pub get
 flutter build windows --release
 ```
-
-Localizations (`app_localizations.dart`) are generated automatically from
-`assets\l10n\` during the build — no manual `build_runner` step is needed.
 
 Output: `build\windows\x64\runner\Release\`
 
 ## 4. Bundle the FFI library
 
 On Windows the app loads the DLL by name (`wallet_ffi.dll`), resolved from
-the executable's directory (see `lib/bridge/ffi_wallet_bridge.dart`). Copy it
-next to the exe:
+the executable's directory (see `apps/gui/lib/bridge/ffi_wallet_bridge.dart`).
+Copy it next to the exe (from `apps\gui`):
 
 ```powershell
 Copy-Item ..\..\target\release\wallet_ffi.dll build\windows\x64\runner\Release\
@@ -115,12 +112,13 @@ Visual Studio, the target may also need the
 - **QR camera scanning** (`mobile_scanner`) has no Windows desktop
   implementation — the app builds and runs fine, but the "Scan QR" camera
   option is unavailable; use Paste/File import instead.
-- **Hardware wallets**: runtime hardware signing shells out to the `hwi`
-  binary. Optional — only needed if you use hardware-wallet features.
+- **Hardware wallets**: Ledger and Jade are driven in-process; Trezor,
+  Coldcard, KeepKey and BitBox go through the `hwi` binary, which the app
+  offers to download. Optional — only needed for those devices.
 - Wallet data defaults to `%APPDATA%\templar_wallet`. The installer lets the
   user put it elsewhere and records the choice in `install.conf` beside the
   executable; a build run straight out of the tree has no such file and always
-  uses the default. See `docs/build/RELEASE.md` § 5.
+  uses the default. See [`RELEASE.md`](RELEASE.md) § 5.
 - If `cargo build` errors with `link.exe not found`, the C++ workload is
   missing — rerun the Visual Studio Installer and add
   "Desktop development with C++".

@@ -1,8 +1,9 @@
 # Templar Wallet — Linux Build Guide
 
 Builds two artifacts: the Rust FFI library (`libwallet_ffi.so`) and the Flutter
-desktop app (`templar_wallet`). Assumes you cloned the repository and work
-at its root, where the workspace `Cargo.toml` lives.
+desktop app (`templar_wallet`). Read [`README.md`](README.md) first: the
+engine must be checked out beside this repository. Commands run from the
+wallet checkout's root, where the workspace `Cargo.toml` lives.
 
 > Building for someone else, or without installing anything? `scripts/build_linux.sh`
 > does all of this in a container: see `HELPER_BUILDS.md`. The published
@@ -43,19 +44,20 @@ comes back empty for a normal user. The app installs the rules for you — the
 hardware setup screen offers **Fix device permissions**, which writes the
 bundled HWI rules to `/etc/udev/rules.d/` behind one `pkexec` prompt and
 reloads udev. Replug the device afterwards, and log out and back in once so
-the `plugdev` group takes effect. See `apps/gui/assets/udev/README.md`.
+the `plugdev` group takes effect. See
+[`apps/gui/assets/udev/README.md`](../../apps/gui/assets/udev/README.md).
 
 ### Rust
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"
-rustc --version   # any recent stable (edition 2021)
+rustc --version   # see README.md, "Toolchains", for the version CI pins
 ```
 
 ### Flutter
 
-Requires **Flutter stable ≥ 3.44** (project pins Dart SDK `^3.12.0`).
+The version CI pins (see [`README.md`](README.md#toolchains)).
 
 ```bash
 git clone https://github.com/flutter/flutter.git -b stable ~/flutter
@@ -74,9 +76,8 @@ cargo build --release -p wallet-ffi
 
 Output: `target/release/libwallet_ffi.so`
 
-Note: this compiles ~500 crates (BDK, LWK, etc.) — first build takes several
-minutes. The workspace is only `templar-core` + `wallet-ffi`; the legacy egui
-desktop crate no longer exists.
+The first build compiles the whole engine (BDK, LWK and their dependencies)
+from `../templarlib` and takes several minutes.
 
 ## 3. Build the Flutter app
 
@@ -86,15 +87,13 @@ flutter pub get
 flutter build linux --release
 ```
 
-Localizations (`app_localizations.dart`) are generated automatically from
-`assets/l10n/` during the build — no manual `build_runner` step is needed.
-
 Output bundle: `build/linux/x64/release/bundle/`
 
 ## 4. Bundle the FFI library
 
 The app looks for `libwallet_ffi.so` in `<exe dir>/lib/` then `<exe dir>/`
-(see `lib/bridge/ffi_wallet_bridge.dart`). Copy it into the bundle:
+(see `apps/gui/lib/bridge/ffi_wallet_bridge.dart`). Copy it into the bundle
+(from `apps/gui`):
 
 ```bash
 cp ../../target/release/libwallet_ffi.so \
@@ -123,7 +122,7 @@ update-desktop-database ~/.local/share/applications
 xdg-mime default dev.templarwallet.templar_wallet.desktop x-scheme-handler/templar
 ```
 
-See `docs/guides/PROTOCOL_CONNECTOR.md`.
+See [`../guides/PROTOCOL_CONNECTOR.md`](../guides/PROTOCOL_CONNECTOR.md#url-scheme-registration).
 
 ## Notes & caveats
 
@@ -134,6 +133,7 @@ See `docs/guides/PROTOCOL_CONNECTOR.md`.
 - **QR camera scanning** (`mobile_scanner`) has no Linux desktop
   implementation — the app builds and runs fine, but the "Scan QR" camera
   option is unavailable; use Paste/File import instead.
-- **Hardware wallets**: runtime hardware signing shells out to the `hwi`
-  binary. Optional — only needed if you use hardware-wallet features.
+- **Hardware wallets**: Ledger and Jade are driven in-process; Trezor,
+  Coldcard, KeepKey and BitBox go through the `hwi` binary, which the app
+  offers to download. Optional — only needed for those devices.
 - Wallet data is stored under the XDG data dir (`~/.local/share/templar_wallet`).
