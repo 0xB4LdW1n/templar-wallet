@@ -13,7 +13,8 @@ Map<String, dynamic> decode(String raw) =>
 void main() {
   group('TxIo.fromJson', () {
     test('decodes a Bitcoin input with outpoint', () {
-      final io = TxIo.fromJson(decode('''
+      final io = TxIo.fromJson(
+        decode('''
         {
           "outpoint": "deadbeef:0",
           "address": "tb1qexample",
@@ -23,7 +24,8 @@ void main() {
           "ticker": null,
           "amount_display": null
         }
-      '''));
+      '''),
+      );
 
       expect(io.outpoint, 'deadbeef:0');
       expect(io.address, 'tb1qexample');
@@ -35,7 +37,8 @@ void main() {
     });
 
     test('decodes a Liquid change output without outpoint', () {
-      final io = TxIo.fromJson(decode('''
+      final io = TxIo.fromJson(
+        decode('''
         {
           "outpoint": null,
           "address": "tlq1qqexample",
@@ -45,7 +48,8 @@ void main() {
           "ticker": "L-BTC",
           "amount_display": "0.00004200 L-BTC"
         }
-      '''));
+      '''),
+      );
 
       expect(io.outpoint, isNull);
       expect(io.isChange, isTrue);

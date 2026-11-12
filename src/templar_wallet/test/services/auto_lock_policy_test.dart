@@ -5,14 +5,32 @@ void main() {
   final t0 = DateTime(2026, 9, 14, 12);
 
   test('locks once the chosen time away has passed', () {
-    expect(AutoLockPolicy.due(since: t0, now: t0.add(const Duration(seconds: 59)), seconds: 60), isFalse);
-    expect(AutoLockPolicy.due(since: t0, now: t0.add(const Duration(seconds: 60)), seconds: 60), isTrue);
+    expect(
+      AutoLockPolicy.due(
+        since: t0,
+        now: t0.add(const Duration(seconds: 59)),
+        seconds: 60,
+      ),
+      isFalse,
+    );
+    expect(
+      AutoLockPolicy.due(
+        since: t0,
+        now: t0.add(const Duration(seconds: 60)),
+        seconds: 60,
+      ),
+      isTrue,
+    );
   });
 
   test('"Immediately" locks on any return, "Never" never does', () {
     expect(AutoLockPolicy.due(since: t0, now: t0, seconds: 0), isTrue);
     expect(
-      AutoLockPolicy.due(since: t0, now: t0.add(const Duration(days: 30)), seconds: AutoLockPolicy.never),
+      AutoLockPolicy.due(
+        since: t0,
+        now: t0.add(const Duration(days: 30)),
+        seconds: AutoLockPolicy.never,
+      ),
       isFalse,
     );
   });

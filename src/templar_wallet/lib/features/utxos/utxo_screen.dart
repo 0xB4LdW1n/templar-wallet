@@ -38,8 +38,7 @@ class UtxoScreen extends StatefulWidget {
   State<UtxoScreen> createState() => _UtxoScreenState();
 }
 
-class _UtxoScreenState extends State<UtxoScreen>
-    with WidgetsBindingObserver {
+class _UtxoScreenState extends State<UtxoScreen> with WidgetsBindingObserver {
   static const _kViewModePref = 'pref_utxo_view_mode';
 
   late final WalletBridge _bridge = widget.bridge ?? walletBridge;
@@ -126,9 +125,7 @@ class _UtxoScreenState extends State<UtxoScreen>
   Future<void> _loadViewPref() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_kViewModePref);
-    final mode = UtxoViewMode.values
-        .where((m) => m.name == saved)
-        .firstOrNull;
+    final mode = UtxoViewMode.values.where((m) => m.name == saved).firstOrNull;
     if (mode != null && mounted) setState(() => _viewMode = mode);
   }
 
@@ -147,7 +144,11 @@ class _UtxoScreenState extends State<UtxoScreen>
       // Drop coins from the previous chain — an error card floating over
       // another chain's UTXOs would misattribute them.
       if (mounted) {
-        setState(() { _utxos = []; _loading = false; _error = e.toString(); });
+        setState(() {
+          _utxos = [];
+          _loading = false;
+          _error = e.toString();
+        });
       }
       return;
     }
@@ -185,8 +186,9 @@ class _UtxoScreenState extends State<UtxoScreen>
     final live = await store.listFor(walletId: walletId, chain: _chain);
     final stillPending = <PendingConsolidation>[];
     for (final p in live) {
-      final settled = utxos.any((u) =>
-          p.isSettledBy(u.outpoint) && u.state != UtxoState.unconfirmed);
+      final settled = utxos.any(
+        (u) => p.isSettledBy(u.outpoint) && u.state != UtxoState.unconfirmed,
+      );
       if (settled) {
         await store.remove(p.txid);
       } else {
@@ -206,9 +208,11 @@ class _UtxoScreenState extends State<UtxoScreen>
     if (pending.isEmpty) return utxos;
     final spent = <String>{for (final p in pending) ...p.inputs};
     return utxos
-        .where((u) =>
-            !spent.contains(u.outpoint) &&
-            !pending.any((p) => p.isSettledBy(u.outpoint)))
+        .where(
+          (u) =>
+              !spent.contains(u.outpoint) &&
+              !pending.any((p) => p.isSettledBy(u.outpoint)),
+        )
         .toList();
   }
 
@@ -221,13 +225,19 @@ class _UtxoScreenState extends State<UtxoScreen>
     if (_consolidateMode && _utxos[i].isFrozen && !_utxos[i].isSelected) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
-          content: Text('Frozen coins are not consolidated — unfreeze it first'),
-          behavior: SnackBarBehavior.floating,
-        ));
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Frozen coins are not consolidated — unfreeze it first',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       return;
     }
-    setState(() => _utxos[i] = _utxos[i].copyWith(isSelected: !_utxos[i].isSelected));
+    setState(
+      () => _utxos[i] = _utxos[i].copyWith(isSelected: !_utxos[i].isSelected),
+    );
   }
 
   bool _freezing = false;
@@ -251,20 +261,26 @@ class _UtxoScreenState extends State<UtxoScreen>
       final what = n == 1 ? '1 coin' : '$n coins';
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(
-          content: Text(frozen
-              ? 'Froze $what — the wallet will not spend ${n == 1 ? 'it' : 'them'}'
-              : 'Unfroze $what'),
-          behavior: SnackBarBehavior.floating,
-        ));
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              frozen
+                  ? 'Froze $what — the wallet will not spend ${n == 1 ? 'it' : 'them'}'
+                  : 'Unfroze $what',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       _clearSelection();
       await _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Could not ${frozen ? 'freeze' : 'unfreeze'}: $e'),
-        behavior: SnackBarBehavior.floating,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not ${frozen ? 'freeze' : 'unfreeze'}: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _freezing = false);
     }
@@ -281,7 +297,9 @@ class _UtxoScreenState extends State<UtxoScreen>
       _selected.isNotEmpty && _selected.every((u) => u.isFrozen);
 
   void _clearSelection() {
-    setState(() => _utxos = _utxos.map((u) => u.copyWith(isSelected: false)).toList());
+    setState(
+      () => _utxos = _utxos.map((u) => u.copyWith(isSelected: false)).toList(),
+    );
   }
 
   Future<void> _tagSelected() async {
@@ -293,11 +311,15 @@ class _UtxoScreenState extends State<UtxoScreen>
     final label = await showAppDialog<String>(
       context,
       builder: (ctx) => AppDialog(
-        title: Text('Tag ${selected.length} UTXO${selected.length == 1 ? '' : 's'}'),
+        title: Text(
+          'Tag ${selected.length} UTXO${selected.length == 1 ? '' : 's'}',
+        ),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'Label (leave empty to clear)'),
+          decoration: const InputDecoration(
+            hintText: 'Label (leave empty to clear)',
+          ),
           onSubmitted: (v) => Navigator.of(ctx).pop(v),
         ),
         // On a phone this dialog is a bottom sheet, and its two actions are
@@ -315,7 +337,10 @@ class _UtxoScreenState extends State<UtxoScreen>
                 ),
               ]
             : [
-                TextButton(onPressed: () => Navigator.of(ctx).pop(null), child: const Text('Cancel')),
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(null),
+                  child: const Text('Cancel'),
+                ),
                 ElevatedButton(
                   onPressed: () => Navigator.of(ctx).pop(controller.text),
                   child: const Text('Save'),
@@ -364,7 +389,9 @@ class _UtxoScreenState extends State<UtxoScreen>
 
   /// Only spendable coins can be consolidated.
   List<Utxo> get _spendableSelected => _selected
-      .where((u) => u.state == UtxoState.available || u.state == UtxoState.dusty)
+      .where(
+        (u) => u.state == UtxoState.available || u.state == UtxoState.dusty,
+      )
       .toList();
 
   /// Fee presets per chain. Liquid fees are near-flat and tiny; BTC varies.
@@ -381,7 +408,9 @@ class _UtxoScreenState extends State<UtxoScreen>
         ];
 
   double get _feeRate {
-    if (_feePreset == 'custom') return double.tryParse(_customFeeCtrl.text.trim()) ?? 0;
+    if (_feePreset == 'custom') {
+      return double.tryParse(_customFeeCtrl.text.trim()) ?? 0;
+    }
     return _feePresets.firstWhere((p) => p.$1 == _feePreset).$4;
   }
 
@@ -419,7 +448,8 @@ class _UtxoScreenState extends State<UtxoScreen>
         walletId: walletId,
         unsignedPsbt: unsigned,
         title: 'Consolidate coins',
-        summary: 'Merging ${merged.length} coins into a single new coin of '
+        summary:
+            'Merging ${merged.length} coins into a single new coin of '
             'this wallet, minus the fee.',
       );
       // Cancelled at the review or the signature: nothing was broadcast, and
@@ -463,7 +493,12 @@ class _UtxoScreenState extends State<UtxoScreen>
       );
       _load();
     } catch (e) {
-      if (mounted) setState(() { _sending = false; _consolidateError = e.toString(); });
+      if (mounted) {
+        setState(() {
+          _sending = false;
+          _consolidateError = e.toString();
+        });
+      }
     }
   }
 
@@ -488,10 +523,10 @@ class _UtxoScreenState extends State<UtxoScreen>
 
   /// "UTXOs", with what is pending and what is frozen when there is any.
   String get _countLabel => [
-        'UTXOs',
-        if (_pendingCount > 0) '$_pendingCount pending',
-        if (_frozenCount > 0) '$_frozenCount frozen',
-      ].join(' · ');
+    'UTXOs',
+    if (_pendingCount > 0) '$_pendingCount pending',
+    if (_frozenCount > 0) '$_frozenCount frozen',
+  ].join(' · ');
 
   /// UTXOs ordered for the table view by the active sort column. Coins that
   /// have not confirmed lead whatever the sort: they are the newest thing
@@ -499,9 +534,9 @@ class _UtxoScreenState extends State<UtxoScreen>
   List<int> get _sortedIndices {
     final idx = List<int>.generate(_utxos.length, (i) => i);
     int cmp(Utxo a, Utxo b) => switch (_sortBy) {
-          'label' => (a.label ?? '').compareTo(b.label ?? ''),
-          _ => a.amount.compareTo(b.amount),
-        };
+      'label' => (a.label ?? '').compareTo(b.label ?? ''),
+      _ => a.amount.compareTo(b.amount),
+    };
     idx.sort((a, b) {
       final ua = _utxos[a];
       final ub = _utxos[b];
@@ -614,8 +649,13 @@ class _UtxoScreenState extends State<UtxoScreen>
   Widget _listView() {
     final s = AppScheme.of(context);
 
-    Widget headerCell(String label, String? by,
-        {int? flex, double? width, TextAlign align = TextAlign.left}) {
+    Widget headerCell(
+      String label,
+      String? by, {
+      int? flex,
+      double? width,
+      TextAlign align = TextAlign.left,
+    }) {
       final active = by != null && _sortBy == by;
       final main = align == TextAlign.right
           ? MainAxisAlignment.end
@@ -671,9 +711,12 @@ class _UtxoScreenState extends State<UtxoScreen>
             // 44 dp, not 54: a chip is not a button, and the list below is
             // the thing this row is meant to serve.
             constraints: const BoxConstraints(
-                minHeight: AppLayout.minTouchTarget - 4),
+              minHeight: AppLayout.minTouchTarget - 4,
+            ),
             padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
             decoration: BoxDecoration(
               // Filled in both states — inset grey at rest, accent wash when
               // active. No hairline: nothing else on the phone has one.
@@ -709,7 +752,12 @@ class _UtxoScreenState extends State<UtxoScreen>
       children: [
         if (phone)
           Padding(
-            padding: EdgeInsets.fromLTRB(pad, AppSpacing.md, pad, AppSpacing.sm),
+            padding: EdgeInsets.fromLTRB(
+              pad,
+              AppSpacing.md,
+              pad,
+              AppSpacing.sm,
+            ),
             child: Row(
               children: [
                 Text(
@@ -730,31 +778,42 @@ class _UtxoScreenState extends State<UtxoScreen>
             ),
           )
         else
-        // Column header — floats above the card stack, no chrome around it.
-        Padding(
-          padding: EdgeInsets.fromLTRB(
+          // Column header — floats above the card stack, no chrome around it.
+          Padding(
+            padding: EdgeInsets.fromLTRB(
               pad + AppSpacing.lg,
               AppSpacing.lg,
               pad + AppSpacing.lg,
-              AppSpacing.sm),
-          child: Row(
-            children: [
-              // Mirrors CoinRow's desktop columns exactly (CoinColumns), plus
-              // the card's own hairline border.
-              const SizedBox(width: CoinColumns.textInset - AppSpacing.lg + 1),
-              headerCell('COIN', 'label'),
-              const SizedBox(width: AppSpacing.md),
-              headerCell('STATE', null, width: CoinColumns.state),
-              // Share orders the same way amount does; one arrow, not two.
-              headerCell('SHARE', null,
-                  width: CoinColumns.share, align: TextAlign.right),
-              const SizedBox(width: AppSpacing.lg),
-              headerCell('AMOUNT', 'amount',
-                  width: CoinColumns.amount, align: TextAlign.right),
-              const SizedBox(width: AppSpacing.sm + CoinColumns.info + 1),
-            ],
+              AppSpacing.sm,
+            ),
+            child: Row(
+              children: [
+                // Mirrors CoinRow's desktop columns exactly (CoinColumns), plus
+                // the card's own hairline border.
+                const SizedBox(
+                  width: CoinColumns.textInset - AppSpacing.lg + 1,
+                ),
+                headerCell('COIN', 'label'),
+                const SizedBox(width: AppSpacing.md),
+                headerCell('STATE', null, width: CoinColumns.state),
+                // Share orders the same way amount does; one arrow, not two.
+                headerCell(
+                  'SHARE',
+                  null,
+                  width: CoinColumns.share,
+                  align: TextAlign.right,
+                ),
+                const SizedBox(width: AppSpacing.lg),
+                headerCell(
+                  'AMOUNT',
+                  'amount',
+                  width: CoinColumns.amount,
+                  align: TextAlign.right,
+                ),
+                const SizedBox(width: AppSpacing.sm + CoinColumns.info + 1),
+              ],
+            ),
           ),
-        ),
         Expanded(
           child: ListView(
             padding: EdgeInsets.fromLTRB(pad, 0, pad, AppSpacing.xl),
@@ -813,10 +872,12 @@ class _UtxoScreenState extends State<UtxoScreen>
   Widget build(BuildContext context) {
     // A chain the wallet lacks stays on the switch, dimmed: asking the bridge
     // for its coins only yields a "wallet not open" error.
-    final liquidEnabled =
-        context.select<AppState, bool>((st) => st.activeWalletLiquid);
-    final bitcoinEnabled =
-        context.select<AppState, bool>((st) => st.activeWalletBitcoin);
+    final liquidEnabled = context.select<AppState, bool>(
+      (st) => st.activeWalletLiquid,
+    );
+    final bitcoinEnabled = context.select<AppState, bool>(
+      (st) => st.activeWalletBitcoin,
+    );
     final phone = AppLayout.isPhone(context);
     final chainSwitch = ChainSwitch<String>(
       selected: _chain,
@@ -829,162 +890,175 @@ class _UtxoScreenState extends State<UtxoScreen>
     return Scaffold(
       body: PageBackground.flat(
         child: Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-            child: Column(
-              // Phone: the header stacks its actions under the title, and a
-              // Column with the default centre alignment would centre that
-              // narrower block in the page — stretch pins it left.
-              crossAxisAlignment: phone
-                  ? CrossAxisAlignment.stretch
-                  : CrossAxisAlignment.center,
-              children: [
-                PageHeader(
-                  title: 'UTXOs',
-                  // The carousel already names the screen on a phone.
-                  subtitle: phone ? null : 'Coin control',
-                  actions: [
-                    // Owns its 48 dp hit area on a phone.
-                    const PrivacyToggle(),
-                    // Which chain's coins are on screen — the single most
-                    // consequential control here, so it is the last thing
-                    // top-right, always present, in the chain's own colour.
-                    chainSwitch,
-                    // Phone: the Notes/List switch is an icon toggle beside
-                    // the chain switch; the stats row below has no room for
-                    // the labelled one.
-                    if (phone)
-                      _ViewToggle(mode: _viewMode, onChanged: _setViewMode),
-                  ],
-                ),
-                if (phone) ...[
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _StatTile(
-                          label: _countLabel,
-                          value: '${_utxos.length}',
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: _StatTile(
-                            label: 'Selected', value: '${_selected.length}'),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        flex: 2,
-                        child: _StatTile(
-                          label: 'Selected total',
-                          value: maskAmount(
-                              context, _formatSats(_selectedTotal)),
-                        ),
-                      ),
+          children: [
+            Padding(
+              padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+              child: Column(
+                // Phone: the header stacks its actions under the title, and a
+                // Column with the default centre alignment would centre that
+                // narrower block in the page — stretch pins it left.
+                crossAxisAlignment: phone
+                    ? CrossAxisAlignment.stretch
+                    : CrossAxisAlignment.center,
+                children: [
+                  PageHeader(
+                    title: 'UTXOs',
+                    // The carousel already names the screen on a phone.
+                    subtitle: phone ? null : 'Coin control',
+                    actions: [
+                      // Owns its 48 dp hit area on a phone.
+                      const PrivacyToggle(),
+                      // Which chain's coins are on screen — the single most
+                      // consequential control here, so it is the last thing
+                      // top-right, always present, in the chain's own colour.
+                      chainSwitch,
+                      // Phone: the Notes/List switch is an icon toggle beside
+                      // the chain switch; the stats row below has no room for
+                      // the labelled one.
+                      if (phone)
+                        _ViewToggle(mode: _viewMode, onChanged: _setViewMode),
                     ],
                   ),
-                  // Consolidation acts on the coins below. BTC-only — the
-                  // backend rejects it for Liquid. Hidden while selecting:
-                  // the bar at the foot owns the mode then, and the coins
-                  // need the room.
-                  if (_chain != 'Liquid' && !_consolidateMode) ...[
-                    const SizedBox(height: AppSpacing.md),
-                    PrimaryButton(
-                      label: 'Consolidate',
-                      icon: Icons.compress,
-                      isFullWidth: true,
-                      onPressed: _utxos.isEmpty ? null : _enterConsolidate,
-                    ),
-                  ],
-                ] else
-                // Stats, the coin action, and the view toggle
-                Row(
-                  children: [
-                    _StatBox(
-                      label: _countLabel,
-                      value: '${_utxos.length}',
-                    ),
-                    const SizedBox(width: AppSpacing.lg),
-                    _StatBox(label: 'Selected', value: '${_selected.length}'),
-                    const SizedBox(width: AppSpacing.lg),
-                    _StatBox(
-                        label: 'Selected total',
-                        value: maskAmount(context, _formatSats(_selectedTotal))),
-                    const Spacer(),
-                    // Consolidation acts on the coins below, so it lives on
-                    // their row, not in the page header. BTC-only — the
-                    // backend rejects it for Liquid.
-                    if (_chain != 'Liquid') ...[
-                      // Enters inline consolidate mode — select coins in place.
-                      PrimaryButton(
-                        label: 'Consolidate',
-                        icon: Icons.compress,
-                        onPressed: _utxos.isEmpty || _consolidateMode
-                            ? null
-                            : _enterConsolidate,
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                    ],
-                    SegmentedSwitch<UtxoViewMode>(
-                      selected: _viewMode,
-                      onChanged: _setViewMode,
-                      options: const [
-                        SegOption(
-                          value: UtxoViewMode.notes,
-                          label: 'Notes',
-                          icon: Icons.payments_outlined,
-                          tooltip: 'Coins sized as banknotes',
+                  if (phone) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _StatTile(
+                            label: _countLabel,
+                            value: '${_utxos.length}',
+                          ),
                         ),
-                        SegOption(
-                          value: UtxoViewMode.list,
-                          label: 'List',
-                          icon: Icons.view_list_outlined,
-                          tooltip: 'Sortable table',
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: _StatTile(
+                            label: 'Selected',
+                            value: '${_selected.length}',
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          flex: 2,
+                          child: _StatTile(
+                            label: 'Selected total',
+                            value: maskAmount(
+                              context,
+                              _formatSats(_selectedTotal),
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ],
+                    // Consolidation acts on the coins below. BTC-only — the
+                    // backend rejects it for Liquid. Hidden while selecting:
+                    // the bar at the foot owns the mode then, and the coins
+                    // need the room.
+                    if (_chain != 'Liquid' && !_consolidateMode) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      PrimaryButton(
+                        label: 'Consolidate',
+                        icon: Icons.compress,
+                        isFullWidth: true,
+                        onPressed: _utxos.isEmpty ? null : _enterConsolidate,
+                      ),
+                    ],
+                  ] else
+                    // Stats, the coin action, and the view toggle
+                    Row(
+                      children: [
+                        _StatBox(label: _countLabel, value: '${_utxos.length}'),
+                        const SizedBox(width: AppSpacing.lg),
+                        _StatBox(
+                          label: 'Selected',
+                          value: '${_selected.length}',
+                        ),
+                        const SizedBox(width: AppSpacing.lg),
+                        _StatBox(
+                          label: 'Selected total',
+                          value: maskAmount(
+                            context,
+                            _formatSats(_selectedTotal),
+                          ),
+                        ),
+                        const Spacer(),
+                        // Consolidation acts on the coins below, so it lives on
+                        // their row, not in the page header. BTC-only — the
+                        // backend rejects it for Liquid.
+                        if (_chain != 'Liquid') ...[
+                          // Enters inline consolidate mode — select coins in place.
+                          PrimaryButton(
+                            label: 'Consolidate',
+                            icon: Icons.compress,
+                            onPressed: _utxos.isEmpty || _consolidateMode
+                                ? null
+                                : _enterConsolidate,
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                        ],
+                        SegmentedSwitch<UtxoViewMode>(
+                          selected: _viewMode,
+                          onChanged: _setViewMode,
+                          options: const [
+                            SegOption(
+                              value: UtxoViewMode.notes,
+                              label: 'Notes',
+                              icon: Icons.payments_outlined,
+                              tooltip: 'Coins sized as banknotes',
+                            ),
+                            SegOption(
+                              value: UtxoViewMode.list,
+                              label: 'List',
+                              icon: Icons.view_list_outlined,
+                              tooltip: 'Sortable table',
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                ],
+              ),
             ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? _LoadError(
-                        message: _error!,
-                        onRetry: () {
-                          setState(() { _loading = true; _error = null; });
-                          _load();
-                        },
-                      )
-                    : _utxos.isEmpty
-                        ? (phone
-                            ? const _EmptyCoins()
-                            : Center(
-                                child: Text('No UTXOs found',
-                                    style: AppTypography.caption),
-                              ))
-                        : switch (_viewMode) {
-                            UtxoViewMode.notes => _notesView(),
-                            UtxoViewMode.list => _listView(),
-                          },
-          ),
-          if (_consolidateMode)
-            _buildConsolidateBar()
-          else if (_selected.isNotEmpty)
-            _BottomActionBar(
-              selectedCount: _selected.length,
-              allFrozen: _selectionAllFrozen,
-              busy: _freezing,
-              onTag: _tagSelected,
-              onFreeze: () =>
-                  _setFrozen(_selected, frozen: !_selectionAllFrozen),
-              onClear: _clearSelection,
+            const Divider(height: 1),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                  ? _LoadError(
+                      message: _error!,
+                      onRetry: () {
+                        setState(() {
+                          _loading = true;
+                          _error = null;
+                        });
+                        _load();
+                      },
+                    )
+                  : _utxos.isEmpty
+                  ? (phone
+                        ? const _EmptyCoins()
+                        : Center(
+                            child: Text(
+                              'No UTXOs found',
+                              style: AppTypography.caption,
+                            ),
+                          ))
+                  : switch (_viewMode) {
+                      UtxoViewMode.notes => _notesView(),
+                      UtxoViewMode.list => _listView(),
+                    },
             ),
-        ],
+            if (_consolidateMode)
+              _buildConsolidateBar()
+            else if (_selected.isNotEmpty)
+              _BottomActionBar(
+                selectedCount: _selected.length,
+                allFrozen: _selectionAllFrozen,
+                busy: _freezing,
+                onTag: _tagSelected,
+                onFreeze: () =>
+                    _setFrozen(_selected, frozen: !_selectionAllFrozen),
+                onClear: _clearSelection,
+              ),
+          ],
         ),
       ),
     );
@@ -1022,13 +1096,19 @@ class _UtxoScreenState extends State<UtxoScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: AppTypography.label.copyWith(
-                        color: active ? s.accent : s.ink,
-                        fontWeight: FontWeight.w700,
-                      )),
-                  Text(rate.isEmpty ? sub : '$sub · $rate sat/vB',
-                      style: AppTypography.caption.copyWith(color: s.inkSecondary)),
+                  Text(
+                    label,
+                    style: AppTypography.label.copyWith(
+                      color: active ? s.accent : s.ink,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    rate.isEmpty ? sub : '$sub · $rate sat/vB',
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1069,7 +1149,9 @@ class _UtxoScreenState extends State<UtxoScreen>
               width: 200,
               child: TextField(
                 controller: _customFeeCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 onChanged: (_) => setState(() {}),
                 decoration: const InputDecoration(
                   isDense: true,
@@ -1082,8 +1164,10 @@ class _UtxoScreenState extends State<UtxoScreen>
           ],
           const SizedBox(height: AppSpacing.md),
           if (_consolidateError != null) ...[
-            Text(_consolidateError!,
-                style: AppTypography.caption.copyWith(color: AppColors.danger)),
+            Text(
+              _consolidateError!,
+              style: AppTypography.caption.copyWith(color: AppColors.danger),
+            ),
             const SizedBox(height: AppSpacing.sm),
           ],
           Row(
@@ -1093,8 +1177,10 @@ class _UtxoScreenState extends State<UtxoScreen>
                   count < 2
                       ? 'Select at least 2 UTXOs to consolidate'
                       : '$count UTXOs · ${_formatSats(total)} '
-                          '· estimated fee ≈$_estFeeSats sats',
-                  style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+                            '· estimated fee ≈$_estFeeSats sats',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: s.inkSecondary,
+                  ),
                 ),
               ),
               GhostButton(
@@ -1143,10 +1229,13 @@ class _UtxoScreenState extends State<UtxoScreen>
               duration: const Duration(milliseconds: 150),
               // 42 dp inside the track's 3 dp padding — a 48 dp control.
               constraints: const BoxConstraints(
-                  minHeight: AppLayout.minTouchTarget - 6),
+                minHeight: AppLayout.minTouchTarget - 6,
+              ),
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.xs, vertical: AppSpacing.sm),
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.sm,
+              ),
               decoration: BoxDecoration(
                 // A pill sliding inside the track, not a ringed chip: the
                 // 2 px accent border used to be the loudest thing in the bar.
@@ -1170,8 +1259,8 @@ class _UtxoScreenState extends State<UtxoScreen>
 
     final detail = isCustom
         ? (_feeRate > 0
-            ? 'Custom · $_feeRate sat/vB · tap Custom to change'
-            : 'Custom · tap Custom to enter a rate')
+              ? 'Custom · $_feeRate sat/vB · tap Custom to change'
+              : 'Custom · tap Custom to enter a rate')
         : () {
             final p = _feePresets.firstWhere((p) => p.$1 == _feePreset);
             return '${p.$3} · ${p.$4} sat/vB';
@@ -1198,8 +1287,11 @@ class _UtxoScreenState extends State<UtxoScreen>
             child: Row(
               children: [
                 for (var i = 0; i < _feePresets.length; i++)
-                  chip(_feePresets[i].$1, _feePresets[i].$2,
-                      () => setState(() => _feePreset = _feePresets[i].$1)),
+                  chip(
+                    _feePresets[i].$1,
+                    _feePresets[i].$2,
+                    () => setState(() => _feePreset = _feePresets[i].$1),
+                  ),
                 chip('custom', 'Custom', _editCustomFee),
               ],
             ),
@@ -1213,17 +1305,19 @@ class _UtxoScreenState extends State<UtxoScreen>
           ),
           const SizedBox(height: AppSpacing.sm),
           if (_consolidateError != null) ...[
-            Text(_consolidateError!,
-                style: AppTypography.caption.copyWith(color: AppColors.danger),
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis),
+            Text(
+              _consolidateError!,
+              style: AppTypography.caption.copyWith(color: AppColors.danger),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
             const SizedBox(height: AppSpacing.sm),
           ],
           Text(
             count < 2
                 ? 'Select at least 2 UTXOs to consolidate'
                 : '$count UTXOs · ${_formatSats(total)} '
-                    '· estimated fee ≈$_estFeeSats sats',
+                      '· estimated fee ≈$_estFeeSats sats',
             style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -1289,8 +1383,9 @@ class _UtxoScreenState extends State<UtxoScreen>
             TextField(
               controller: _customFeeCtrl,
               autofocus: true,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(
                 hintText: '3.0',
                 suffixText: 'sat/vB',
@@ -1360,8 +1455,11 @@ class _ViewToggle extends StatelessWidget {
                   color: selected ? s.accentSoft : Colors.transparent,
                   borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                 ),
-                child: Icon(icon,
-                    size: 20, color: selected ? s.accent : s.inkSecondary),
+                child: Icon(
+                  icon,
+                  size: 20,
+                  color: selected ? s.accent : s.inkSecondary,
+                ),
               ),
             ),
           ),
@@ -1402,7 +1500,9 @@ class _StatTile extends StatelessWidget {
     final s = AppScheme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, vertical: AppSpacing.md),
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.md,
+      ),
       decoration: BoxDecoration(
         // Filled inset grey, no hairline — a phone reads the tile from its
         // fill, and a border here would re-create the shrunken desktop box.
@@ -1430,8 +1530,10 @@ class _StatTile extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Text(
               value,
-              style: AppTypography.numeric
-                  .copyWith(color: s.ink, fontWeight: FontWeight.w700),
+              style: AppTypography.numeric.copyWith(
+                color: s.ink,
+                fontWeight: FontWeight.w700,
+              ),
               maxLines: 1,
             ),
           ),
@@ -1488,33 +1590,36 @@ class _LoadError extends StatelessWidget {
         // Keeps the card off the screen edges on a phone; the centred 480 dp
         // card on desktop never reaches the padding.
         padding: EdgeInsets.symmetric(
-            horizontal: AppSpacing.pagePadding(context)),
-        child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: GlassCard(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.error_outline_rounded, size: 40, color: s.danger),
-              const SizedBox(height: AppSpacing.md),
-              Text('Could not load UTXOs', style: AppTypography.sectionTitle),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                message,
-                style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              // Full-bleed on a phone, like every other phone CTA; the
-              // desktop card keeps its intrinsically-sized button.
-              PrimaryButton(
-                label: 'Retry',
-                isFullWidth: AppLayout.isPhone(context),
-                onPressed: onRetry,
-              ),
-            ],
-          ),
+          horizontal: AppSpacing.pagePadding(context),
         ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: GlassCard(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.error_outline_rounded, size: 40, color: s.danger),
+                const SizedBox(height: AppSpacing.md),
+                Text('Could not load UTXOs', style: AppTypography.sectionTitle),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  message,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: s.inkSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                // Full-bleed on a phone, like every other phone CTA; the
+                // desktop card keeps its intrinsically-sized button.
+                PrimaryButton(
+                  label: 'Retry',
+                  isFullWidth: AppLayout.isPhone(context),
+                  onPressed: onRetry,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1532,11 +1637,17 @@ class _StatBox extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: AppTypography.caption.copyWith(color: s.inkSecondary)),
-        Text(value,
-            style: AppTypography.numericLarge
-                .copyWith(fontSize: 18, color: s.ink)),
+        Text(
+          label,
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+        ),
+        Text(
+          value,
+          style: AppTypography.numericLarge.copyWith(
+            fontSize: 18,
+            color: s.ink,
+          ),
+        ),
       ],
     );
   }
@@ -1587,8 +1698,9 @@ class _BottomActionBar extends StatelessWidget {
     // every other button on the phone.
     return Container(
       padding: EdgeInsets.symmetric(
-          horizontal: AppSpacing.pagePadding(context),
-          vertical: phone ? AppSpacing.md : AppSpacing.lg),
+        horizontal: AppSpacing.pagePadding(context),
+        vertical: phone ? AppSpacing.md : AppSpacing.lg,
+      ),
       decoration: BoxDecoration(
         color: s.surfaceSolid,
         border: Border(top: BorderSide(color: s.edge)),
@@ -1607,9 +1719,13 @@ class _BottomActionBar extends StatelessWidget {
             )
           : Row(
               children: [
-                Text('$selectedCount selected',
-                    style: AppTypography.numericSmall
-                        .copyWith(fontWeight: FontWeight.w600, color: s.ink)),
+                Text(
+                  '$selectedCount selected',
+                  style: AppTypography.numericSmall.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: s.ink,
+                  ),
+                ),
                 const SizedBox(width: AppSpacing.xl),
                 tag,
                 const SizedBox(width: AppSpacing.sm),

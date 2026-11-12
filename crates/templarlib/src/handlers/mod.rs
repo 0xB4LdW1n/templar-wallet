@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod bitcoin;
+pub mod cross_swaps;
 pub mod history;
 pub mod hw;
 pub mod liquid;

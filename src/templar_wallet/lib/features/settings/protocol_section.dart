@@ -105,10 +105,10 @@ class _ProtocolSectionState extends State<ProtocolSection> {
 
   /// The other network: the card offers the one move that exists.
   String? get _otherNetwork => switch (_info?.shortName) {
-        'testnet' => 'regtest',
-        'regtest' => 'testnet',
-        _ => null,
-      };
+    'testnet' => 'regtest',
+    'regtest' => 'testnet',
+    _ => null,
+  };
 
   Future<void> _changeNetwork() async {
     final info = _info;
@@ -157,8 +157,14 @@ class _ProtocolSectionState extends State<ProtocolSection> {
         title: 'Forget ${site.site}?',
         icon: Icons.link_off,
         actions: [
-          SecondaryButton(label: 'Cancel', onPressed: () => Navigator.pop(ctx, false)),
-          PrimaryButton(label: 'Forget', onPressed: () => Navigator.pop(ctx, true)),
+          SecondaryButton(
+            label: 'Cancel',
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          PrimaryButton(
+            label: 'Forget',
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
         ],
         child: Text(
           'This removes the record from this device'
@@ -190,8 +196,14 @@ class _ProtocolSectionState extends State<ProtocolSection> {
         title: 'Clear signing history?',
         icon: Icons.delete_outline,
         actions: [
-          SecondaryButton(label: 'Cancel', onPressed: () => Navigator.pop(ctx, false)),
-          PrimaryButton(label: 'Clear', onPressed: () => Navigator.pop(ctx, true)),
+          SecondaryButton(
+            label: 'Cancel',
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          PrimaryButton(
+            label: 'Clear',
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
         ],
         child: Text(
           'Removes this device\'s list of signing requests. The loans and the '
@@ -216,6 +228,7 @@ class _ProtocolSectionState extends State<ProtocolSection> {
   @override
   Widget build(BuildContext context) {
     final phone = AppLayout.isPhone(context);
+    final loansEnabled = context.watch<AppState>().loansEnabled;
     if (_loading) {
       return const Center(
         child: Padding(
@@ -232,13 +245,16 @@ class _ProtocolSectionState extends State<ProtocolSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (!phone) const PageHeader(title: 'Templar Protocol'),
-        _loansShortcut(),
-        const SizedBox(height: AppSpacing.lg),
+        if (loansEnabled) ...[
+          _loansShortcut(),
+          const SizedBox(height: AppSpacing.lg),
+        ],
         _status(),
         const SizedBox(height: AppSpacing.lg),
         ProtocolPasteCard(
           title: 'Open a request',
-          subtitle: 'A Templar Protocol site normally opens Templar by itself when you '
+          subtitle:
+              'A Templar Protocol site normally opens Templar by itself when you '
               'click its link. This is the fallback: paste the templar:// link, or '
               'scan the QR the loan page shows.',
           onOpen: _openLink,
@@ -255,21 +271,17 @@ class _ProtocolSectionState extends State<ProtocolSection> {
     );
   }
 
-  /// The way to the loans themselves, and the switch that puts them in the
-  /// main menu. This page is the connector's bookkeeping; what the loans are
-  /// doing is read on the Loans page, so it leads here rather than being
-  /// repeated below. The menu entry is opt-in: a wallet that takes no part
-  /// in loans keeps its navigation as it was.
+  /// The way to the loans themselves once Settings › Advanced has enabled
+  /// that optional feature. This page remains the connector's bookkeeping.
   Widget _loansShortcut() {
     final s = AppScheme.of(context);
     final withToken = _sites.where((x) => x.hasPortfolio).length;
     final subtitle = _sites.isEmpty
         ? 'Active loans, payments and pending signatures, once a site is connected'
         : withToken == 0
-            ? 'Reconnect a site to see its loans here'
-            : 'Active loans, payments and pending signatures from '
-                '$withToken connected site${withToken == 1 ? '' : 's'}';
-    final inMenu = context.select<AppState, bool>((st) => st.loansInMenu);
+        ? 'Reconnect a site to see its loans here'
+        : 'Active loans, payments and pending signatures from '
+              '$withToken connected site${withToken == 1 ? '' : 's'}';
     return ListCard(
       children: [
         ListRow(
@@ -280,20 +292,6 @@ class _ProtocolSectionState extends State<ProtocolSection> {
           subtitle: subtitle,
           chevron: true,
           onTap: () => context.go(AppRoutes.loans),
-        ),
-        ListRow(
-          icon: Icons.menu_open_rounded,
-          tint: s.inkSecondary,
-          title: 'Show Loans in the menu',
-          subtitle: inMenu
-              ? 'Beside the Dashboard, in the sidebar and the phone bar'
-              : 'Off: Loans opens from here and from the dashboard only',
-          trailing: ListSwitch(
-            key: const Key('protocol-loans-in-menu'),
-            value: inMenu,
-            onChanged: (v) => context.read<AppState>().setLoansInMenu(v),
-            semanticLabel: 'Show Loans in the menu',
-          ),
         ),
       ],
     );
@@ -343,7 +341,8 @@ class _ProtocolSectionState extends State<ProtocolSection> {
             const SizedBox(height: AppSpacing.lg),
             if (locked)
               const InfoBanner(
-                message: 'TEMPLAR_LIQUID_NETWORK fixes the network for this run '
+                message:
+                    'TEMPLAR_LIQUID_NETWORK fixes the network for this run '
                     'of the app. Unset the variable to change it here.',
               )
             else if (target != null) ...[
@@ -372,7 +371,8 @@ class _ProtocolSectionState extends State<ProtocolSection> {
     final s = AppScheme.of(context);
     return FormCard(
       title: 'Connected sites',
-      subtitle: 'Sites holding a watch-only view of one of your wallets. They '
+      subtitle:
+          'Sites holding a watch-only view of one of your wallets. They '
           'can see that wallet\'s Liquid balance and history and build loan '
           'transactions for it; they cannot spend.',
       child: _sites.isEmpty
@@ -396,7 +396,8 @@ class _ProtocolSectionState extends State<ProtocolSection> {
     final s = AppScheme.of(context);
     return FormCard(
       title: 'Signing history',
-      subtitle: 'The last ${ProtocolStore.historyLimit} requests answered from '
+      subtitle:
+          'The last ${ProtocolStore.historyLimit} requests answered from '
           'this device. What was signed is not kept here — no transaction, no '
           'amounts — only that it happened and how it ended.',
       trailing: _history.isEmpty
@@ -425,11 +426,13 @@ class _ProtocolSectionState extends State<ProtocolSection> {
 
   Widget _preferences() {
     final s = AppScheme.of(context);
-    final usable =
-        _wallets.where((w) => protocolWalletFits(w, connect: true)).toList();
+    final usable = _wallets
+        .where((w) => protocolWalletFits(w, connect: true))
+        .toList();
     return FormCard(
       title: 'Preferred wallet for Templar Protocol requests',
-      subtitle: 'The wallet a signing request is answered with, and the one '
+      subtitle:
+          'The wallet a signing request is answered with, and the one '
           'offered first when a site asks to connect. Every request still asks '
           'for your app password and the confirmation — this only saves the '
           'picking.',
@@ -451,7 +454,8 @@ class _ProtocolSectionState extends State<ProtocolSection> {
                 for (final w in usable)
                   _PreferenceRow(
                     label: w.name,
-                    detail: '${w.displayType} · ${w.networksLabel}'
+                    detail:
+                        '${w.displayType} · ${w.networksLabel}'
                         '${w.masterFingerprint != null ? ' · ${w.masterFingerprint}' : ''}',
                     selected: _preferredId == w.id,
                     onTap: () => _setPreferred(w.id),
@@ -466,7 +470,8 @@ class _ProtocolSectionState extends State<ProtocolSection> {
     return ExpanderCard(
       key: const Key('protocol-how-it-works'),
       title: 'How it works',
-      subtitle: 'What a connection shares, what a signature does, where the '
+      subtitle:
+          'What a connection shares, what a signature does, where the '
           'loan key lives.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,7 +479,8 @@ class _ProtocolSectionState extends State<ProtocolSection> {
           const _Step(
             n: 1,
             title: 'Connect shares a view, never a key',
-            body: 'The site receives the watch-only descriptor of the wallet you '
+            body:
+                'The site receives the watch-only descriptor of the wallet you '
                 'pick, its loan escrow key and one receive address. No secret '
                 'leaves this device.',
           ),
@@ -482,7 +488,8 @@ class _ProtocolSectionState extends State<ProtocolSection> {
           const _Step(
             n: 2,
             title: 'Sign shows both readings',
-            body: 'A signing request puts the site\'s summary next to the '
+            body:
+                'A signing request puts the site\'s summary next to the '
                 'wallet\'s own reading of the transaction. You sign after '
                 'comparing them; the signature goes to the site, which '
                 'broadcasts once every party has signed. Templar never '
@@ -492,19 +499,26 @@ class _ProtocolSectionState extends State<ProtocolSection> {
           const _Step(
             n: 3,
             title: 'The escrow key is its own account',
-            body: 'It lives at m/2121\'/1\'/0\', below your seed and apart from '
+            body:
+                'It lives at m/2121\'/1\'/0\', below your seed and apart from '
                 'the keys that hold your coins, so a loan contract can never '
                 'name a spending key of yours.',
           ),
           const SizedBox(height: AppSpacing.lg),
           HoverRow(
-            onTap: () => launchUrl(Uri.parse(kProtocolGuideUrl),
-                mode: LaunchMode.externalApplication),
+            onTap: () => launchUrl(
+              Uri.parse(kProtocolGuideUrl),
+              mode: LaunchMode.externalApplication,
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
               child: Row(
                 children: [
-                  Icon(Icons.menu_book_outlined, size: 18, color: s.inkSecondary),
+                  Icon(
+                    Icons.menu_book_outlined,
+                    size: 18,
+                    color: s.inkSecondary,
+                  ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: Text(
@@ -605,6 +619,7 @@ class _HistoryRow extends StatelessWidget {
     final colour = switch (record.outcome) {
       ProtocolSignOutcome.signed => s.liquid,
       ProtocolSignOutcome.refused => s.inkFaint,
+      ProtocolSignOutcome.cancelled => s.inkFaint,
       ProtocolSignOutcome.expired => s.inkFaint,
       ProtocolSignOutcome.failed => s.danger,
     };
@@ -673,9 +688,12 @@ class _PreferenceRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(label, style: AppTypography.body),
-                  Text(detail,
-                      style: AppTypography.caption
-                          .copyWith(color: s.inkSecondary)),
+                  Text(
+                    detail,
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -706,11 +724,13 @@ class _Step extends StatelessWidget {
             color: s.accent.withValues(alpha: 0.14),
             borderRadius: BorderRadius.circular(11),
           ),
-          child: Text('$n',
-              style: AppTypography.caption.copyWith(
-                color: s.accent,
-                fontWeight: FontWeight.w700,
-              )),
+          child: Text(
+            '$n',
+            style: AppTypography.caption.copyWith(
+              color: s.accent,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
         const SizedBox(width: AppSpacing.md),
         Expanded(
@@ -719,8 +739,10 @@ class _Step extends StatelessWidget {
             children: [
               Text(title, style: AppTypography.body),
               const SizedBox(height: 2),
-              Text(body,
-                  style: AppTypography.caption.copyWith(color: s.inkSecondary)),
+              Text(
+                body,
+                style: AppTypography.caption.copyWith(color: s.inkSecondary),
+              ),
             ],
           ),
         ),

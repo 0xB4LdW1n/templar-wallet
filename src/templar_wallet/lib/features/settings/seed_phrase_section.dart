@@ -49,7 +49,8 @@ class SeedRevealGate {
   /// Returns true when the caller may go on to read secret material.
   static Future<bool> open(BuildContext context) async {
     if (_inGrace) return true;
-    final ok = await showAppDialog<bool>(context,
+    final ok = await showAppDialog<bool>(
+      context,
       barrierDismissible: false,
       builder: (_) => const _AppPasswordGateDialog(),
     );
@@ -137,7 +138,8 @@ class SeedPhraseCard extends StatelessWidget {
       return;
     }
     if (!context.mounted) return;
-    await showAppDialog<void>(context,
+    await showAppDialog<void>(
+      context,
       builder: (_) => _SeedWordsDialog(words: words),
     );
   }
@@ -158,7 +160,8 @@ class SeedPhraseCard extends StatelessWidget {
       return;
     }
     if (!context.mounted) return;
-    await showAppDialog<void>(context,
+    await showAppDialog<void>(
+      context,
       builder: (_) => _PrivateKeyDialog(privateKey: key),
     );
   }
@@ -196,7 +199,8 @@ class SeedPhraseCard extends StatelessWidget {
             ],
           ),
           const _SectionNote(
-            text: 'Anyone with these words can spend your funds. Only use '
+            text:
+                'Anyone with these words can spend your funds. Only use '
                 'these tools in a private place.',
           ),
         ],
@@ -320,8 +324,9 @@ class _AppPasswordGateDialogState extends State<_AppPasswordGateDialog> {
           ? [
               GhostButton(
                 label: 'Cancel',
-                onPressed:
-                    _checking ? null : () => Navigator.of(context).pop(false),
+                onPressed: _checking
+                    ? null
+                    : () => Navigator.of(context).pop(false),
                 isFullWidth: true,
               ),
               PrimaryButton(
@@ -333,8 +338,9 @@ class _AppPasswordGateDialogState extends State<_AppPasswordGateDialog> {
             ]
           : [
               TextButton(
-                onPressed:
-                    _checking ? null : () => Navigator.of(context).pop(false),
+                onPressed: _checking
+                    ? null
+                    : () => Navigator.of(context).pop(false),
                 child: const Text('Cancel'),
               ),
               FilledButton(
@@ -356,8 +362,9 @@ class _AppPasswordGateDialogState extends State<_AppPasswordGateDialog> {
             'This is the password that encrypts wallet storage — the same one '
             'you enter when Templar starts. You are about to reveal secret key '
             'material.',
-            style: AppTypography.caption
-                .copyWith(color: phone ? s.inkSecondary : null),
+            style: AppTypography.caption.copyWith(
+              color: phone ? s.inkSecondary : null,
+            ),
           ),
           const SizedBox(height: AppSpacing.md),
           GlassPasswordField(
@@ -409,58 +416,59 @@ class _SeedWordsDialogState extends State<_SeedWordsDialog> {
     final phone = AppLayout.isPhone(context);
 
     Widget word(int i) => Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
-          ),
-          decoration: BoxDecoration(
-            // A phone reads the words out of the same inset grey every other
-            // data well is made of; the desktop keeps its raised chip.
-            color: phone ? s.panelInset : s.surfaceRaised,
-            borderRadius: BorderRadius.circular(
-              phone ? AppSpacing.radiusMd : AppSpacing.radiusSm,
-            ),
-            border: phone ? null : Border.all(color: s.edge),
-          ),
-          child: Text(
-            '${i + 1}. ${widget.words[i]}',
-            style: AppTypography.mono.copyWith(color: s.ink),
-          ),
-        );
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        // A phone reads the words out of the same inset grey every other
+        // data well is made of; the desktop keeps its raised chip.
+        color: phone ? s.panelInset : s.surfaceRaised,
+        borderRadius: BorderRadius.circular(
+          phone ? AppSpacing.radiusMd : AppSpacing.radiusSm,
+        ),
+        border: phone ? null : Border.all(color: s.edge),
+      ),
+      child: Text(
+        '${i + 1}. ${widget.words[i]}',
+        style: AppTypography.mono.copyWith(color: s.ink),
+      ),
+    );
 
     return AppDialog(
       title: const Text('Seed phrase'),
       content: SecureScreen(
-          child: SizedBox(
-        width: phone ? double.infinity : 420,
-        // Phone: two aligned columns. Chips that size to their own word land
-        // in ragged columns, which is the worst possible layout for the one
-        // thing this dialog is for — copying a phrase onto paper.
-        child: phone
-            ? LayoutBuilder(
-                builder: (context, c) {
-                  // Floored: two cells plus the gap must never round up past
-                  // the line, or the grid collapses to one column.
-                  final cell =
-                      ((c.maxWidth - AppSpacing.sm) / 2).floorToDouble();
-                  return Wrap(
-                    spacing: AppSpacing.sm,
-                    runSpacing: AppSpacing.sm,
-                    children: [
-                      for (var i = 0; i < widget.words.length; i++)
-                        SizedBox(width: cell, child: word(i)),
-                    ],
-                  );
-                },
-              )
-            : Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: [
-                  for (var i = 0; i < widget.words.length; i++) word(i),
-                ],
-              ),
-      )),
+        child: SizedBox(
+          width: phone ? double.infinity : 420,
+          // Phone: two aligned columns. Chips that size to their own word land
+          // in ragged columns, which is the worst possible layout for the one
+          // thing this dialog is for — copying a phrase onto paper.
+          child: phone
+              ? LayoutBuilder(
+                  builder: (context, c) {
+                    // Floored: two cells plus the gap must never round up past
+                    // the line, or the grid collapses to one column.
+                    final cell = ((c.maxWidth - AppSpacing.sm) / 2)
+                        .floorToDouble();
+                    return Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: AppSpacing.sm,
+                      children: [
+                        for (var i = 0; i < widget.words.length; i++)
+                          SizedBox(width: cell, child: word(i)),
+                      ],
+                    );
+                  },
+                )
+              : Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    for (var i = 0; i < widget.words.length; i++) word(i),
+                  ],
+                ),
+        ),
+      ),
       actions: [
         if (phone)
           GhostButton(
@@ -523,77 +531,77 @@ class _PrivateKeyDialogState extends State<_PrivateKeyDialog> {
     return AppDialog(
       title: const Text('Private key'),
       content: SecureScreen(
-          child: SizedBox(
-        width: phone ? double.infinity : 460,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.warning_amber_rounded,
-                  color: s.danger,
-                  size: 18,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    'Anyone with this key controls every coin in this wallet. '
-                    'Never share it or paste it online.',
-                    style: AppTypography.caption.copyWith(color: s.danger),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _KeyWell(
-              value: widget.privateKey,
-              revealed: _revealed,
-              onReveal: () => setState(() => _revealed = true),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            // Phone: beside the button the check-the-paste line gets about
-            // 150 dp and wraps to four ragged lines. Stacked, the button is a
-            // full-width bar and the line reads across the sheet.
-            if (phone) ...[
-              SecondaryButton(
-                label: _copied ? 'Copied' : 'Copy key',
-                icon: _copied ? Icons.check : Icons.copy,
-                onPressed: _copy,
-                isFullWidth: true,
-              ),
-              if (_copied) ...[
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Check the paste starts $_head… and ends …$_tail. '
-                  'The clipboard clears in ${SecretClipboard.ttl.inSeconds}s.',
-                  style:
-                      AppTypography.caption.copyWith(color: s.inkSecondary),
-                ),
-              ],
-            ] else
+        child: SizedBox(
+          width: phone ? double.infinity : 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Row(
                 children: [
-                  SecondaryButton(
-                    label: _copied ? 'Copied' : 'Copy key',
-                    icon: _copied ? Icons.check : Icons.copy,
-                    onPressed: _copy,
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  if (_copied)
-                    Expanded(
-                      child: Text(
-                        'Check the paste starts $_head… and ends …$_tail. '
-                        'The clipboard clears in ${SecretClipboard.ttl.inSeconds}s.',
-                        style: AppTypography.caption.copyWith(color: s.inkSecondary),
-                      ),
+                  Icon(Icons.warning_amber_rounded, color: s.danger, size: 18),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      'Anyone with this key controls every coin in this wallet. '
+                      'Never share it or paste it online.',
+                      style: AppTypography.caption.copyWith(color: s.danger),
                     ),
+                  ),
                 ],
               ),
-          ],
+              const SizedBox(height: AppSpacing.md),
+              _KeyWell(
+                value: widget.privateKey,
+                revealed: _revealed,
+                onReveal: () => setState(() => _revealed = true),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              // Phone: beside the button the check-the-paste line gets about
+              // 150 dp and wraps to four ragged lines. Stacked, the button is a
+              // full-width bar and the line reads across the sheet.
+              if (phone) ...[
+                SecondaryButton(
+                  label: _copied ? 'Copied' : 'Copy key',
+                  icon: _copied ? Icons.check : Icons.copy,
+                  onPressed: _copy,
+                  isFullWidth: true,
+                ),
+                if (_copied) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Check the paste starts $_head… and ends …$_tail. '
+                    'The clipboard clears in ${SecretClipboard.ttl.inSeconds}s.',
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
+                ],
+              ] else
+                Row(
+                  children: [
+                    SecondaryButton(
+                      label: _copied ? 'Copied' : 'Copy key',
+                      icon: _copied ? Icons.check : Icons.copy,
+                      onPressed: _copy,
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    if (_copied)
+                      Expanded(
+                        child: Text(
+                          'Check the paste starts $_head… and ends …$_tail. '
+                          'The clipboard clears in ${SecretClipboard.ttl.inSeconds}s.',
+                          style: AppTypography.caption.copyWith(
+                            color: s.inkSecondary,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+            ],
+          ),
         ),
-      )),
+      ),
       actions: [
         if (phone)
           GhostButton(
@@ -671,7 +679,9 @@ class _KeyWell extends StatelessWidget {
                           padding: const EdgeInsets.all(AppSpacing.md),
                           child: Text(
                             value,
-                            style: AppTypography.monoSmall.copyWith(color: s.ink),
+                            style: AppTypography.monoSmall.copyWith(
+                              color: s.ink,
+                            ),
                             maxLines: 3,
                           ),
                         ),

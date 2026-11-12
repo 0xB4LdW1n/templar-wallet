@@ -30,8 +30,10 @@ class CrashLog {
         await f.rename(old.path);
       }
       _file = File('${dir.path}/templar.log');
-      write('app start ${DateTime.now().toIso8601String()} '
-          '(${Platform.operatingSystem} ${Platform.operatingSystemVersion})');
+      write(
+        'app start ${DateTime.now().toIso8601String()} '
+        '(${Platform.operatingSystem} ${Platform.operatingSystemVersion})',
+      );
     } catch (_) {
       // Logging is best-effort by design.
     }

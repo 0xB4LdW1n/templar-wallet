@@ -194,7 +194,7 @@ sono supportati: usa la firma via QR.
 2. **Crea un wallet**, apri **Receive** e copia un indirizzo.
 3. **Prendi monete di test** gratuite dai faucet:
    - Bitcoin testnet: <https://coinfaucet.eu/en/btc-testnet/>
-   - Liquid testnet (L-BTC e asset): <https://liquidtestnet.com/faucet> e
+   - Liquid testnet (LBTC e asset): <https://liquidtestnet.com/faucet> e
      <https://faucet.vulpem.com>
 4. Attendi la sincronizzazione. La **prima** sincronizzazione Liquid fa una
    scansione completa e può richiedere qualche minuto.
@@ -259,9 +259,12 @@ e tre i sistemi. In alternativa, per vedere gli errori a schermo:
 - **Solo testnet**, nessun percorso mainnet.
 - La scansione QR con fotocamera è disponibile su macOS e Android; le opzioni
   **Paste** e **File** funzionano ovunque.
-- Le transazioni Bitcoin segnalano RBF, ma manca ancora una schermata per
-  aumentare la commissione.
-- Su Liquid, un pagamento che muove un asset diverso da L-BTC non può ancora
+- Le transazioni Bitcoin non confermate appaiono in grigio sotto **Pending**.
+  **Speed up** usa RBF o CPFP; **Cancel** tenta una sostituzione RBF verso il
+  proprio wallet. Prima della firma vengono sempre mostrati commissione
+  attuale, nuovi sat/vB e costo aggiuntivo. L'annullamento non è garantito:
+  la transazione originale può essere confermata per prima.
+- Su Liquid, un pagamento che muove un asset diverso da LBTC non può ancora
   escludere le monete congelate: viene rifiutato finché non le scongeli.
 - Con hardware wallet, Liquid è supportato **solo da Blockstream Jade**.
 - Trezor, Coldcard, KeepKey e BitBox02 vengono rilevati ma non pilotati

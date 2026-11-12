@@ -157,12 +157,13 @@ class _SignerDonutState extends State<SignerDonut>
     final r = widget.requiredCount;
     final label = r != null
         ? '$filled of $total signers have signed; '
-            '$r signature${r == 1 ? '' : 's'} required'
+              '$r signature${r == 1 ? '' : 's'} required'
         : '$filled of $total signers have signed';
 
     // The sweep animates so an imported signature reads as an arrival rather
     // than as a redraw. Under reduced motion it lands already filled.
-    final reduced = AppMotion.of(context, AppMotion.emphasized) == Duration.zero;
+    final reduced =
+        AppMotion.of(context, AppMotion.emphasized) == Duration.zero;
     final defaultColor = _complete ? s.success : s.accent;
     final slots = widget.slots;
     final colors = [
@@ -194,8 +195,8 @@ class _SignerDonutState extends State<SignerDonut>
                     !_filled[i]
                         ? 0.0
                         : _arriving.contains(i)
-                            ? t
-                            : 1.0,
+                        ? t
+                        : 1.0,
                 ],
                 colors: colors,
                 pendingColor: s.edgeStrong,
@@ -270,7 +271,10 @@ class _SignerDonutPainter extends CustomPainter {
     // A single-signer ring has no seam to draw, so it stays closed.
     final gap = total == 1
         ? 0.0
-        : math.min(stroke * _seamStrokes / (rect.width / 2), slot * _maxSeamFraction);
+        : math.min(
+            stroke * _seamStrokes / (rect.width / 2),
+            slot * _maxSeamFraction,
+          );
 
     final paint = Paint()
       ..style = PaintingStyle.stroke
@@ -408,11 +412,11 @@ class SignerChart extends StatelessWidget {
                 caption ??
                     (r != null
                         ? '$ringTotal signer${ringTotal == 1 ? '' : 's'} on '
-                            'this transaction · $present of $r required '
-                            'signature${r == 1 ? '' : 's'} collected'
+                              'this transaction · $present of $r required '
+                              'signature${r == 1 ? '' : 's'} collected'
                         : '$ringTotal signer${ringTotal == 1 ? '' : 's'} on '
-                            'this transaction · $present signature'
-                            '${present == 1 ? '' : 's'} collected'),
+                              'this transaction · $present signature'
+                              '${present == 1 ? '' : 's'} collected'),
                 style: AppTypography.caption.copyWith(color: s.inkSecondary),
               ),
             ],
@@ -444,8 +448,10 @@ class _LegendRow extends StatelessWidget {
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: AppSpacing.sm),
-        Text('$label ($count)',
-            style: AppTypography.bodySmall.copyWith(color: s.ink)),
+        Text(
+          '$label ($count)',
+          style: AppTypography.bodySmall.copyWith(color: s.ink),
+        ),
       ],
     );
   }
@@ -475,15 +481,22 @@ class _SlotRow extends StatelessWidget {
           transitionBuilder: (child, anim) =>
               ScaleTransition(scale: anim, child: child),
           child: slot.signed
-              ? Icon(Icons.check_circle_rounded,
-                  key: const ValueKey('signed'), size: 14, color: color)
+              ? Icon(
+                  Icons.check_circle_rounded,
+                  key: const ValueKey('signed'),
+                  size: 14,
+                  color: color,
+                )
               : Container(
                   key: const ValueKey('pending'),
                   width: 14,
                   height: 14,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: color.withValues(alpha: 0.7), width: 1.5),
+                    border: Border.all(
+                      color: color.withValues(alpha: 0.7),
+                      width: 1.5,
+                    ),
                   ),
                 ),
         ),

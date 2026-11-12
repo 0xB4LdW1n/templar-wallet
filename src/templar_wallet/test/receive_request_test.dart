@@ -20,30 +20,33 @@ import 'package:templar_wallet/services/price_service.dart';
 /// tests nothing.
 class _StubBridge implements WalletBridge {
   @override
-  Future<AddressInfo> generateReceiveAddress(String walletId, String asset,
-          {bool fresh = false}) async =>
-      const AddressInfo(
-        address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
-        index: 0,
-        asset: 'BTC',
-        derivationPath: "m/84'/1'/0'/0/0",
-      );
+  Future<AddressInfo> generateReceiveAddress(
+    String walletId,
+    String asset, {
+    bool fresh = false,
+  }) async => const AddressInfo(
+    address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
+    index: 0,
+    asset: 'BTC',
+    derivationPath: "m/84'/1'/0'/0/0",
+  );
 
   @override
   Future<List<AddressInfo>> listPreviousAddresses(
-          String walletId, String asset) async =>
-      const [];
+    String walletId,
+    String asset,
+  ) async => const [];
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Widget host() => MaterialApp(
-      home: ChangeNotifierProvider<AppState>(
-        create: (_) => AppState(),
-        child: ReceiveScreen(bridge: _StubBridge()),
-      ),
-    );
+  home: ChangeNotifierProvider<AppState>(
+    create: (_) => AppState(),
+    child: ReceiveScreen(bridge: _StubBridge()),
+  ),
+);
 
 /// A desktop window, not the 800×600 the test binding defaults to: the
 /// Receive header and its chain switch are laid out for a real one.
@@ -90,8 +93,9 @@ void main() {
     );
   });
 
-  testWidgets('the unit chip is wrapped so the suffix cannot stretch',
-      (t) async {
+  testWidgets('the unit chip is wrapped so the suffix cannot stretch', (
+    t,
+  ) async {
     _desktopWindow(t);
     await t.pumpWidget(host());
     await t.pumpAndSettle();
@@ -106,8 +110,11 @@ void main() {
     final suffix = t.widget<TextField>(amountField()).decoration!.suffixIcon;
     expect(
       suffix,
-      isA<Row>()
-          .having((r) => r.mainAxisSize, 'mainAxisSize', MainAxisSize.min),
+      isA<Row>().having(
+        (r) => r.mainAxisSize,
+        'mainAxisSize',
+        MainAxisSize.min,
+      ),
     );
   });
 

@@ -12,18 +12,21 @@ import 'package:templar_wallet/services/protocol_store.dart';
 const _token = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_ABCDE';
 const _url = 'http://127.0.0.1:8087/connector/portfolio';
 
-ProtocolConnectedSite _site({String? url, String? token, String walletId = 'w1'}) =>
-    ProtocolConnectedSite(
-      site: 'Templar Protocol',
-      origin: 'http://127.0.0.1:8087',
-      network: 'liquid-regtest',
-      walletId: walletId,
-      walletName: 'Alice',
-      connectedAt: DateTime.utc(2026, 10, 3, 10),
-      escrowFingerprint: '73c5da0a',
-      portfolioUrl: url,
-      portfolioToken: token,
-    );
+ProtocolConnectedSite _site({
+  String? url,
+  String? token,
+  String walletId = 'w1',
+}) => ProtocolConnectedSite(
+  site: 'Templar Protocol',
+  origin: 'http://127.0.0.1:8087',
+  network: 'liquid-regtest',
+  walletId: walletId,
+  walletName: 'Alice',
+  connectedAt: DateTime.utc(2026, 10, 3, 10),
+  escrowFingerprint: '73c5da0a',
+  portfolioUrl: url,
+  portfolioToken: token,
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -64,7 +67,7 @@ void main() {
           'escrow_fingerprint': '73c5da0a',
           'receive_address': 'el1qq0000',
           'shared_descriptor': true,
-        }
+        },
       ]),
     });
     store.resetCacheForTest();
@@ -94,7 +97,10 @@ void main() {
     store.resetCacheForTest();
     expect((await store.sitesForWallet('w1')).single.hasPortfolio, isFalse);
     // Everything else about the record stays.
-    expect((await store.sitesForWallet('w1')).single.escrowFingerprint, '73c5da0a');
+    expect(
+      (await store.sitesForWallet('w1')).single.escrowFingerprint,
+      '73c5da0a',
+    );
   });
 
   test('the portfolio object of a connect answer is read strictly', () {
@@ -105,18 +111,26 @@ void main() {
     expect(ProtocolConnectedSite.portfolioFromReply(null), isNull);
     expect(ProtocolConnectedSite.portfolioFromReply('x'), isNull);
     expect(ProtocolConnectedSite.portfolioFromReply({'url': _url}), isNull);
-    expect(ProtocolConnectedSite.portfolioFromReply({'url': '', 'token': _token}),
-        isNull);
     expect(
-        ProtocolConnectedSite.portfolioFromReply({'url': 'not a url', 'token': _token}),
-        isNull);
+      ProtocolConnectedSite.portfolioFromReply({'url': '', 'token': _token}),
+      isNull,
+    );
+    expect(
+      ProtocolConnectedSite.portfolioFromReply({
+        'url': 'not a url',
+        'token': _token,
+      }),
+      isNull,
+    );
   });
 
   test('copyWith keeps the token unless told to drop it', () {
     final s = _site(url: _url, token: _token);
     expect(s.copyWith().hasPortfolio, isTrue);
     expect(s.copyWith(clearPortfolio: true).hasPortfolio, isFalse);
-    expect(_site().copyWith(portfolioUrl: _url, portfolioToken: _token).hasPortfolio,
-        isTrue);
+    expect(
+      _site().copyWith(portfolioUrl: _url, portfolioToken: _token).hasPortfolio,
+      isTrue,
+    );
   });
 }

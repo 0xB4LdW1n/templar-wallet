@@ -21,7 +21,9 @@ class _ReissuancePill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xs, vertical: 2),
+        horizontal: AppSpacing.xs,
+        vertical: 2,
+      ),
       decoration: BoxDecoration(
         color: AppColors.liquid.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(4),
@@ -77,8 +79,7 @@ List<AssetGroup> groupAssets(
     AssetBalance? tokenAsset;
     final entry = issued[asset.assetId];
     if (entry?.tokenId != null) {
-      tokenAsset =
-          assets.where((a) => a.assetId == entry!.tokenId).firstOrNull;
+      tokenAsset = assets.where((a) => a.assetId == entry!.tokenId).firstOrNull;
       if (tokenAsset != null) used.add(tokenAsset.assetId);
     }
     used.add(asset.assetId);
@@ -139,20 +140,25 @@ class GroupedAssetCard extends StatelessWidget {
     final info = AssetRegistryService.instance.get(asset.assetId);
     final displayName = info?.name ?? asset.name;
     final displayTicker = info?.ticker ?? asset.ticker;
-    final mutedText =
-        isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
-    final primaryText =
-        isDark ? AppColors.textPrimaryDark : AppColors.textPrimary;
+    final mutedText = isDark
+        ? AppColors.textSecondaryDark
+        : AppColors.textSecondary;
+    final primaryText = isDark
+        ? AppColors.textPrimaryDark
+        : AppColors.textPrimary;
 
     if (compact) {
       return GlassCard(
         tint: palette.base,
         onTap: onTap,
         padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: AppSpacing.sm + 2),
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm + 2,
+        ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(
-              minHeight: AppLayout.minTouchTarget - 2 * (AppSpacing.sm + 2)),
+            minHeight: AppLayout.minTouchTarget - 2 * (AppSpacing.sm + 2),
+          ),
           child: Row(
             children: [
               AssetLogo(ticker: asset.ticker, size: 28),
@@ -178,8 +184,11 @@ class GroupedAssetCard extends StatelessWidget {
                         ),
                         if (isHidden) ...[
                           const SizedBox(width: AppSpacing.xs),
-                          Icon(Icons.visibility_off,
-                              size: 14, color: mutedText),
+                          Icon(
+                            Icons.visibility_off,
+                            size: 14,
+                            color: mutedText,
+                          ),
                         ],
                       ],
                     ),
@@ -193,8 +202,9 @@ class GroupedAssetCard extends StatelessWidget {
                             info?.domain ??
                                 '${asset.utxoCount} UTXO'
                                     '${asset.utxoCount == 1 ? '' : 's'}',
-                            style: AppTypography.caption
-                                .copyWith(color: mutedText),
+                            style: AppTypography.caption.copyWith(
+                              color: mutedText,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -222,11 +232,13 @@ class GroupedAssetCard extends StatelessWidget {
                       textAlign: TextAlign.end,
                     ),
                     if (showFiat != null)
-                      Amount(showFiat!,
-                          style: AppTypography.caption,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.end),
+                      Amount(
+                        showFiat!,
+                        style: AppTypography.caption,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                      ),
                     if (hasToken) ...[
                       const SizedBox(height: 2),
                       const _ReissuancePill(),
@@ -265,13 +277,18 @@ class GroupedAssetCard extends StatelessWidget {
               fontWeight: FontWeight.w600,
               color: isHidden
                   ? mutedText
-                  : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimary),
+                  : (isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimary),
             ),
             overflow: TextOverflow.ellipsis,
           ),
           if (info?.domain != null)
-            Text(info!.domain!,
-                style: AppTypography.caption, overflow: TextOverflow.ellipsis),
+            Text(
+              info!.domain!,
+              style: AppTypography.caption,
+              overflow: TextOverflow.ellipsis,
+            ),
           const SizedBox(height: AppSpacing.xs),
           Amount(
             amountOverride ?? asset.displayAmount,
@@ -282,8 +299,11 @@ class GroupedAssetCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           if (showFiat != null)
-            Amount(showFiat!,
-                style: AppTypography.caption, overflow: TextOverflow.ellipsis),
+            Amount(
+              showFiat!,
+              style: AppTypography.caption,
+              overflow: TextOverflow.ellipsis,
+            ),
           const SizedBox(height: AppSpacing.xs),
           Row(
             children: [
@@ -303,4 +323,3 @@ class GroupedAssetCard extends StatelessWidget {
     );
   }
 }
-

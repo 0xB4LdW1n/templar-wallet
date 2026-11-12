@@ -141,7 +141,8 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog>
       // (the txid and its success screen, or the signed transaction for the
       // quorum chart to take in).
       await Future.delayed(
-          Duration(milliseconds: widget.signOnly ? 700 : 1000));
+        Duration(milliseconds: widget.signOnly ? 700 : 1000),
+      );
       if (mounted) Navigator.of(context).pop(_txid);
     } catch (e) {
       if (!mounted) return;
@@ -172,11 +173,7 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog>
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: AppSpacing.md),
-            _LedgerGraphic(
-              pulse: _pulse,
-              shake: _shake,
-              phase: _phase,
-            ),
+            _LedgerGraphic(pulse: _pulse, shake: _shake, phase: _phase),
             const SizedBox(height: AppSpacing.xl),
             Text(
               _message,
@@ -195,9 +192,12 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog>
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                   const SizedBox(width: AppSpacing.sm),
-                  Text('Do not disconnect the device.',
-                      style: AppTypography.caption
-                          .copyWith(color: AppColors.warning)),
+                  Text(
+                    'Do not disconnect the device.',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.warning,
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -224,8 +224,7 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog>
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style:
-                    AppTypography.caption.copyWith(color: AppColors.danger),
+                style: AppTypography.caption.copyWith(color: AppColors.danger),
               ),
             ],
           ],
@@ -236,61 +235,59 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog>
   }
 
   String get _title => switch (_phase) {
-        _SignPhase.verifying => 'Check your Ledger',
-        _SignPhase.verifyConfirm => 'Verify the address',
-        _SignPhase.signing =>
-          widget.signOnly ? 'Confirm on your device' : 'Confirm on your Ledger',
-        _SignPhase.broadcasting => 'Broadcasting…',
-        _SignPhase.done => widget.signOnly ? 'Signature added' : 'Transaction sent',
-        _SignPhase.error => 'Signing failed',
-      };
+    _SignPhase.verifying => 'Check your Ledger',
+    _SignPhase.verifyConfirm => 'Verify the address',
+    _SignPhase.signing =>
+      widget.signOnly ? 'Confirm on your device' : 'Confirm on your Ledger',
+    _SignPhase.broadcasting => 'Broadcasting…',
+    _SignPhase.done => widget.signOnly ? 'Signature added' : 'Transaction sent',
+    _SignPhase.error => 'Signing failed',
+  };
 
   String get _message => switch (_phase) {
-        _SignPhase.verifying =>
-          'Your device is displaying a wallet address. Confirm it on screen.',
-        _SignPhase.verifyConfirm =>
-          'Does this address exactly match the one shown on your Ledger?',
-        _SignPhase.signing => widget.signOnly
-            ? 'Check the amounts and addresses on the device screen, then '
+    _SignPhase.verifying =>
+      'Your device is displaying a wallet address. Confirm it on screen.',
+    _SignPhase.verifyConfirm =>
+      'Does this address exactly match the one shown on your Ledger?',
+    _SignPhase.signing =>
+      widget.signOnly
+          ? 'Check the amounts and addresses on the device screen, then '
                 'approve. A Ledger may first ask you to register the wallet '
                 'policy — approve that too.'
-            : 'Check the amount and address on the device screen, then press '
+          : 'Check the amount and address on the device screen, then press '
                 'both buttons to approve.',
-        _SignPhase.broadcasting => 'Submitting the signed transaction…',
-        _SignPhase.done => widget.signOnly
-            ? 'The device signed. Its signature is being added to the '
+    _SignPhase.broadcasting => 'Submitting the signed transaction…',
+    _SignPhase.done =>
+      widget.signOnly
+          ? 'The device signed. Its signature is being added to the '
                 'transaction.'
-            : 'Your transaction was broadcast successfully.',
-        _SignPhase.error => 'The device did not complete signing.',
-      };
+          : 'Your transaction was broadcast successfully.',
+    _SignPhase.error => 'The device did not complete signing.',
+  };
 
   List<Widget>? get _actions => switch (_phase) {
-        _SignPhase.verifying ||
-        _SignPhase.signing ||
-        _SignPhase.broadcasting ||
-        _SignPhase.done =>
-          null,
-        _SignPhase.verifyConfirm => [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(null),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: _run,
-              child: const Text('It matches — sign'),
-            ),
-          ],
-        _SignPhase.error => [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(null),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: widget.verifyTask != null ? _startVerify : _run,
-              child: const Text('Retry'),
-            ),
-          ],
-      };
+    _SignPhase.verifying ||
+    _SignPhase.signing ||
+    _SignPhase.broadcasting ||
+    _SignPhase.done => null,
+    _SignPhase.verifyConfirm => [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(null),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(onPressed: _run, child: const Text('It matches — sign')),
+    ],
+    _SignPhase.error => [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(null),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: widget.verifyTask != null ? _startVerify : _run,
+        child: const Text('Retry'),
+      ),
+    ],
+  };
 }
 
 /// Stylised Ledger Nano: a body with a screen and two side buttons that pulse
@@ -350,8 +347,7 @@ class _LedgerGraphic extends StatelessWidget {
                       color: Colors.black,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
-                        color: accent.withValues(
-                            alpha: isError ? 0.9 : glow),
+                        color: accent.withValues(alpha: isError ? 0.9 : glow),
                         width: 1.5,
                       ),
                     ),
@@ -359,8 +355,7 @@ class _LedgerGraphic extends StatelessWidget {
                     child: Icon(
                       isError ? Icons.close_rounded : Icons.check_rounded,
                       size: 16,
-                      color: accent.withValues(
-                          alpha: isError ? 1.0 : glow),
+                      color: accent.withValues(alpha: isError ? 1.0 : glow),
                     ),
                   ),
                 ),

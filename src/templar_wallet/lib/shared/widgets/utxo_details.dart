@@ -95,24 +95,29 @@ class UtxoDetailsDialog extends StatelessWidget {
     // with a word about it.
     var opened = false;
     try {
-      opened = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      opened = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
     } catch (_) {
       opened = false;
     }
     if (opened || !context.mounted) return;
     await Clipboard.setData(ClipboardData(text: url));
     if (!context.mounted) return;
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
-      content: Text("Couldn't open a browser — explorer link copied"),
-    ));
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(
+        content: Text("Couldn't open a browser — explorer link copied"),
+      ),
+    );
   }
 
   String get _stateText => switch (utxo.state) {
-        UtxoState.available => 'Available',
-        UtxoState.frozen => 'Frozen',
-        UtxoState.dusty => 'Dust',
-        UtxoState.unconfirmed => 'Pending',
-      };
+    UtxoState.available => 'Available',
+    UtxoState.frozen => 'Frozen',
+    UtxoState.dusty => 'Dust',
+    UtxoState.unconfirmed => 'Pending',
+  };
 
   String get _confirmationsText {
     if (utxo.isPending || utxo.confirmations == 0) {
@@ -138,16 +143,16 @@ class UtxoDetailsDialog extends StatelessWidget {
     );
 
     Widget fact(String label, Widget value) => Padding(
-          padding: const EdgeInsets.only(bottom: AppSpacing.md),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label.toUpperCase(), style: micro),
-              const SizedBox(height: 3),
-              value,
-            ],
-          ),
-        );
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label.toUpperCase(), style: micro),
+          const SizedBox(height: 3),
+          value,
+        ],
+      ),
+    );
 
     final content = Column(
       mainAxisSize: MainAxisSize.min,
@@ -226,8 +231,10 @@ class UtxoDetailsDialog extends StatelessWidget {
               child: fact(
                 'State',
                 stateBadge == null
-                    ? Text(_stateText,
-                        style: AppTypography.bodySmall.copyWith(color: s.ink))
+                    ? Text(
+                        _stateText,
+                        style: AppTypography.bodySmall.copyWith(color: s.ink),
+                      )
                     : Align(
                         alignment: Alignment.centerLeft,
                         child: utxoStateChip(stateBadge),
@@ -277,10 +284,7 @@ class UtxoDetailsDialog extends StatelessWidget {
     return AppDialog(
       title: const Text('Coin details'),
       scrollable: true,
-      content: SizedBox(
-        width: phone ? double.infinity : 440,
-        child: content,
-      ),
+      content: SizedBox(width: phone ? double.infinity : 440, child: content),
       actions: [
         if (onToggleFrozen case final toggle?)
           if (phone)

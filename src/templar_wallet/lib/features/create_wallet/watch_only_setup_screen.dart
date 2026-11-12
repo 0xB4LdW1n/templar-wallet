@@ -90,7 +90,10 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
 
   Future<void> _create() async {
     final name = _nameController.text.trim();
-    setState(() { _creating = true; _error = null; });
+    setState(() {
+      _creating = true;
+      _error = null;
+    });
     try {
       // Raw input is normalized in templar-core: a bare xpub is wrapped into a
       // wpkh descriptor, a multipath descriptor is split, and the change
@@ -109,7 +112,10 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
           type: 'Watch-only',
           liquid: _liquid,
         );
-        setState(() { _creating = false; _step = 2; });
+        setState(() {
+          _creating = false;
+          _step = 2;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -125,10 +131,15 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
   Future<void> _deriveCt() async {
     final btc = _btcController.text.trim();
     if (btc.isEmpty) {
-      setState(() => _deriveError = 'Fill the Bitcoin key or descriptor first.');
+      setState(
+        () => _deriveError = 'Fill the Bitcoin key or descriptor first.',
+      );
       return;
     }
-    setState(() { _deriving = true; _deriveError = null; });
+    setState(() {
+      _deriving = true;
+      _deriveError = null;
+    });
     try {
       final ct = await _bridge.deriveLiquidDescriptor(btc);
       if (mounted) {
@@ -141,12 +152,14 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
       if (mounted) {
         setState(() {
           _deriving = false;
-          _deriveError = e.toString().replaceFirst('Exception: wallet-ffi: ', '');
+          _deriveError = e.toString().replaceFirst(
+            'Exception: wallet-ffi: ',
+            '',
+          );
         });
       }
     }
   }
-
 
   /// Back out of the setup: to the hosting wizard when embedded, otherwise
   /// to the wizard route (standalone entry).
@@ -227,7 +240,8 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
         _sourcePicker(),
         const InfoBanner(
           title: 'The next steps collect every cosigner',
-          message: 'You pick the threshold — 2 of 3, 3 of 5 — and then provide '
+          message:
+              'You pick the threshold — 2 of 3, 3 of 5 — and then provide '
               'each key: pasted, scanned from an air-gapped signer, read from '
               'a USB device, or taken from another wallet in this app. '
               'Templar assembles the descriptor for you. No private key is '
@@ -261,7 +275,8 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
       children: [
         _sourcePicker(),
         const InfoBanner(
-          message: 'A watch-only wallet holds no private key. It can show '
+          message:
+              'A watch-only wallet holds no private key. It can show '
               'balances and history and build unsigned transactions, but it '
               'cannot sign or spend.',
         ),
@@ -355,9 +370,11 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
                     icon: const Icon(Icons.auto_fix_high_rounded, size: 16),
-                    label: Text(_deriving
-                        ? 'Deriving…'
-                        : 'Derive from the Bitcoin descriptor'),
+                    label: Text(
+                      _deriving
+                          ? 'Deriving…'
+                          : 'Derive from the Bitcoin descriptor',
+                    ),
                     onPressed: _deriving ? null : _deriveCt,
                   ),
                 ),
@@ -372,7 +389,9 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
                   const SizedBox(height: AppSpacing.sm),
                   Text(
                     _deriveError!,
-                    style: AppTypography.caption.copyWith(color: AppColors.danger),
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.danger,
+                    ),
                   ),
                 ],
               ],
@@ -391,14 +410,25 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
   Widget _successBody() {
     return WalletCreatedView(
       walletName: _nameController.text.trim(),
-      subtitle: 'Watch-only wallet ready — balances and history, no spending keys.',
+      subtitle:
+          'Watch-only wallet ready — balances and history, no spending keys.',
       details: [
         WalletCreatedDetail('Type', 'Watch-only · Single-sig'),
-        WalletCreatedDetail('Networks',
-            _liquid ? 'Bitcoin + Liquid' : 'Bitcoin only'),
-        WalletCreatedDetail('Bitcoin key', _btcController.text.trim(), mono: true),
+        WalletCreatedDetail(
+          'Networks',
+          _liquid ? 'Bitcoin + Liquid' : 'Bitcoin only',
+        ),
+        WalletCreatedDetail(
+          'Bitcoin key',
+          _btcController.text.trim(),
+          mono: true,
+        ),
         if (_liquid)
-          WalletCreatedDetail('Liquid CT', _ctController.text.trim(), mono: true),
+          WalletCreatedDetail(
+            'Liquid CT',
+            _ctController.text.trim(),
+            mono: true,
+          ),
       ],
     );
   }

@@ -22,6 +22,9 @@ enum ProtocolSignOutcome {
   /// The user declined at the confirm gate.
   refused,
 
+  /// The user closed a pending signing session before broadcast.
+  cancelled,
+
   /// The request was dead before it could be answered.
   expired,
 
@@ -31,17 +34,17 @@ enum ProtocolSignOutcome {
 
 extension ProtocolSignOutcomeLabel on ProtocolSignOutcome {
   String get label => switch (this) {
-        ProtocolSignOutcome.signed => 'Signed',
-        ProtocolSignOutcome.refused => 'Refused by you',
-        ProtocolSignOutcome.expired => 'Expired',
-        ProtocolSignOutcome.failed => 'Failed',
-      };
+    ProtocolSignOutcome.signed => 'Signed',
+    ProtocolSignOutcome.refused => 'Refused by you',
+    ProtocolSignOutcome.cancelled => 'Signing request cancelled',
+    ProtocolSignOutcome.expired => 'Expired',
+    ProtocolSignOutcome.failed => 'Failed',
+  };
 
   String get wire => name;
 
-  static ProtocolSignOutcome parse(Object? v) =>
-      ProtocolSignOutcome.values.firstWhere((o) => o.name == v,
-          orElse: () => ProtocolSignOutcome.failed);
+  static ProtocolSignOutcome parse(Object? v) => ProtocolSignOutcome.values
+      .firstWhere((o) => o.name == v, orElse: () => ProtocolSignOutcome.failed);
 }
 
 /// A site this wallet has shared a watch-only descriptor with.
@@ -105,35 +108,35 @@ class ProtocolConnectedSite {
     String? portfolioUrl,
     String? portfolioToken,
     bool clearPortfolio = false,
-  }) =>
-      ProtocolConnectedSite(
-        site: site,
-        origin: origin,
-        network: network,
-        walletId: walletId,
-        walletName: walletName,
-        connectedAt: connectedAt,
-        escrowFingerprint: escrowFingerprint,
-        receiveAddress: receiveAddress,
-        sharedDescriptor: sharedDescriptor,
-        portfolioUrl: clearPortfolio ? null : (portfolioUrl ?? this.portfolioUrl),
-        portfolioToken:
-            clearPortfolio ? null : (portfolioToken ?? this.portfolioToken),
-      );
+  }) => ProtocolConnectedSite(
+    site: site,
+    origin: origin,
+    network: network,
+    walletId: walletId,
+    walletName: walletName,
+    connectedAt: connectedAt,
+    escrowFingerprint: escrowFingerprint,
+    receiveAddress: receiveAddress,
+    sharedDescriptor: sharedDescriptor,
+    portfolioUrl: clearPortfolio ? null : (portfolioUrl ?? this.portfolioUrl),
+    portfolioToken: clearPortfolio
+        ? null
+        : (portfolioToken ?? this.portfolioToken),
+  );
 
   Map<String, dynamic> toJson() => {
-        'site': site,
-        'origin': origin,
-        'network': network,
-        'wallet_id': walletId,
-        'wallet_name': walletName,
-        'at': connectedAt.toUtc().toIso8601String(),
-        'escrow_fingerprint': escrowFingerprint,
-        'receive_address': receiveAddress,
-        'shared_descriptor': sharedDescriptor,
-        if (hasPortfolio) 'portfolio_url': portfolioUrl,
-        if (hasPortfolio) 'portfolio_token': portfolioToken,
-      };
+    'site': site,
+    'origin': origin,
+    'network': network,
+    'wallet_id': walletId,
+    'wallet_name': walletName,
+    'at': connectedAt.toUtc().toIso8601String(),
+    'escrow_fingerprint': escrowFingerprint,
+    'receive_address': receiveAddress,
+    'shared_descriptor': sharedDescriptor,
+    if (hasPortfolio) 'portfolio_url': portfolioUrl,
+    if (hasPortfolio) 'portfolio_token': portfolioToken,
+  };
 
   static ProtocolConnectedSite? fromJson(Map<String, dynamic> j) {
     final origin = (j['origin'] as String?)?.trim() ?? '';
@@ -202,14 +205,14 @@ class ProtocolSignRecord {
   final String action;
 
   Map<String, dynamic> toJson() => {
-        'site': site,
-        'origin': origin,
-        'wallet_name': walletName,
-        'at': at.toUtc().toIso8601String(),
-        'outcome': outcome.wire,
-        'loan_ref': loanRef,
-        'action': action,
-      };
+    'site': site,
+    'origin': origin,
+    'wallet_name': walletName,
+    'at': at.toUtc().toIso8601String(),
+    'outcome': outcome.wire,
+    'loan_ref': loanRef,
+    'action': action,
+  };
 
   static ProtocolSignRecord? fromJson(Map<String, dynamic> j) {
     final site = (j['site'] as String?)?.trim() ?? '';

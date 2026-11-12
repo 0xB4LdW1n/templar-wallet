@@ -44,18 +44,28 @@ class _Banner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (title != null) ...[
-                  Text(title!, style: AppTypography.label.copyWith(color: iconColor, fontWeight: FontWeight.w700)),
+                  Text(
+                    title!,
+                    style: AppTypography.label.copyWith(
+                      color: iconColor,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   const SizedBox(height: AppSpacing.xs),
                 ],
-                Builder(builder: (ctx) {
-                  final isDark = Theme.of(ctx).brightness == Brightness.dark;
-                  return Text(
-                    message,
-                    style: AppTypography.bodySmall.copyWith(
-                      color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
-                    ),
-                  );
-                }),
+                Builder(
+                  builder: (ctx) {
+                    final isDark = Theme.of(ctx).brightness == Brightness.dark;
+                    return Text(
+                      message,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimary,
+                      ),
+                    );
+                  },
+                ),
                 if (action != null) ...[
                   const SizedBox(height: AppSpacing.sm),
                   action!,
@@ -144,7 +154,12 @@ class InfoBanner extends StatelessWidget {
 }
 
 class WarningBanner extends StatelessWidget {
-  const WarningBanner({super.key, required this.message, this.title, this.action});
+  const WarningBanner({
+    super.key,
+    required this.message,
+    this.title,
+    this.action,
+  });
   final String message;
   final String? title;
   final Widget? action;
@@ -169,7 +184,12 @@ class WarningBanner extends StatelessWidget {
 }
 
 class DangerBanner extends StatelessWidget {
-  const DangerBanner({super.key, required this.message, this.title, this.action});
+  const DangerBanner({
+    super.key,
+    required this.message,
+    this.title,
+    this.action,
+  });
   final String message;
   final String? title;
   final Widget? action;

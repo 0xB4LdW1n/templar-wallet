@@ -16,6 +16,8 @@
 /// Refresh and lives in memory only. The site is the ledger.
 library;
 
+import '../../../shared/relative_time.dart';
+
 export 'protocol_link.dart' show protocolActionLabel;
 
 /// `state` of a loan on the site. [unknown] carries the raw text.
@@ -28,16 +30,16 @@ enum ProtocolLoanState {
   unknown;
 
   static ProtocolLoanState parse(String raw) => switch (raw.trim()) {
-        'originating' => originating,
-        'active' => active,
-        'repaid' => repaid,
-        'defaulted' => defaulted,
-        'liquidated' => liquidated,
-        _ => unknown,
-      };
+    'originating' => originating,
+    'active' => active,
+    'repaid' => repaid,
+    'defaulted' => defaulted,
+    'liquidated' => liquidated,
+    _ => unknown,
+  };
 
   /// Still running: the card sits in the main list and has a time bar.
-  bool get isOpen => this == originating || this == active;
+  bool get isOpen => this != repaid && this != defaulted && this != liquidated;
 }
 
 /// `next_action.kind`: what the site expects from this wallet now.
@@ -50,13 +52,13 @@ enum ProtocolNextKind {
   unknown;
 
   static ProtocolNextKind parse(String raw) => switch (raw.trim()) {
-        'sign' => sign,
-        'repay' => repay,
-        'claim' => claim,
-        'wait' => wait,
-        'none' => none,
-        _ => unknown,
-      };
+    'sign' => sign,
+    'repay' => repay,
+    'claim' => claim,
+    'wait' => wait,
+    'none' => none,
+    _ => unknown,
+  };
 }
 
 /// One amount as the site writes it: whole coins as text (English format,
@@ -188,6 +190,173 @@ class ProtocolLoanTxids {
   }
 }
 
+/// Nullable installment state supplied by a portfolio extension.
+///
+/// Every financial value stays in [ProtocolMoney]. The wallet never derives
+/// B/n/m/s or a penalty from txids, deadlines or display strings.
+class ProtocolRepaymentPlan {
+  const ProtocolRepaymentPlan({
+    required this.kind,
+    this.nTotal,
+    this.nPaid,
+    this.mMissed,
+    this.mMax,
+    this.step,
+    this.sMax,
+    this.balance,
+    this.regularDue,
+    this.earlyDue,
+    this.penaltyDue,
+    this.deadlineHeight,
+    this.deadlineEstimate,
+  });
+
+  final String kind;
+  final int? nTotal;
+  final int? nPaid;
+  final int? mMissed;
+  final int? mMax;
+  final int? step;
+  final int? sMax;
+  final ProtocolMoney? balance;
+  final ProtocolMoney? regularDue;
+  final ProtocolMoney? earlyDue;
+  final ProtocolMoney? penaltyDue;
+  final int? deadlineHeight;
+  final DateTime? deadlineEstimate;
+
+  int? get periodsBeforeDefault {
+    final max = sMax;
+    final current = step;
+    if (max == null || current == null) return null;
+    return (max - current - 1).clamp(0, max).toInt();
+  }
+
+  static ProtocolRepaymentPlan? fromJson(Object? value) {
+    if (value is! Map) return null;
+    return ProtocolRepaymentPlan(
+      kind: _str(value['kind']),
+      nTotal: _int(value['n_total']),
+      nPaid: _int(value['n_paid']),
+      mMissed: _int(value['m_missed']),
+      mMax: _int(value['m_max']),
+      step: _int(value['step']),
+      sMax: _int(value['s_max']),
+      balance: ProtocolMoney.fromJson(value['balance']),
+      regularDue: ProtocolMoney.fromJson(value['regular_due']),
+      earlyDue: ProtocolMoney.fromJson(value['early_due']),
+      penaltyDue: ProtocolMoney.fromJson(value['penalty_due']),
+      deadlineHeight: _int(value['deadline_height']),
+      deadlineEstimate: _time(value['deadline_estimate']),
+    );
+  }
+}
+
+/// One real UTXO generation in the covenant chain.
+class ProtocolCovenantNode {
+  const ProtocolCovenantNode({
+    required this.index,
+    required this.status,
+    this.createdBy,
+    this.spentBy,
+    this.txid,
+    this.successorTxid,
+    this.balance,
+    this.n,
+    this.m,
+    this.s,
+  });
+
+  final int index;
+  final String status;
+  final String? createdBy;
+  final String? spentBy;
+  final String? txid;
+  final String? successorTxid;
+  final ProtocolMoney? balance;
+  final int? n;
+  final int? m;
+  final int? s;
+
+  bool get isCurrent => status == 'active' || status == 'current';
+  bool get isTerminal =>
+      status == 'repaid' || status == 'returned' || status == 'defaulted';
+
+  static ProtocolCovenantNode? fromJson(Object? value) {
+    if (value is! Map) return null;
+    return ProtocolCovenantNode(
+      index: _int(value['index']) ?? 0,
+      status: _str(value['status']),
+      createdBy: _strOrNull(value['created_by']),
+      spentBy: _strOrNull(value['spent_by']),
+      txid: _strOrNull(value['txid']),
+      successorTxid: _strOrNull(value['successor_txid']),
+      balance: ProtocolMoney.fromJson(value['balance']),
+      n: _int(value['n']),
+      m: _int(value['m']),
+      s: _int(value['s']),
+    );
+  }
+}
+
+/// Current covenant plus its reported lineage. Empty means portfolio v1.
+class ProtocolCovenant {
+  const ProtocolCovenant({
+    required this.status,
+    this.currentTxid,
+    this.nodes = const [],
+  });
+
+  final String status;
+  final String? currentTxid;
+  final List<ProtocolCovenantNode> nodes;
+
+  ProtocolCovenantNode? get current =>
+      nodes.where((n) => n.isCurrent).firstOrNull;
+
+  static ProtocolCovenant? fromJson(Object? value) {
+    if (value is! Map) return null;
+    return ProtocolCovenant(
+      status: _str(value['status']),
+      currentTxid: _strOrNull(value['current_txid']),
+      nodes: (value['nodes'] is List ? value['nodes'] as List : const [])
+          .map(ProtocolCovenantNode.fromJson)
+          .whereType<ProtocolCovenantNode>()
+          .toList(),
+    );
+  }
+}
+
+/// Authoritative collateral allocation after repayment or default.
+class ProtocolCollateralOutcome {
+  const ProtocolCollateralOutcome({
+    this.locked,
+    this.forfeit,
+    this.returnAmount,
+    this.returnClaimed,
+  });
+
+  final ProtocolMoney? locked;
+  final ProtocolMoney? forfeit;
+  final ProtocolMoney? returnAmount;
+  final bool? returnClaimed;
+
+  bool get hasRemainderToClaim =>
+      returnAmount != null && returnClaimed == false;
+
+  static ProtocolCollateralOutcome? fromJson(Object? value) {
+    if (value is! Map) return null;
+    return ProtocolCollateralOutcome(
+      locked: ProtocolMoney.fromJson(value['locked']),
+      forfeit: ProtocolMoney.fromJson(value['forfeit']),
+      returnAmount: ProtocolMoney.fromJson(value['return']),
+      returnClaimed: value['return_claimed'] is bool
+          ? value['return_claimed'] as bool
+          : null,
+    );
+  }
+}
+
 /// One loan of this wallet.
 class ProtocolLoan {
   const ProtocolLoan({
@@ -210,6 +379,9 @@ class ProtocolLoan {
     this.pendingRequest,
     this.txids = const ProtocolLoanTxids(),
     this.escrowAddress,
+    this.repaymentPlan,
+    this.covenant,
+    this.collateralOutcome,
   });
 
   final int id;
@@ -243,11 +415,30 @@ class ProtocolLoan {
   final ProtocolPendingRequest? pendingRequest;
   final ProtocolLoanTxids txids;
   final String? escrowAddress;
+  final ProtocolRepaymentPlan? repaymentPlan;
+  final ProtocolCovenant? covenant;
+  final ProtocolCollateralOutcome? collateralOutcome;
 
   /// The state as a chip label: the known word, or the site's own.
   String get stateLabel => state == ProtocolLoanState.unknown
       ? (rawState.isEmpty ? 'unknown' : rawState)
       : state.name;
+
+  bool get isCompleted => switch (state) {
+    ProtocolLoanState.repaid ||
+    ProtocolLoanState.defaulted ||
+    ProtocolLoanState.liquidated => true,
+    _ => false,
+  };
+
+  bool actionRequired({DateTime? now}) {
+    final pending = pendingRequest;
+    if (pending != null && !pending.isExpired(now: now)) return true;
+    if (collateralOutcome?.hasRemainderToClaim == true) return true;
+    return nextAction?.kind == ProtocolNextKind.repay ||
+        nextAction?.kind == ProtocolNextKind.claim ||
+        nextAction?.rawKind == 'renewal';
+  }
 
   /// How far along the term the chain is, 0…1, from the heights the site
   /// sent and its tip. Null when the loan has no term yet (originating) or
@@ -280,6 +471,11 @@ class ProtocolLoan {
       pendingRequest: ProtocolPendingRequest.fromJson(v['pending_request']),
       txids: ProtocolLoanTxids.fromJson(v['txids']),
       escrowAddress: _strOrNull(v['escrow_address']),
+      repaymentPlan: ProtocolRepaymentPlan.fromJson(v['repayment_plan']),
+      covenant: ProtocolCovenant.fromJson(v['covenant']),
+      collateralOutcome: ProtocolCollateralOutcome.fromJson(
+        v['collateral_outcome'],
+      ),
     );
   }
 }
@@ -329,7 +525,10 @@ class ProtocolOffer {
 
 /// `wallet`: how the site labels this wallet, and the loan key it knows.
 class ProtocolPortfolioWallet {
-  const ProtocolPortfolioWallet({required this.label, required this.escrowFingerprint});
+  const ProtocolPortfolioWallet({
+    required this.label,
+    required this.escrowFingerprint,
+  });
   final String label;
   final String escrowFingerprint;
 }
@@ -377,10 +576,32 @@ class ProtocolPortfolio {
 
   /// Loans that ended, newest first.
   List<ProtocolLoan> get closedLoans {
-    final out = loans.where((l) => !l.state.isOpen).toList();
+    final out = loans.where((l) => l.isCompleted).toList();
     out.sort((a, b) => b.id - a.id);
     return out;
   }
+
+  /// Open loans needing a signature, payment, claim or covenant renewal.
+  List<ProtocolLoan> actionRequiredLoans({DateTime? now}) {
+    final out = loans
+        .where((l) => !l.isCompleted && l.actionRequired(now: now))
+        .toList();
+    out.sort((a, b) {
+      final pa = a.pendingRequest != null ? 0 : 1;
+      final pb = b.pendingRequest != null ? 0 : 1;
+      if (pa != pb) return pa - pb;
+      return (a.blocksLeft ?? 1 << 30).compareTo(b.blocksLeft ?? 1 << 30);
+    });
+    return out;
+  }
+
+  /// Open loans that need no user action now.
+  List<ProtocolLoan> activeLoans({DateTime? now}) =>
+      loans.where((l) => !l.isCompleted && !l.actionRequired(now: now)).toList()
+        ..sort(
+          (a, b) =>
+              (a.blocksLeft ?? 1 << 30).compareTo(b.blocksLeft ?? 1 << 30),
+        );
 
   /// Signatures the site waits for, across every loan.
   int get pendingCount => loans.where((l) => l.pendingRequest != null).length;
@@ -401,9 +622,14 @@ class ProtocolPortfolio {
       asOf: _time(j['as_of']) ?? DateTime.now().toUtc(),
       wallet: ProtocolPortfolioWallet(
         label: wallet is Map ? _str(wallet['label']) : '',
-        escrowFingerprint: wallet is Map ? _str(wallet['escrow_fingerprint']) : '',
+        escrowFingerprint: wallet is Map
+            ? _str(wallet['escrow_fingerprint'])
+            : '',
       ),
-      loans: loansRaw.map(ProtocolLoan.fromJson).whereType<ProtocolLoan>().toList(),
+      loans: loansRaw
+          .map(ProtocolLoan.fromJson)
+          .whereType<ProtocolLoan>()
+          .toList(),
       offers: (j['offers'] is List ? j['offers'] as List : const [])
           .map(ProtocolOffer.fromJson)
           .whereType<ProtocolOffer>()
@@ -436,6 +662,23 @@ String protocolBlocksLeftLabel(int? blocksLeft) {
   return '≈ $minutes min left';
 }
 
+/// A future deadline in decision language, or how long ago it passed.
+String protocolDeadlineLabel(DateTime deadline, {DateTime? now}) {
+  final ref = now ?? DateTime.now();
+  final localDeadline = deadline.toLocal();
+  final delta = localDeadline.difference(ref);
+  if (delta.isNegative) {
+    return 'reached ${relativeTimeShort(localDeadline, now: ref)}';
+  }
+  if (delta.inSeconds < 60) return 'in under a minute';
+  if (delta.inMinutes < 60) return 'in ${delta.inMinutes} min';
+  if (delta.inHours < 48) return 'in ${delta.inHours} h';
+  if (delta.inDays < 7) return 'in ${delta.inDays} d';
+  final hh = localDeadline.hour.toString().padLeft(2, '0');
+  final mm = localDeadline.minute.toString().padLeft(2, '0');
+  return '${localDeadline.day}/${localDeadline.month}/${localDeadline.year} $hh:$mm';
+}
+
 /// `10000` → `10,000`; `0.5` stays; `1234567.89` → `1,234,567.89`. Only the
 /// integer part is grouped, and anything that is not a plain number is
 /// returned as it came.
@@ -464,7 +707,8 @@ String protocolBpsLabel(int bps) {
   return '$whole.$frac%';
 }
 
-String _str(Object? v) => v is String ? v.trim() : (v == null ? '' : v.toString());
+String _str(Object? v) =>
+    v is String ? v.trim() : (v == null ? '' : v.toString());
 
 String? _strOrNull(Object? v) {
   if (v is! String) return null;

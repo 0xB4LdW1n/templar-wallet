@@ -6,12 +6,18 @@
 /// request only ever sees one that already passed every check.
 library;
 
+import '../protocol_copy.dart';
+
 /// What a `templar://` link asks the wallet to do.
 enum ProtocolAction { connect, sign }
 
 /// A parsed `templar://<action>?url=<https://…>&nonce=<random>` link.
 class ProtocolLink {
-  const ProtocolLink({required this.action, required this.url, required this.nonce});
+  const ProtocolLink({
+    required this.action,
+    required this.url,
+    required this.nonce,
+  });
 
   final ProtocolAction action;
 
@@ -31,7 +37,9 @@ class ProtocolLink {
       throw const ProtocolLinkError('This is not a valid link.');
     }
     if (uri.scheme.toLowerCase() != 'templar') {
-      throw ProtocolLinkError('Not a templar:// link (scheme is "${uri.scheme}").');
+      throw ProtocolLinkError(
+        'Not a templar:// link (scheme is "${uri.scheme}").',
+      );
     }
     final name = uri.host.isNotEmpty
         ? uri.host
@@ -40,7 +48,8 @@ class ProtocolLink {
       'connect' => ProtocolAction.connect,
       'sign' => ProtocolAction.sign,
       _ => throw ProtocolLinkError(
-          'Unknown templar:// action "$name" — expected connect or sign.'),
+        'Unknown templar:// action "$name" — expected connect or sign.',
+      ),
     };
     final target = uri.queryParameters['url'];
     if (target == null || target.trim().isEmpty) {
@@ -48,11 +57,14 @@ class ProtocolLink {
     }
     final url = Uri.tryParse(target.trim());
     if (url == null || !url.hasScheme || url.host.isEmpty) {
-      throw const ProtocolLinkError('The request URL in the link is malformed.');
+      throw const ProtocolLinkError(
+        'The request URL in the link is malformed.',
+      );
     }
     if (url.scheme != 'https' && url.scheme != 'http') {
       throw ProtocolLinkError(
-          'The request URL must be http(s), not "${url.scheme}".');
+        'The request URL must be http(s), not "${url.scheme}".',
+      );
     }
     final nonce = (uri.queryParameters['nonce'] ?? '').trim();
     if (nonce.isEmpty) {
@@ -129,7 +141,7 @@ class ProtocolRequest {
   /// `liquid-testnet` | `liquid-regtest` — must equal the wallet's network.
   final String network;
 
-  /// L-BTC asset id of the site's chain, hex, lower case. Regtest only: two
+  /// LBTC asset id of the site's chain, hex, lower case. Regtest only: two
   /// `elementsd -chain=liquidregtest` nodes started separately are different
   /// chains with different policy assets, and nothing else in the request
   /// tells them apart. Null when the site did not send one, or sent one that
@@ -191,12 +203,17 @@ class ProtocolRequest {
     if (s is Map<String, dynamic>) {
       final lines = (s['lines'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
-          .map((l) => ProtocolSummaryLine(
-                label: (l['label'] ?? '').toString(),
-                amount: (l['amount'] ?? '').toString(),
-              ))
+          .map(
+            (l) => ProtocolSummaryLine(
+              label: (l['label'] ?? '').toString(),
+              amount: (l['amount'] ?? '').toString(),
+            ),
+          )
           .toList();
-      summary = ProtocolSummary(role: (s['role'] ?? '').toString(), lines: lines);
+      summary = ProtocolSummary(
+        role: (s['role'] ?? '').toString(),
+        lines: lines,
+      );
     }
     ProtocolEscrow? escrow;
     final e = j['escrow'];
@@ -227,7 +244,9 @@ class ProtocolRequest {
       // Kept verbatim: it is what gets hashed into the check, and what the
       // screen shows. Trimming only the ends would already alter it, so a
       // blank one is dropped and anything else is left exactly as sent.
-      challenge: (j['challenge'] is String && (j['challenge'] as String).trim().isNotEmpty)
+      challenge:
+          (j['challenge'] is String &&
+              (j['challenge'] as String).trim().isNotEmpty)
           ? j['challenge'] as String
           : null,
     );
@@ -248,17 +267,10 @@ class ProtocolRequest {
 
 /// `origination` → `Loan origination`: the one vocabulary for a sign action,
 /// on the review screen, in the history and on a loan card.
-String protocolActionLabel(String action) => switch (action) {
-      'origination' => 'Loan origination',
-      'repayment' => 'Repayment',
-      'installment' => 'Installment',
-      'default' => 'Default settlement',
-      'liquidation' => 'Liquidation',
-      'swap' => 'Swap',
-      'proof' => 'Proof of key',
-      '' => 'Signing request',
-      final other => other,
-    };
+String protocolActionLabel(String action, {String languageCode = 'en'}) =>
+    (languageCode == 'it' ? ProtocolCopy.italian : ProtocolCopy.english).action(
+      action,
+    );
 
 /// A refusal the user can read. Every check below produces one.
 class ProtocolLinkError implements Exception {
@@ -305,7 +317,7 @@ class ProtocolNetworkMismatch implements ProtocolLinkError {
   /// The name the wallet's engine reports right now.
   final String walletNetwork;
 
-  /// The site's L-BTC asset id, when it sent one (regtest).
+  /// The site's LBTC asset id, when it sent one (regtest).
   final String? sitePolicyAsset;
 
   /// The asset id the wallet's chain is on, when known.
@@ -317,32 +329,32 @@ class ProtocolNetworkMismatch implements ProtocolLinkError {
   /// `testnet` | `regtest` — what `WalletBridge.setLiquidNetwork` takes.
   /// Null when there is nothing to switch to.
   String? get targetShortName => switch (siteNetwork) {
-        'liquid-testnet' => 'testnet',
-        'liquid-regtest' => 'regtest',
-        _ => null,
-      };
+    'liquid-testnet' => 'testnet',
+    'liquid-regtest' => 'regtest',
+    _ => null,
+  };
 
   /// The asset id to switch with: the site's when it named one, else the
   /// caller's default. Testnet has no choice to make.
   String? policyAssetFor(String stockRegtestDefault) =>
       targetShortName == 'regtest'
-          ? (sitePolicyAsset ?? stockRegtestDefault)
-          : null;
+      ? (sitePolicyAsset ?? stockRegtestDefault)
+      : null;
 
   @override
   String get message => switch (kind) {
-        ProtocolMismatchKind.network =>
-          'This site runs on ${_prettyNetwork(siteNetwork)}. This wallet is on '
-              '${_prettyNetwork(walletNetwork)}.',
-        ProtocolMismatchKind.chain =>
-          'This site runs on a different ${_prettyNetwork(siteNetwork)} chain '
-              'than this wallet: its L-BTC asset id is '
-              '${protocolShortAsset(sitePolicyAsset)}, the wallet is on '
-              '${protocolShortAsset(walletPolicyAsset)}.',
-        ProtocolMismatchKind.unsupported =>
-          'This site runs on ${_prettyNetwork(siteNetwork)}, which this wallet '
-              'does not run. It is on ${_prettyNetwork(walletNetwork)}.',
-      };
+    ProtocolMismatchKind.network =>
+      'This site runs on ${_prettyNetwork(siteNetwork)}. This wallet is on '
+          '${_prettyNetwork(walletNetwork)}.',
+    ProtocolMismatchKind.chain =>
+      'This site runs on a different ${_prettyNetwork(siteNetwork)} chain '
+          'than this wallet: its LBTC asset id is '
+          '${protocolShortAsset(sitePolicyAsset)}, the wallet is on '
+          '${protocolShortAsset(walletPolicyAsset)}.',
+    ProtocolMismatchKind.unsupported =>
+      'This site runs on ${_prettyNetwork(siteNetwork)}, which this wallet '
+          'does not run. It is on ${_prettyNetwork(walletNetwork)}.',
+  };
 
   @override
   String toString() => message;
@@ -360,7 +372,7 @@ String protocolShortAsset(String? id) {
 /// [ProtocolLinkError] on the first failure.
 ///
 /// [activeNetwork] is the wallet's Liquid network name (`liquid-testnet` |
-/// `liquid-regtest`), [activePolicyAsset] the L-BTC asset id of the chain it
+/// `liquid-regtest`), [activePolicyAsset] the LBTC asset id of the chain it
 /// is on (regtest only; null skips the chain check); [now] is injectable for
 /// tests.
 ///
@@ -376,19 +388,24 @@ void validateProtocolRequest(
 }) {
   if (request.version != 1) {
     throw ProtocolLinkError(
-        'This request uses protocol version ${request.version}; this wallet '
-        'speaks version 1. Update Templar Wallet.');
+      'This request uses protocol version ${request.version}; this wallet '
+      'speaks version 1. Update Templar Wallet.',
+    );
   }
-  final expectedKind = link.action == ProtocolAction.connect ? 'connect' : 'sign';
+  final expectedKind = link.action == ProtocolAction.connect
+      ? 'connect'
+      : 'sign';
   if (request.kind != expectedKind) {
     throw ProtocolLinkError(
-        'The link asks to $expectedKind but the site sent a "${request.kind}" '
-        'request.');
+      'The link asks to $expectedKind but the site sent a "${request.kind}" '
+      'request.',
+    );
   }
   if (request.nonce != link.nonce) {
     throw const ProtocolLinkError(
-        'The site answered with a different nonce than the link carried — '
-        'the request may have been tampered with.');
+      'The site answered with a different nonce than the link carried — '
+      'the request may have been tampered with.',
+    );
   }
   if (request.network != activeNetwork) {
     throw ProtocolNetworkMismatch(
@@ -422,21 +439,27 @@ void validateProtocolRequest(
   final callbackOrigin = _origin(request.callback);
   if (callbackOrigin != linkOrigin) {
     throw ProtocolLinkError(
-        'The callback ($callbackOrigin) is on a different host than the '
-        'request ($linkOrigin). Refusing to send anything there.');
+      'The callback ($callbackOrigin) is on a different host than the '
+      'request ($linkOrigin). Refusing to send anything there.',
+    );
   }
-  for (final (name, uri) in [('request', link.url), ('callback', request.callback)]) {
+  for (final (name, uri) in [
+    ('request', link.url),
+    ('callback', request.callback),
+  ]) {
     if (uri.scheme != 'https' && !ProtocolLink.isLocalHost(uri.host)) {
       throw ProtocolLinkError(
-          'The $name URL is plain http on a remote host (${uri.host}). Only '
-          'https, or a server on this machine, is accepted.');
+        'The $name URL is plain http on a remote host (${uri.host}). Only '
+        'https, or a server on this machine, is accepted.',
+      );
     }
   }
   final nowTime = (now ?? DateTime.now()).toUtc();
   if (!request.expiresAtTime.isAfter(nowTime)) {
     throw ProtocolLinkError(
-        'This request expired at ${request.expiresAtTime.toLocal()}. Go back '
-        'to the site and start again.');
+      'This request expired at ${request.expiresAtTime.toLocal()}. Go back '
+      'to the site and start again.',
+    );
   }
   if (link.action == ProtocolAction.sign) {
     if ((request.id ?? '').isEmpty) {
@@ -453,11 +476,11 @@ bool _templarRuns(String name) =>
     name == 'liquid-testnet' || name == 'liquid-regtest';
 
 String _prettyNetwork(String name) => switch (name) {
-      'liquid-testnet' => 'Liquid testnet',
-      'liquid-regtest' => 'Liquid regtest',
-      'liquid' => 'Liquid mainnet',
-      _ => '"$name"',
-    };
+  'liquid-testnet' => 'Liquid testnet',
+  'liquid-regtest' => 'Liquid regtest',
+  'liquid' => 'Liquid mainnet',
+  _ => '"$name"',
+};
 
 /// Human network name for display.
 String protocolNetworkLabel(String name) => _prettyNetwork(name);

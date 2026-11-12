@@ -52,10 +52,10 @@ import '../bridge/wallet_bridge.dart';
 /// is never logged, never put in an error message, never cached.
 class BiometricUnlockService {
   BiometricUnlockService._()
-      : _store = Platform.isMacOS ? _MacKeyStore() : _PluginKeyStore(),
-        _bridge = null,
-        _platformOk = platformSupported,
-        _confirmPlatformOk = confirmPlatformSupported;
+    : _store = Platform.isMacOS ? _MacKeyStore() : _PluginKeyStore(),
+      _bridge = null,
+      _platformOk = platformSupported,
+      _confirmPlatformOk = confirmPlatformSupported;
 
   /// Where a sensor can open the vault at all: Android (fingerprint) and
   /// macOS (Touch ID). Screens gate their biometric rows on this.
@@ -77,8 +77,8 @@ class BiometricUnlockService {
     required WalletBridge this._bridge,
     bool platformSupported = true,
     bool confirmPlatformSupported = true,
-  })  : _platformOk = platformSupported,
-        _confirmPlatformOk = confirmPlatformSupported;
+  }) : _platformOk = platformSupported,
+       _confirmPlatformOk = confirmPlatformSupported;
 
   static final BiometricUnlockService instance = BiometricUnlockService._();
 
@@ -144,14 +144,20 @@ class BiometricUnlockService {
   /// or the engine raise otherwise. Nothing is persisted on failure.
   Future<void> enable() async {
     if (!_platformOk) {
-      throw StateError('Biometric unlock is only available on Android and macOS.');
+      throw StateError(
+        'Biometric unlock is only available on Android and macOS.',
+      );
     }
     final status = await _wallet.vaultStatus();
     if (!status.initialized) {
-      throw StateError('Set a vault passphrase before enabling biometric unlock.');
+      throw StateError(
+        'Set a vault passphrase before enabling biometric unlock.',
+      );
     }
     if (!status.unlocked) {
-      throw StateError('Unlock wallet storage before enabling biometric unlock.');
+      throw StateError(
+        'Unlock wallet storage before enabling biometric unlock.',
+      );
     }
     final keyHex = await _wallet.exportVaultKey();
     // The write is what shows the fingerprint prompt (the plugin binds the
@@ -197,11 +203,15 @@ class BiometricUnlockService {
         // Deliberately not echoing the engine message: it is the one place a
         // key-shaped string could leak into a log.
         if (e.toString().contains('does not match')) {
-          debugPrint('biometric unlock: key rejected by the vault, switching off');
+          debugPrint(
+            'biometric unlock: key rejected by the vault, switching off',
+          );
           await disable();
           lastMessage = _msgMismatch;
         } else {
-          debugPrint('biometric unlock: engine refused the key (${e.runtimeType})');
+          debugPrint(
+            'biometric unlock: engine refused the key (${e.runtimeType})',
+          );
           lastMessage = _msgFailed;
         }
         return false;
@@ -276,11 +286,15 @@ class BiometricUnlockService {
         await _wallet.verifyVaultKey(keyHex);
       } catch (e) {
         if (e.toString().contains('does not match')) {
-          debugPrint('biometric confirm: key rejected by the vault, switching off');
+          debugPrint(
+            'biometric confirm: key rejected by the vault, switching off',
+          );
           await disable();
           lastMessage = _msgMismatch;
         } else {
-          debugPrint('biometric confirm: engine refused the key (${e.runtimeType})');
+          debugPrint(
+            'biometric confirm: engine refused the key (${e.runtimeType})',
+          );
           lastMessage = _msgFailed;
         }
         return false;
@@ -411,7 +425,8 @@ class _PluginKeyStore implements BiometricKeyStore {
 
   @override
   Future<void> write(String keyHex) => _prompted(
-      () async => (await _file()).write(keyHex, promptInfo: enablePrompt));
+    () async => (await _file()).write(keyHex, promptInfo: enablePrompt),
+  );
 
   @override
   Future<void> delete() async => (await _file()).delete();
@@ -456,12 +471,19 @@ class _MacKeyStore implements BiometricKeyStore {
   }
 
   @override
-  Future<String?> read({String? reason}) => _prompted(() => _channel
-      .invokeMethod<String>('read', {'reason': reason ?? _unlockReason}));
+  Future<String?> read({String? reason}) => _prompted(
+    () => _channel.invokeMethod<String>('read', {
+      'reason': reason ?? _unlockReason,
+    }),
+  );
 
   @override
-  Future<void> write(String keyHex) => _prompted(() => _channel
-      .invokeMethod<void>('write', {'content': keyHex, 'reason': _enableReason}));
+  Future<void> write(String keyHex) => _prompted(
+    () => _channel.invokeMethod<void>('write', {
+      'content': keyHex,
+      'reason': _enableReason,
+    }),
+  );
 
   @override
   Future<void> delete() => _channel.invokeMethod<void>('delete');
@@ -483,13 +505,19 @@ class _MacKeyStore implements BiometricKeyStore {
           return null as T;
         case 'lockout':
           throw AuthException(
-              AuthExceptionCode.unknown, e.message ?? 'Touch ID is locked');
+            AuthExceptionCode.unknown,
+            e.message ?? 'Touch ID is locked',
+          );
         case 'not_enrolled':
-          throw AuthException(AuthExceptionCode.unknown,
-              e.message ?? 'No fingerprint is enrolled in Touch ID');
+          throw AuthException(
+            AuthExceptionCode.unknown,
+            e.message ?? 'No fingerprint is enrolled in Touch ID',
+          );
         default:
           throw AuthException(
-              AuthExceptionCode.unknown, e.message ?? 'Touch ID failed');
+            AuthExceptionCode.unknown,
+            e.message ?? 'Touch ID failed',
+          );
       }
     }
   }

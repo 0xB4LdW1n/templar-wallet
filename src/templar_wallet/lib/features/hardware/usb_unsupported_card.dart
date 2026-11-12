@@ -43,14 +43,18 @@ class UsbUnsupportedCard extends StatelessWidget {
               Icon(Icons.info_outline_rounded, color: s.warning, size: 22),
               const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: Text('Some devices cannot be used over USB here',
-                    style: AppTypography.sectionTitle),
+                child: Text(
+                  'Some devices cannot be used over USB here',
+                  style: AppTypography.sectionTitle,
+                ),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
-          Text(usbPartialSupportReason,
-              style: AppTypography.bodySmall.copyWith(color: s.inkSecondary)),
+          Text(
+            usbPartialSupportReason,
+            style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+          ),
           const SizedBox(height: AppSpacing.lg),
           const InfoBanner(
             title: 'What works today',

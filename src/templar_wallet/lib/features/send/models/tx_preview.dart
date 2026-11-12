@@ -14,17 +14,17 @@ class TxOutputSpec {
   /// (ignored on Bitcoin).
   final String? assetId;
 
-  /// Send the maximum available amount to this output. Bitcoin/L-BTC:
+  /// Send the maximum available amount to this output. Bitcoin/LBTC:
   /// balance minus fee (resolved by the backend); Liquid tokens: full asset
   /// balance. At most one output per transaction may set it.
   final bool sendMax;
 
   Map<String, dynamic> toJson() => {
-        'address': address,
-        'amount_sats': amountSats,
-        if (assetId != null) 'asset_id': assetId,
-        if (sendMax) 'send_max': true,
-      };
+    'address': address,
+    'amount_sats': amountSats,
+    if (assetId != null) 'asset_id': assetId,
+    if (sendMax) 'send_max': true,
+  };
 }
 
 /// One input or output of a previewed transaction, for the review diagram.
@@ -50,21 +50,21 @@ class TxIo {
   /// Liquid asset ID hex (null for Bitcoin).
   final String? assetId;
 
-  /// Display ticker ("L-BTC", token ticker); null for Bitcoin.
+  /// Display ticker ("LBTC", token ticker); null for Bitcoin.
   final String? ticker;
 
   /// Pre-formatted amount honoring the asset's precision (Liquid only).
   final String? amountDisplay;
 
   factory TxIo.fromJson(Map<String, dynamic> json) => TxIo(
-        outpoint: json['outpoint'] as String?,
-        address: (json['address'] as String?) ?? '',
-        amountSats: (json['amount_sats'] as num?)?.toInt() ?? 0,
-        isChange: (json['is_change'] as bool?) ?? false,
-        assetId: json['asset_id'] as String?,
-        ticker: json['ticker'] as String?,
-        amountDisplay: json['amount_display'] as String?,
-      );
+    outpoint: json['outpoint'] as String?,
+    address: (json['address'] as String?) ?? '',
+    amountSats: (json['amount_sats'] as num?)?.toInt() ?? 0,
+    isChange: (json['is_change'] as bool?) ?? false,
+    assetId: json['asset_id'] as String?,
+    ticker: json['ticker'] as String?,
+    amountDisplay: json['amount_display'] as String?,
+  );
 }
 
 class TxPreview {

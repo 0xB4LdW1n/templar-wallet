@@ -24,7 +24,11 @@ import 'models/hw_import_result.dart';
 import 'models/new_wallet_draft.dart';
 
 class HardwareSetupScreen extends StatefulWidget {
-  const HardwareSetupScreen({super.key, this.baseStep = 0, this.onBackToWizard});
+  const HardwareSetupScreen({
+    super.key,
+    this.baseStep = 0,
+    this.onBackToWizard,
+  });
 
   /// Questions already answered by the wizard hosting this setup —
   /// the step counter continues from here instead of restarting at 1.
@@ -170,12 +174,12 @@ class _HardwareSetupScreenState extends State<HardwareSetupScreen> {
   /// when a user is most likely to have two devices on the desk.
   void _applyActiveWallet(HwImportResult result) {
     context.read<AppState>().setActiveWallet(
-          result.wallet.id,
-          name: result.wallet.name,
-          type: result.wallet.typeLabel,
-          liquid: result.wallet.liquidEnabled,
-          bitcoin: result.wallet.bitcoinEnabled,
-        );
+      result.wallet.id,
+      name: result.wallet.name,
+      type: result.wallet.typeLabel,
+      liquid: result.wallet.liquidEnabled,
+      bitcoin: result.wallet.bitcoinEnabled,
+    );
   }
 
   /// Read the Liquid descriptor again for a wallet whose Bitcoin side paired
@@ -221,12 +225,12 @@ class _HardwareSetupScreenState extends State<HardwareSetupScreen> {
     final wallet = await showJadeLiquidSetupDialog(context);
     if (wallet == null || !mounted) return;
     context.read<AppState>().setActiveWallet(
-          wallet.id,
-          name: wallet.name,
-          type: wallet.typeLabel,
-          liquid: true,
-          bitcoin: false,
-        );
+      wallet.id,
+      name: wallet.name,
+      type: wallet.typeLabel,
+      liquid: true,
+      bitcoin: false,
+    );
     context.go(AppRoutes.dashboard);
   }
 
@@ -255,18 +259,18 @@ class _HardwareSetupScreenState extends State<HardwareSetupScreen> {
   }
 
   String get _stepTitle => switch (_step) {
-        1 => 'Connect your device',
-        2 => 'Confirm what this device will hold',
-        3 => 'Name your wallet',
-        _ => 'Pairing summary',
-      };
+    1 => 'Connect your device',
+    2 => 'Confirm what this device will hold',
+    3 => 'Name your wallet',
+    _ => 'Pairing summary',
+  };
 
   String get _stepSubtitle => switch (_step) {
-        1 => 'Plug it in with its cable and unlock it with your PIN',
-        2 => 'Review the device and the networks it will carry',
-        3 => 'Give this wallet a name',
-        _ => 'What was created, and where it came from',
-      };
+    1 => 'Plug it in with its cable and unlock it with your PIN',
+    2 => 'Review the device and the networks it will carry',
+    3 => 'Give this wallet a name',
+    _ => 'What was created, and where it came from',
+  };
 
   Widget _stepBody() {
     if (_step == 1) {
@@ -464,8 +468,10 @@ class _Step2Body extends StatelessWidget {
         const SizedBox(height: AppSpacing.xl),
         Text(
           'NETWORKS',
-          style: AppTypography.label
-              .copyWith(color: s.inkFaint, letterSpacing: 1.2),
+          style: AppTypography.label.copyWith(
+            color: s.inkFaint,
+            letterSpacing: 1.2,
+          ),
         ),
         const SizedBox(height: AppSpacing.md),
         _NetworkRow(
@@ -489,7 +495,8 @@ class _Step2Body extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.lg),
           const InfoBanner(
-            message: 'Both networks land in one wallet, read from the device '
+            message:
+                'Both networks land in one wallet, read from the device '
                 'in a single unlock: the Liquid side uses the confidential '
                 'descriptor from the Jade itself, so the device can spend '
                 'from it. You will be asked to unlock the Jade once now, and '
@@ -501,7 +508,8 @@ class _Step2Body extends StatelessWidget {
             // Not a limitation of Templar, and worth saying so plainly — the
             // alternative reading is "the app is missing a feature", which
             // sends people looking for a setting that does not exist.
-            message: 'You chose Bitcoin + Liquid, but only a Blockstream Jade '
+            message:
+                'You chose Bitcoin + Liquid, but only a Blockstream Jade '
                 'can sign Liquid transactions — Ledger, Trezor, Coldcard and '
                 'KeepKey have no Liquid support in their firmware. This wallet '
                 'will be Bitcoin-only. Pairing a Liquid wallet with this device '
@@ -509,7 +517,8 @@ class _Step2Body extends StatelessWidget {
           )
         else
           const InfoBanner(
-            message: 'Bitcoin only, as chosen. If this is a Jade you can add '
+            message:
+                'Bitcoin only, as chosen. If this is a Jade you can add '
                 'the Liquid side later from the wallet — the device is asked '
                 'for its confidential descriptor then.',
           ),
@@ -552,23 +561,29 @@ class _SummaryCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   device.fingerprint,
-                  style: AppTypography.mono
-                      .copyWith(fontSize: 11, color: s.inkFaint),
+                  style: AppTypography.mono.copyWith(
+                    fontSize: 11,
+                    color: s.inkFaint,
+                  ),
                 ),
               ],
             ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm, vertical: 3),
+              horizontal: AppSpacing.sm,
+              vertical: 3,
+            ),
             decoration: BoxDecoration(
               color: s.success.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
             ),
             child: Text(
               'identified',
-              style:
-                  AppTypography.label.copyWith(color: s.success, fontSize: 10),
+              style: AppTypography.label.copyWith(
+                color: s.success,
+                fontSize: 10,
+              ),
             ),
           ),
         ],
@@ -614,8 +629,7 @@ class _NetworkRow extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   description,
-                  style: AppTypography.caption
-                      .copyWith(color: s.inkSecondary),
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
                 ),
               ],
             ),
@@ -651,24 +665,27 @@ class _Step3Body extends StatelessWidget {
   Widget build(BuildContext context) {
     if (importing) {
       return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: AppSpacing.lg),
-          Text(
-            liquidActive
-                ? 'Reading the Bitcoin and Liquid descriptors from the device…'
-                : 'Reading descriptors from the device…',
-            style: AppTypography.body,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'Unlock it with your PIN and confirm on its screen if asked. One '
-            'unlock covers both networks.',
-            style: AppTypography.caption,
-            textAlign: TextAlign.center,
-          ),
-        ]),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              liquidActive
+                  ? 'Reading the Bitcoin and Liquid descriptors from the device…'
+                  : 'Reading descriptors from the device…',
+              style: AppTypography.body,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Unlock it with your PIN and confirm on its screen if asked. One '
+              'unlock covers both networks.',
+              style: AppTypography.caption,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       );
     }
     return Column(
@@ -730,7 +747,7 @@ class _RecapBody extends StatelessWidget {
           detail: result.hasLiquid
               ? 'Imported · confidential descriptor read from the device'
               : (result.liquidError ??
-                  'The device did not hand over its Liquid descriptor.'),
+                    'The device did not hand over its Liquid descriptor.'),
           descriptor: result.hasLiquid ? result.liquidDescriptor : null,
           action: result.hasLiquid ? null : onRetryLiquid,
           actionLabel: 'Retry Liquid',
@@ -750,7 +767,8 @@ class _RecapBody extends StatelessWidget {
           // here must be derived from the key of the device that will sign, or
           // the wallet can receive and never spend.
           label: 'Bitcoin descriptor belongs to this device',
-          passed: wallet.masterFingerprint == null ||
+          passed:
+              wallet.masterFingerprint == null ||
               wallet.masterFingerprint!.toLowerCase() ==
                   result.fingerprint.toLowerCase(),
           detail: wallet.masterFingerprint,
@@ -778,7 +796,8 @@ class _RecapBody extends StatelessWidget {
           fingerprint: result.fingerprint,
           networks: networks,
           checks: checks,
-          footnote: 'You can browse this wallet with the device unplugged — '
+          footnote:
+              'You can browse this wallet with the device unplugged — '
               'balances, history and receive addresses are all local. Sending '
               'asks you to connect and unlock it, because only the device can '
               'sign.',
@@ -837,22 +856,26 @@ class _PrerequisiteCard extends StatelessWidget {
         children: [
           Text('If nothing shows up', style: AppTypography.sectionTitle),
           const SizedBox(height: AppSpacing.md),
-          ...items.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.check_circle_outline,
-                        size: 16, color: s.inkFaint),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(item,
-                          style: AppTypography.bodySmall
-                              .copyWith(color: s.inkSecondary)),
+          ...items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.check_circle_outline, size: 16, color: s.inkFaint),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      item,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: s.inkSecondary,
+                      ),
                     ),
-                  ],
-                ),
-              )),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );

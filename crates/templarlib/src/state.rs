@@ -383,14 +383,14 @@ impl AppState {
     }
 
     /// The asset registry for a network: the testnet defaults, plus the
-    /// regtest policy asset labelled as L-BTC when on regtest (its id is
+    /// regtest policy asset labelled as LBTC when on regtest (its id is
     /// node-specific, so the static table cannot know it).
     pub fn asset_registry_for(network: &LiquidNetwork) -> AssetRegistry {
         let mut registry = AssetRegistry::with_defaults();
         if network.is_regtest() {
             registry.register(AssetInfo {
                 asset_id: network.policy_asset_hex(),
-                ticker: "L-BTC".to_string(),
+                ticker: "LBTC".to_string(),
                 name: "Liquid Bitcoin (regtest)".to_string(),
                 precision: 8,
             });
@@ -398,12 +398,12 @@ impl AppState {
         registry
     }
 
-    /// L-BTC asset id (hex) of the active Liquid network.
+    /// LBTC asset id (hex) of the active Liquid network.
     pub fn policy_asset_hex(&self) -> String {
         self.liquid_network.policy_asset_hex()
     }
 
-    /// Whether `asset_id` is the active network's L-BTC.
+    /// Whether `asset_id` is the active network's LBTC.
     pub fn is_policy_asset(&self, asset_id: &str) -> bool {
         self.liquid_network.is_policy_asset(asset_id)
     }

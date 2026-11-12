@@ -1,9 +1,8 @@
 //! LiquiDEX swap and order-book commands over the templar-core
 //! engine (`liquid::liquidex`) and book client (`liquid::book`).
 //!
-//! The book is browsed read-only (liquidex.it is mainnet); the make/take
-//! engine signs and broadcasts **only on Liquid testnet** — the engine's
-//! deep verification refuses anything else (`take_block_reason`).
+//! The local book is browsed read-only by the wallet. The make/take engine
+//! signs and broadcasts on the active Liquid testnet or regtest chain.
 //!
 //! My-offers persist to `<data_dir>/swap_offers.json` (plain JSON, keyed per
 //! wallet, no secrets) with the same atomic temp+fsync+rename pattern as the
@@ -15,19 +14,23 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use templar_core::liquid::book::{fetch_book, BookEntry, BookLeg, DEFAULT_BOOK_URL};
+use templar_core::liquid::book::{
+    fetch_book, fetch_markets, publish_offer, BookEntry, BookLeg, MarketBookEntry, MarketBookLeg,
+    LOCAL_BOOK_URL, LOCAL_MARKETS_URL,
+};
 use templar_core::liquid::liquidex::{
     broadcast_transaction_on, proposal_utxo_unspent_on, verify_proposal_on,
 };
 use templar_core::{
     build_cancel_tx, first_frozen, make_proposal, take_preview_excluding, take_proposal_excluding,
-    verify_proposal, AssetRegistry, CoinChain, LiquidError, LiquidexLeg, LiquidexProposal, SwapLeg,
-    SwapNetwork, TakePreview, VerifyCheck, VerifyResult,
+    AssetRegistry, CoinChain, LiquidError, LiquidexLeg, LiquidexProposal, SwapLeg, SwapNetwork,
+    TakePreview, VerifyCheck, VerifyResult,
 };
 
 use crate::state::AppState;
 
 const STORE_FILE: &str = "swap_offers.json";
+const LOCAL_ADMIN_URL: &str = "http://127.0.0.1:3210/api/admin/offers";
 
 // ── DTOs (wire shapes fixed by the host contract) ────────────────────────────
 
@@ -61,6 +64,37 @@ pub struct SwapRowDto {
     pub takeable: bool,
     /// Offer kind — only "swap" today; "loan" arrives with the lending protocol.
     pub kind: String,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct MarketLegDto {
+    pub chain: String,
+    pub network: String,
+    pub asset_id: String,
+    pub ticker: String,
+    pub name: String,
+    pub precision: u8,
+    pub amount_sats: u64,
+    pub display_amount: String,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct MarketRowDto {
+    pub id: String,
+    pub source_id: u64,
+    pub status: String,
+    pub settlement: String,
+    pub demo: bool,
+    pub available: bool,
+    pub maker_gives: MarketLegDto,
+    pub maker_wants: MarketLegDto,
+    pub price_display: String,
+    pub note: String,
+    pub created_at: u64,
+    pub proposal_json: String,
+    pub verified: bool,
+    pub takeable: bool,
+    pub block_reason: Option<String>,
 }
 
 /// `swap_verify` result: the engine's `VerifyResult` with display-enriched legs.
@@ -114,6 +148,12 @@ pub struct ListSwapsParams {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct ListMarketsParams {
+    #[serde(default)]
+    pub include_unavailable: bool,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct SwapVerifyParams {
     pub proposal_json: String,
     #[serde(default)]
@@ -160,18 +200,39 @@ pub struct SwapCancelParams {
     pub offer_id: String,
 }
 
+#[derive(Deserialize, Debug)]
+pub struct SwapPublishParams {
+    pub proposal_json: String,
+    #[serde(default)]
+    pub note: String,
+}
+
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
-/// Fetches the order book and maps each entry to a display row.
-/// URL: `TEMPLAR_SWAP_BOOK_URL` env override or the liquidex.it default,
-/// with `?all` appended when unavailable offers are requested too.
-///
-/// The book is a public (mainnet-sourced) service: on a local regtest there
-/// is nothing to list, and the rows would all be untakeable anyway.
+/// Fetches the local order book and maps each entry to a display row.
+/// URL: `TEMPLAR_SWAP_BOOK_URL` env override or the localhost service.
+/// The active Liquid network is always sent so testnet and regtest stay apart.
 pub fn list_swaps(state: &AppState, include_unavailable: bool) -> Result<Vec<SwapRowDto>, String> {
-    state.require_liquid_testnet("The public LiquiDEX order book")?;
-    let entries = fetch_book(&book_url(include_unavailable)).map_err(|e| e.to_string())?;
-    Ok(rows_from_entries(&entries))
+    let entries = fetch_book(&book_url(include_unavailable, state.liquid_network.name()))
+        .map_err(|e| e.to_string())?;
+    Ok(rows_from_entries(&entries, &state.liquid_network))
+}
+
+/// Unified local market: real LiquiDEX and HTLC-v1 rows, plus optional legacy
+/// design demos. Demo rows never become takeable or reach a signing path.
+pub fn list_markets(
+    state: &AppState,
+    include_unavailable: bool,
+) -> Result<Vec<MarketRowDto>, String> {
+    let entries = fetch_markets(&market_url(
+        include_unavailable,
+        state.liquid_network.name(),
+    ))
+    .map_err(|e| e.to_string())?;
+    Ok(entries
+        .iter()
+        .map(|entry| market_row(entry, &state.liquid_network))
+        .collect())
 }
 
 /// Parses and verifies a proposal (offline, or deep with chain access on the
@@ -275,6 +336,33 @@ pub fn make(
     Ok(offer)
 }
 
+/// Publishes an already-signed proposal to the local admin order book.
+/// Only the proposal and optional public note leave the wallet process.
+pub fn publish(state: &AppState, proposal_json: &str, note: &str) -> Result<u64, String> {
+    let proposal = LiquidexProposal::from_json(proposal_json).map_err(|e| e.to_string())?;
+    let analysis =
+        verify_proposal_on(&proposal, false, &state.liquid_network).map_err(|e| e.to_string())?;
+    if !analysis.valid {
+        return Err(first_failure_note(&analysis)
+            .unwrap_or_else(|| "Proposal failed offline verification".to_string()));
+    }
+    if analysis.network == SwapNetwork::Mainnet {
+        return Err("Liquid mainnet proposals cannot be published".to_string());
+    }
+    let url = std::env::var("TEMPLAR_SWAP_ADMIN_URL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| LOCAL_ADMIN_URL.to_string());
+    publish_offer(
+        &url,
+        state.liquid_network.name(),
+        proposal_json,
+        note.trim(),
+    )
+    .map_err(|e| e.to_string())
+}
+
 /// Exact-amount self-send: creates a UTXO of exactly `amount_sats` of
 /// `asset_id` at a fresh own address, for the "offer amount X but no exact
 /// coin" path. Signs and broadcasts; the UI re-syncs afterwards.
@@ -364,28 +452,122 @@ pub fn cancel(state: &AppState, wallet_id: &str, offer_id: &str) -> Result<Strin
 
 // ── Row / leg mapping ────────────────────────────────────────────────────────
 
-fn book_url(include_unavailable: bool) -> String {
+fn book_url(include_unavailable: bool, network: &str) -> String {
     let base = std::env::var("TEMPLAR_SWAP_BOOK_URL")
         .ok()
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| DEFAULT_BOOK_URL.to_string());
+        .unwrap_or_else(|| LOCAL_BOOK_URL.to_string());
+    let separator = if base.contains('?') { '&' } else { '?' };
+    let mut url = format!("{base}{separator}network={network}");
     if include_unavailable {
-        format!("{base}?all")
+        url.push_str("&all=1");
+    }
+    url
+}
+
+fn market_url(include_unavailable: bool, network: &str) -> String {
+    let base = std::env::var("TEMPLAR_SWAP_MARKETS_URL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| LOCAL_MARKETS_URL.to_string());
+    let separator = if base.contains('?') { '&' } else { '?' };
+    let mut url = format!("{base}{separator}network={network}");
+    if include_unavailable {
+        url.push_str("&all=1");
+    }
+    url
+}
+
+fn market_row(entry: &MarketBookEntry, local: &templar_core::LiquidNetwork) -> MarketRowDto {
+    let (verified, takeable, block_reason) = if entry.settlement == "htlc-v1" {
+        let network_ok = local.name() == "liquid-testnet"
+            && entry.maker_gives.network.contains("testnet")
+            && entry.maker_wants.network.contains("testnet");
+        (
+            network_ok,
+            network_ok && entry.available && entry.status == "open",
+            (!network_ok)
+                .then(|| "HTLC v1 is restricted to Bitcoin testnet and Liquid testnet".to_string()),
+        )
+    } else if entry.demo {
+        (
+            false,
+            false,
+            Some("HTLC settlement is intentionally disabled in this UI/UX demo build".to_string()),
+        )
     } else {
-        base
+        match LiquidexProposal::from_json(&entry.proposal_json) {
+            Ok(proposal) => match verify_proposal_on(&proposal, false, local) {
+                Ok(result) => {
+                    let here = SwapNetwork::of(local);
+                    let detected = if result.network == SwapNetwork::Unknown {
+                        here
+                    } else {
+                        result.network
+                    };
+                    let verified = result.valid && detected == here;
+                    let reason = if verified {
+                        None
+                    } else {
+                        first_failure_note(&result)
+                            .or_else(|| Some("Offer belongs to another Liquid network".to_string()))
+                    };
+                    (verified, verified && entry.available, reason)
+                }
+                Err(error) => (false, false, Some(error.to_string())),
+            },
+            Err(error) => (false, false, Some(error.to_string())),
+        }
+    };
+    MarketRowDto {
+        id: entry.id.clone(),
+        source_id: entry.source_id,
+        status: entry.status.clone(),
+        settlement: entry.settlement.clone(),
+        demo: entry.demo,
+        available: entry.available,
+        maker_gives: market_leg(&entry.maker_gives),
+        maker_wants: market_leg(&entry.maker_wants),
+        price_display: entry.price_display.clone(),
+        note: entry.note.clone(),
+        created_at: entry.created_at,
+        proposal_json: entry.proposal_json.clone(),
+        verified,
+        takeable,
+        block_reason,
+    }
+}
+
+fn market_leg(leg: &MarketBookLeg) -> MarketLegDto {
+    MarketLegDto {
+        chain: leg.chain.clone(),
+        network: leg.network.clone(),
+        asset_id: leg.asset_id.clone(),
+        ticker: leg.ticker.clone(),
+        name: leg.name.clone(),
+        precision: leg.precision,
+        amount_sats: leg.amount_sats,
+        display_amount: leg.display_amount.clone(),
     }
 }
 
 /// Pure mapping + ordering (available first, then id descending) — the
 /// network fetch stays out so this is unit-testable.
-fn rows_from_entries(entries: &[BookEntry]) -> Vec<SwapRowDto> {
-    let mut rows: Vec<SwapRowDto> = entries.iter().map(book_row).collect();
+fn rows_from_entries(
+    entries: &[BookEntry],
+    network: &templar_core::LiquidNetwork,
+) -> Vec<SwapRowDto> {
+    let mut rows: Vec<SwapRowDto> = entries
+        .iter()
+        .map(|entry| book_row(entry, network))
+        .collect();
     rows.sort_by(|a, b| b.available.cmp(&a.available).then(b.id.cmp(&a.id)));
     rows
 }
 
-fn book_row(entry: &BookEntry) -> SwapRowDto {
+fn book_row(entry: &BookEntry, local: &templar_core::LiquidNetwork) -> SwapRowDto {
     let receive = book_leg_dto(entry.inputs.first());
     let pay = book_leg_dto(entry.outputs.first());
     // Ratio is the book's own input/output price; the display convention is
@@ -396,17 +578,20 @@ fn book_row(entry: &BookEntry) -> SwapRowDto {
     // listed — visibly unverified and never takeable.
     let (verified, verify_note, network, takeable) =
         match LiquidexProposal::from_json(&entry.proposal_json) {
-            Ok(proposal) => match verify_proposal(&proposal, false) {
+            Ok(proposal) => match verify_proposal_on(&proposal, false, local) {
                 Ok(res) => {
                     let note = first_failure_note(&res);
-                    // Row-level takeability: only offers the offline heuristic
-                    // positively places on testnet. Unknown-network rows stay
-                    // non-takeable here — the book source is mainnet, and the
-                    // import-proposal flow (which deep-verifies) is the path
-                    // for foreign proposals. The engine re-checks at take time
-                    // regardless.
-                    let takeable = res.valid && res.network == SwapNetwork::Testnet;
-                    (res.valid, note, res.network.as_str().to_string(), takeable)
+                    // Token-to-token proposals cannot identify a chain from a
+                    // policy asset. The local book's network partition is the
+                    // offline hint; take still performs deep chain checks.
+                    let here = SwapNetwork::of(local);
+                    let detected = if res.network == SwapNetwork::Unknown {
+                        here
+                    } else {
+                        res.network
+                    };
+                    let takeable = res.valid && detected == here;
+                    (res.valid, note, detected.as_str().to_string(), takeable)
                 }
                 Err(e) => (false, Some(e.to_string()), "unknown".to_string(), false),
             },
@@ -593,9 +778,10 @@ fn new_offer_id(store: &SwapOfferStore) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use templar_core::verify_proposal;
 
     /// Real proposal from the liquidex.it book (offer id 9, mainnet): DBEER
-    /// offered for L-BTC. Offline checks pass against this genuine data.
+    /// offered for LBTC. Offline checks pass against this genuine data.
     const PROPOSAL_ID_9: &str = r#"{"version":0,"tx":"02000000010162457676604122dc2c3ab6b9ac5a787411cc90f07edd8651c656fd5ed5dfd45c000000001716001461362b692acf41e26c88c58abcd633cbbe06f420feffffff010b90f4a0ea769100ad4200aabb115f6ead24ba5180eea84f231f3c51c047f02f57092c307774be067befd563d6eb23ca185f963e22f9e96b3f224e94d28ed3cd2fd2020ea96dbab999be940e62be9ff1d8525f354730a3546d71a70696e1f40082996c17a914ea94f77a850e4b018d67c8c4ba087977ec63e1db8700000000000002473044022053a7107a113adffe78e556aa5fa0391b3a2301277630d77febd5398f7a834d520220484feb14c5b0b313759b79501a36d471985b5fe33a346cbcd3d059a0d32214a283210247fa74dbe2fe4f4d0d8e5cc16573f097cb9909670eedd733b50f37e343c9b08a000000","inputs":[{"asset":"002452cb8f56a0a5628240edfb3d1e966c9b1959adcfb95b5726e5e9688611bf","asset_blinder":"10abf182945667b6aae98a79535b91f2343eb6a920d8d99d3de06fa024e38c77","amount_blinder":"6cce12bfa4cd11818de662104e61f6be53275e21c343e984bb06c6749669ad2f","amount":1000}],"outputs":[{"asset":"6f0279e9ed041c3d710a9f57d0c02928416460c4b722ae3457a11eec381c526d","asset_blinder":"e8bfdc63d9750f16a2934b42466c1bfd171e5f3bcd8eafcd9e3ef954cf8a6d58","amount_blinder":"8e2d5cb748d14d5edb06643da6b05208671fbca875682a67690e3436d3ceb22a","amount":1000}]}"#;
 
     fn fixture_entry_9() -> BookEntry {
@@ -616,7 +802,7 @@ mod tests {
             outputs: vec![BookLeg {
                 asset: "6f0279e9ed041c3d710a9f57d0c02928416460c4b722ae3457a11eec381c526d"
                     .to_string(),
-                name: "L-BTC - Liquid Bitcoin ()".to_string(),
+                name: "LBTC - Liquid Bitcoin ()".to_string(),
                 amount: "0.00001000".to_string(),
                 sats: 1000,
             }],
@@ -633,6 +819,41 @@ mod tests {
             proposal_json: "{ not a proposal".to_string(),
             inputs: Vec::new(),
             outputs: Vec::new(),
+        }
+    }
+
+    fn demo_market_entry() -> MarketBookEntry {
+        MarketBookEntry {
+            id: "demo:7".to_string(),
+            source_id: 7,
+            status: "open".to_string(),
+            settlement: "htlc-demo".to_string(),
+            demo: true,
+            available: true,
+            maker_gives: MarketBookLeg {
+                chain: "bitcoin".to_string(),
+                network: "bitcoin-testnet".to_string(),
+                asset_id: "btc-testnet".to_string(),
+                ticker: "BTC".to_string(),
+                name: "Bitcoin".to_string(),
+                precision: 8,
+                amount_sats: 100_000,
+                display_amount: "0.00100000".to_string(),
+            },
+            maker_wants: MarketBookLeg {
+                chain: "liquid".to_string(),
+                network: "liquid-testnet".to_string(),
+                asset_id: "aa".repeat(32),
+                ticker: "USDT".to_string(),
+                name: "Test USD".to_string(),
+                precision: 2,
+                amount_sats: 2_500,
+                display_amount: "25.00".to_string(),
+            },
+            price_display: "0.00100000 → 25.00".to_string(),
+            note: "demo".to_string(),
+            created_at: 42,
+            proposal_json: String::new(),
         }
     }
 
@@ -658,7 +879,7 @@ mod tests {
             },
             wants: SwapLegDto {
                 asset_id: templar_core::LBTC_TESTNET_ASSET_ID.to_string(),
-                ticker: "L-BTC".to_string(),
+                ticker: "LBTC".to_string(),
                 amount_sats: 500,
                 display_amount: "0.00000500".to_string(),
             },
@@ -669,17 +890,17 @@ mod tests {
 
     #[test]
     fn book_row_maps_real_entry() {
-        let row = book_row(&fixture_entry_9());
+        let row = book_row(&fixture_entry_9(), &templar_core::LiquidNetwork::testnet());
         assert_eq!(row.id, 9);
         assert!(row.available);
         // Taker orientation: receive = maker input, pay = maker output.
         assert_eq!(row.receive.ticker, "DBEER");
         assert_eq!(row.receive.amount_sats, 1000);
         assert_eq!(row.receive.display_amount, "10.00");
-        assert_eq!(row.pay.ticker, "L-BTC");
+        assert_eq!(row.pay.ticker, "LBTC");
         assert_eq!(row.pay.display_amount, "0.00001000");
         assert_eq!(row.price, 1.0);
-        assert_eq!(row.price_display, "1.00000000 L-BTC/DBEER");
+        assert_eq!(row.price_display, "1.00000000 LBTC/DBEER");
         assert_eq!(row.created, "Wed, 09 Jun 2021 16:37:38 GMT");
         // Real mainnet data: offline checks pass, but a mainnet order is
         // never takeable by this testnet-signing wallet.
@@ -693,7 +914,10 @@ mod tests {
 
     #[test]
     fn unparseable_proposal_is_listed_but_unverified() {
-        let row = book_row(&broken_entry(3, true));
+        let row = book_row(
+            &broken_entry(3, true),
+            &templar_core::LiquidNetwork::testnet(),
+        );
         assert!(!row.verified);
         assert!(!row.takeable);
         assert!(row.verify_note.is_some());
@@ -713,16 +937,21 @@ mod tests {
             fixture_entry_9(), // id 9, available
             broken_entry(11, false),
         ];
-        let ids: Vec<(u64, bool)> = rows_from_entries(&entries)
-            .iter()
-            .map(|r| (r.id, r.available))
-            .collect();
+        let ids: Vec<(u64, bool)> =
+            rows_from_entries(&entries, &templar_core::LiquidNetwork::testnet())
+                .iter()
+                .map(|r| (r.id, r.available))
+                .collect();
         assert_eq!(ids, vec![(9, true), (2, true), (11, false), (7, false)]);
     }
 
     #[test]
     fn swap_row_wire_shape_matches_contract_keys() {
-        let v = serde_json::to_value(book_row(&fixture_entry_9())).unwrap();
+        let v = serde_json::to_value(book_row(
+            &fixture_entry_9(),
+            &templar_core::LiquidNetwork::testnet(),
+        ))
+        .unwrap();
         for key in [
             "id",
             "available",
@@ -748,6 +977,48 @@ mod tests {
     }
 
     #[test]
+    fn cross_chain_market_demo_is_visible_but_never_takeable() {
+        let row = market_row(
+            &demo_market_entry(),
+            &templar_core::LiquidNetwork::testnet(),
+        );
+        assert!(row.demo);
+        assert!(!row.verified);
+        assert!(!row.takeable);
+        assert_eq!(row.maker_gives.chain, "bitcoin");
+        assert_eq!(row.maker_wants.ticker, "USDT");
+        assert!(row.block_reason.unwrap().contains("disabled"));
+    }
+
+    #[test]
+    fn market_row_wire_shape_is_stable() {
+        let value = serde_json::to_value(market_row(
+            &demo_market_entry(),
+            &templar_core::LiquidNetwork::testnet(),
+        ))
+        .unwrap();
+        for key in [
+            "id",
+            "source_id",
+            "status",
+            "settlement",
+            "demo",
+            "available",
+            "maker_gives",
+            "maker_wants",
+            "price_display",
+            "note",
+            "created_at",
+            "proposal_json",
+            "verified",
+            "takeable",
+            "block_reason",
+        ] {
+            assert!(value.get(key).is_some(), "missing key {key}");
+        }
+    }
+
+    #[test]
     fn analysis_enriches_legs_via_registry() {
         let registry = AssetRegistry::with_defaults();
         let proposal = LiquidexProposal::from_json(PROPOSAL_ID_9).unwrap();
@@ -762,7 +1033,7 @@ mod tests {
         assert_eq!(dto.maker_offers.ticker, "002452cb");
         assert_eq!(dto.maker_offers.display_amount, "0.00001000");
         assert_eq!(dto.maker_offers.amount_sats, 1000);
-        // A testnet L-BTC leg resolves through the registry defaults.
+        // A testnet LBTC leg resolves through the registry defaults.
         let lbtc = registry_leg(
             &registry,
             &SwapLeg {
@@ -770,7 +1041,7 @@ mod tests {
                 amount_sats: 12_345,
             },
         );
-        assert_eq!(lbtc.ticker, "L-BTC");
+        assert_eq!(lbtc.ticker, "LBTC");
         assert_eq!(lbtc.display_amount, "0.00012345");
     }
 
@@ -854,7 +1125,17 @@ mod tests {
     fn book_url_honors_env_and_all_suffix() {
         // Only the default path is asserted — mutating the process env in a
         // parallel test runner would race other tests.
-        assert_eq!(book_url(false), DEFAULT_BOOK_URL);
-        assert_eq!(book_url(true), format!("{DEFAULT_BOOK_URL}?all"));
+        assert_eq!(
+            book_url(false, "liquid-testnet"),
+            format!("{LOCAL_BOOK_URL}?network=liquid-testnet")
+        );
+        assert_eq!(
+            book_url(true, "liquid-regtest"),
+            format!("{LOCAL_BOOK_URL}?network=liquid-regtest&all=1")
+        );
+        assert_eq!(
+            market_url(false, "liquid-testnet"),
+            format!("{LOCAL_MARKETS_URL}?network=liquid-testnet")
+        );
     }
 }

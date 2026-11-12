@@ -125,7 +125,7 @@ Open the wallet → Receive → Liquid → address starts `tlq1…`/`vjT…`. Fu
 from the faucet, sync, confirm the balance.
 
 ### L3 · Send needing a co-signature
-Send some L-BTC. The wallet holds one of the two keys, so the send returns the
+Send some LBTC. The wallet holds one of the two keys, so the send returns the
 co-signing dialog: *1 of 2 signatures collected*, nothing broadcast.
 
 - Copy the PSET, or save the `.pset` file.

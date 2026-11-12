@@ -31,13 +31,13 @@ class StatusBadge extends StatelessWidget {
       BadgeVariant.danger => (AppColors.dangerLight, AppColors.danger),
       BadgeVariant.accent => (AppColors.accentLight, AppColors.accentDark),
       BadgeVariant.neutral => (
-          Theme.of(context).brightness == Brightness.dark
-              ? AppColors.surfaceDark2
-              : AppColors.borderMuted,
-          Theme.of(context).brightness == Brightness.dark
-              ? AppColors.textSecondaryDark
-              : AppColors.textSecondary,
-        ),
+        Theme.of(context).brightness == Brightness.dark
+            ? AppColors.surfaceDark2
+            : AppColors.borderMuted,
+        Theme.of(context).brightness == Brightness.dark
+            ? AppColors.textSecondaryDark
+            : AppColors.textSecondary,
+      ),
     };
 
     return Container(
@@ -56,10 +56,7 @@ class StatusBadge extends StatelessWidget {
             Container(
               width: 6,
               height: 6,
-              decoration: BoxDecoration(
-                color: fg,
-                shape: BoxShape.circle,
-              ),
+              decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
             ),
             const SizedBox(width: AppSpacing.xs),
           ] else if (icon != null) ...[
@@ -149,15 +146,15 @@ class AssetChip extends StatelessWidget {
           color: isSelected
               ? AppColors.accent
               : isDark
-                  ? AppColors.surfaceDark2
-                  : AppColors.surfaceLight,
+              ? AppColors.surfaceDark2
+              : AppColors.surfaceLight,
           borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
           border: Border.all(
             color: isSelected
                 ? AppColors.accent
                 : isDark
-                    ? AppColors.borderDark
-                    : AppColors.borderLight,
+                ? AppColors.borderDark
+                : AppColors.borderLight,
           ),
         ),
         child: Column(
@@ -169,8 +166,8 @@ class AssetChip extends StatelessWidget {
                 color: isSelected
                     ? Colors.white
                     : isDark
-                        ? AppColors.textSecondaryDark
-                        : AppColors.textSecondary,
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondary,
                 fontWeight: FontWeight.w700,
               ),
             ),

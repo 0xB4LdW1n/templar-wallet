@@ -62,9 +62,9 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   }
 
   Animation<double> _fade(double begin, double end) => CurvedAnimation(
-        parent: _c,
-        curve: Interval(begin, end, curve: Curves.easeOut),
-      );
+    parent: _c,
+    curve: Interval(begin, end, curve: Curves.easeOut),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -81,61 +81,77 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Padding(
-                padding: EdgeInsets.all(AppLayout.isPhone(context)
-                    ? AppSpacing.xl
-                    : AppSpacing.xxxl),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Logo — scales + fades in.
-                    ScaleTransition(
-                      scale: Tween(begin: 0.4, end: 1.0).animate(logoIn),
-                      child: FadeTransition(
-                        opacity: _fade(0.0, 0.45),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(24),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.accent.withValues(alpha: 0.45),
-                                blurRadius: 36,
-                                spreadRadius: 2,
-                              ),
-                            ],
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Padding(
+                  padding: EdgeInsets.all(
+                    AppLayout.isPhone(context)
+                        ? AppSpacing.xl
+                        : AppSpacing.xxxl,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Logo — scales + fades in.
+                      ScaleTransition(
+                        scale: Tween(begin: 0.4, end: 1.0).animate(logoIn),
+                        child: FadeTransition(
+                          opacity: _fade(0.0, 0.45),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.accent.withValues(
+                                    alpha: 0.45,
+                                  ),
+                                  blurRadius: 36,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: const AppLogo(size: 88, radius: 24),
                           ),
-                          child: const AppLogo(size: 88, radius: 24),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    FadeTransition(
-                      opacity: bodyIn,
-                      child: _GradientTitle('Templar Wallet'),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    FadeTransition(
-                      opacity: bodyIn,
-                      child: Column(
-                        children: [
-                          Text(
-                            'Bitcoin & Liquid Network custody\nwith Miniscript spending policies',
-                            textAlign: TextAlign.center,
-                            style: AppTypography.body.copyWith(
-                              color: isDark
-                                  ? AppColors.textSecondaryDark
-                                  : AppColors.textSecondary,
+                      const SizedBox(height: AppSpacing.xl),
+                      FadeTransition(
+                        opacity: bodyIn,
+                        child: _GradientTitle('Templar Wallet'),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      FadeTransition(
+                        opacity: bodyIn,
+                        child: Column(
+                          children: [
+                            Text(
+                              'Bitcoin & Liquid Network custody\nwith Miniscript spending policies',
+                              textAlign: TextAlign.center,
+                              style: AppTypography.body.copyWith(
+                                color: isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondary,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: AppSpacing.xxxl),
-                          ...[
-                            (Icons.security, 'Singlesig, multisig, Miniscript policies'),
-                            (Icons.water_drop_outlined, 'Bitcoin + Liquid Network assets'),
-                            (Icons.key_outlined, 'Software & hardware wallet support'),
-                          ].map((item) => Padding(
-                                padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                            const SizedBox(height: AppSpacing.xxxl),
+                            ...[
+                              (
+                                Icons.security,
+                                'Singlesig, multisig, Miniscript policies',
+                              ),
+                              (
+                                Icons.water_drop_outlined,
+                                'Bitcoin + Liquid Network assets',
+                              ),
+                              (
+                                Icons.key_outlined,
+                                'Software & hardware wallet support',
+                              ),
+                            ].map(
+                              (item) => Padding(
+                                padding: const EdgeInsets.only(
+                                  bottom: AppSpacing.md,
+                                ),
                                 child: Row(
                                   children: [
                                     Container(
@@ -144,52 +160,71 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                       alignment: Alignment.center,
                                       decoration: BoxDecoration(
                                         color: AppColors.accentLight,
-                                        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                                        borderRadius: BorderRadius.circular(
+                                          AppSpacing.radiusSm,
+                                        ),
                                       ),
-                                      child: Icon(item.$1, size: 16, color: AppColors.accent),
+                                      child: Icon(
+                                        item.$1,
+                                        size: 16,
+                                        color: AppColors.accent,
+                                      ),
                                     ),
                                     const SizedBox(width: AppSpacing.md),
-                                    Expanded(child: Text(item.$2, style: AppTypography.body)),
+                                    Expanded(
+                                      child: Text(
+                                        item.$2,
+                                        style: AppTypography.body,
+                                      ),
+                                    ),
                                   ],
                                 ),
-                              )),
-                          const SizedBox(height: AppSpacing.xxxl),
-                          // Wizard entry: create or restore.
-                          SizedBox(
-                            width: double.infinity,
-                            child: _GradientButton(
-                              label: 'Create new wallet',
-                              icon: Icons.add,
-                              onPressed: () => context.go(AppRoutes.walletType),
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: () => context.go(AppRoutes.importWallet),
-                              icon: const Icon(Icons.restore, size: 18),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-                              ),
-                              label: const Text(
-                                'Restore an existing wallet',
-                                style: TextStyle(fontSize: 16),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: AppSpacing.xl),
-                          Text(
-                            'Testnet only · No mainnet funds',
-                            style: AppTypography.caption.copyWith(color: AppColors.textMuted),
-                          ),
-                        ],
+                            const SizedBox(height: AppSpacing.xxxl),
+                            // Wizard entry: create or restore.
+                            SizedBox(
+                              width: double.infinity,
+                              child: _GradientButton(
+                                label: 'Create new wallet',
+                                icon: Icons.add,
+                                onPressed: () =>
+                                    context.go(AppRoutes.walletType),
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () =>
+                                    context.go(AppRoutes.importWallet),
+                                icon: const Icon(Icons.restore, size: 18),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: AppSpacing.lg,
+                                  ),
+                                ),
+                                label: const Text(
+                                  'Restore an existing wallet',
+                                  style: TextStyle(fontSize: 16),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.xl),
+                            Text(
+                              'Testnet only · No mainnet funds',
+                              style: AppTypography.caption.copyWith(
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            )),
+            ),
           ),
         ),
       ),

@@ -121,7 +121,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// with. Dropped automatically once a sync returns the real transaction,
   /// since the txid is then already in the summary.
   Future<DashboardData> _withPendingConsolidations(
-      String walletId, DashboardData data) async {
+    String walletId,
+    DashboardData data,
+  ) async {
     final List<PendingConsolidation> pending;
     try {
       pending = await PendingConsolidationStore.instance.listAllFor(walletId);
@@ -130,21 +132,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
     if (pending.isEmpty) return data;
     final known = data.recentActivity.map((t) => t.txid).toSet();
-    final extra = pending
-        .where((p) => !known.contains(p.txid))
-        .map((p) => RecentActivityItem(
-              txid: p.txid,
-              direction: 'self',
-              chain: p.chainKey,
-              // Approximate: the real output is the inputs minus the fee.
-              amount: '~${p.displayAmount}',
-              ticker: p.ticker ?? 'BTC',
-              timestamp: p.startedAt,
-              confirmations: 0,
-              note: p.activityNote,
-            ))
-        .toList()
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final extra =
+        pending
+            .where((p) => !known.contains(p.txid))
+            .map(
+              (p) => RecentActivityItem(
+                txid: p.txid,
+                direction: 'self',
+                chain: p.chainKey,
+                // Approximate: the real output is the inputs minus the fee.
+                amount: '~${p.displayAmount}',
+                ticker: p.ticker ?? 'BTC',
+                timestamp: p.startedAt,
+                confirmations: 0,
+                note: p.activityNote,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     if (extra.isEmpty) return data;
     return data.withActivity([...extra, ...data.recentActivity]);
   }
@@ -212,8 +217,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// failure here (a locked vault, a missing file) needs something else.
   bool get _canRepair {
     final state = context.read<AppState>();
-    final multisig =
-        (state.activeWalletType ?? '').toLowerCase().contains('multisig');
+    final multisig = (state.activeWalletType ?? '').toLowerCase().contains(
+      'multisig',
+    );
     final error = (_error ?? '').toLowerCase();
     // "Descriptor checksum mismatch" is BDK refusing a database that holds
     // another wallet's descriptor — the descriptor itself is fine, and a
@@ -236,11 +242,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _repairing = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-            'Could not repair: ${e.toString().replaceFirst('Exception: wallet-ffi: ', '')}'),
-        backgroundColor: AppScheme.of(context).danger,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not repair: ${e.toString().replaceFirst('Exception: wallet-ffi: ', '')}',
+          ),
+          backgroundColor: AppScheme.of(context).danger,
+        ),
+      );
     }
   }
 
@@ -251,23 +260,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: _loading
             ? const DashboardShimmer()
             : _data == null
-                ? _DashboardError(
-                    message: _error ?? 'Could not load the wallet.',
-                    onRetry: _reload,
-                    onRepair: _canRepair ? _repairWallet : null,
-                    repairing: _repairing,
-                  )
-                : _DashboardContent(
-                    data: _data!,
-                    walletInfo: _walletInfo,
-                    history: _history,
-                    historyFailed: _historyFailed,
-                    hiddenAssets: _hiddenAssets,
-                    issuedAssets: _issuedAssets,
-                    showHidden: _showHidden,
-                    onToggleShowHidden: () =>
-                        setState(() => _showHidden = !_showHidden),
-                  ),
+            ? _DashboardError(
+                message: _error ?? 'Could not load the wallet.',
+                onRetry: _reload,
+                onRepair: _canRepair ? _repairWallet : null,
+                repairing: _repairing,
+              )
+            : _DashboardContent(
+                data: _data!,
+                walletInfo: _walletInfo,
+                history: _history,
+                historyFailed: _historyFailed,
+                hiddenAssets: _hiddenAssets,
+                issuedAssets: _issuedAssets,
+                showHidden: _showHidden,
+                onToggleShowHidden: () =>
+                    setState(() => _showHidden = !_showHidden),
+              ),
       ),
     );
   }
@@ -311,13 +320,16 @@ class _DashboardError extends StatelessWidget {
               children: [
                 Icon(Icons.error_outline_rounded, size: 40, color: s.danger),
                 const SizedBox(height: AppSpacing.md),
-                Text('Could not open this wallet',
-                    style: AppTypography.sectionTitleOf(context)),
+                Text(
+                  'Could not open this wallet',
+                  style: AppTypography.sectionTitleOf(context),
+                ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
                   message,
-                  style:
-                      AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+                  style: AppTypography.bodySmall.copyWith(
+                    color: s.inkSecondary,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 if (onRepair != null) ...[
@@ -327,14 +339,18 @@ class _DashboardError extends StatelessWidget {
                     'not be used as it was written. The cosigner keys are still '
                     'here, so it can be rebuilt from them — same wallet, same '
                     'addresses, nothing to collect from your devices again.',
-                    style:
-                        AppTypography.caption.copyWith(color: s.inkSecondary),
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ],
                 const SizedBox(height: AppSpacing.lg),
                 PrimaryButton(
-                    label: 'Retry', onPressed: onRetry, isFullWidth: phone),
+                  label: 'Retry',
+                  onPressed: onRetry,
+                  isFullWidth: phone,
+                ),
                 if (onRepair != null) ...[
                   const SizedBox(height: AppSpacing.sm),
                   SecondaryButton(
@@ -380,7 +396,11 @@ class _DashboardContent extends StatelessWidget {
     return ListView(
       padding: phone
           ? const EdgeInsets.fromLTRB(
-              AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.lg)
+              AppSpacing.lg,
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.lg,
+            )
           : const EdgeInsets.all(AppSpacing.xl),
       children: [
         // The mobile shell's own header already names the wallet directly
@@ -480,10 +500,10 @@ class _CosignerCardState extends State<_CosignerCard> {
   }
 
   List<CosignerEntry> get _entries => resolveCosigners(
-        cosignerKeys: widget.info.cosignerKeys,
-        labels: _labels,
-        localFingerprints: widget.info.localFingerprints,
-      );
+    cosignerKeys: widget.info.cosignerKeys,
+    labels: _labels,
+    localFingerprints: widget.info.localFingerprints,
+  );
 
   Future<void> _openRoster([int? index]) async {
     await showCosignerRoster(
@@ -527,7 +547,10 @@ class _CosignerCardState extends State<_CosignerCard> {
           Row(
             children: [
               Expanded(
-                child: Text('Keys', style: AppTypography.sectionTitleOf(context)),
+                child: Text(
+                  'Keys',
+                  style: AppTypography.sectionTitleOf(context),
+                ),
               ),
               TextButton(
                 onPressed: () => _openRoster(),
@@ -555,7 +578,7 @@ class _CosignerCardState extends State<_CosignerCard> {
                       widget.info.requiredSigs == null
                           ? '${entries.length} keys'
                           : 'Any ${widget.info.requiredSigs} of '
-                              '${entries.length} keys can sign.',
+                                '${entries.length} keys can sign.',
                       style: AppTypography.bodySmall,
                     ),
                     const SizedBox(height: AppSpacing.sm),
@@ -566,8 +589,11 @@ class _CosignerCardState extends State<_CosignerCard> {
                         padding: const EdgeInsets.only(bottom: 2),
                         child: Row(
                           children: [
-                            Icon(e.label.icon,
-                                size: 13, color: e.label.color ?? s.inkFaint),
+                            Icon(
+                              e.label.icon,
+                              size: 13,
+                              color: e.label.color ?? s.inkFaint,
+                            ),
                             const SizedBox(width: AppSpacing.sm),
                             Expanded(
                               child: Text(
@@ -582,8 +608,9 @@ class _CosignerCardState extends State<_CosignerCard> {
                     if (entries.length > shown)
                       Text(
                         '+${entries.length - shown} more',
-                        style:
-                            AppTypography.caption.copyWith(color: s.inkFaint),
+                        style: AppTypography.caption.copyWith(
+                          color: s.inkFaint,
+                        ),
                       ),
                   ],
                 ),
@@ -699,7 +726,8 @@ class _BrandHeroState extends State<_BrandHero> {
 
     return HeroPanel(
       padding: EdgeInsets.all(
-          phone ? AppSpacing.cardPaddingSmall : AppSpacing.cardPadding),
+        phone ? AppSpacing.cardPaddingSmall : AppSpacing.cardPadding,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -727,7 +755,9 @@ class _BrandHeroState extends State<_BrandHero> {
           ),
           const SizedBox(height: AppSpacing.md),
           _PortfolioChart(
-              history: widget.history, historyFailed: widget.historyFailed),
+            history: widget.history,
+            historyFailed: widget.historyFailed,
+          ),
           SizedBox(height: phone ? AppSpacing.md : AppSpacing.lg),
           if (phone)
             // Two equal halves; Receive alone spans the width.
@@ -743,10 +773,7 @@ class _BrandHeroState extends State<_BrandHero> {
           else
             Row(
               children: [
-                if (!watchOnly) ...[
-                  send,
-                  const SizedBox(width: AppSpacing.sm),
-                ],
+                if (!watchOnly) ...[send, const SizedBox(width: AppSpacing.sm)],
                 receive,
               ],
             ),
@@ -757,7 +784,7 @@ class _BrandHeroState extends State<_BrandHero> {
 }
 
 // ── Net worth headline ────────────────────────────────────────────────────────
-// Whole-portfolio value: the fiat sum of native coins (BTC + L-BTC) in the
+// Whole-portfolio value: the fiat sum of native coins (BTC + LBTC) in the
 // user's selected currency, with the Bitcoin-denominated equivalent beneath.
 // Tokens without a price feed are shown in the assets grid but not valued here.
 //
@@ -799,12 +826,14 @@ class _NetWorthState extends State<_NetWorth> {
         // nothing to swap to and the headline stays plain text.
         final swappable = price.hasPrice;
         final showCoin = _coinFirst || !swappable;
-        final headline = showCoin ? unitStr : price.totalFiatDisplay(nativeSats);
+        final headline = showCoin
+            ? unitStr
+            : price.totalFiatDisplay(nativeSats);
         final under = !swappable
             ? 'Net worth'
             : showCoin
-                ? 'Net worth · ≈ ${price.totalFiatDisplay(nativeSats)}'
-                : 'Net worth · ≈ $unitStr';
+            ? 'Net worth · ≈ ${price.totalFiatDisplay(nativeSats)}'
+            : 'Net worth · ≈ $unitStr';
 
         Widget headlineText = GradientText(
           hidden ? kMaskedAmount : headline,
@@ -954,7 +983,8 @@ class _PortfolioChartState extends State<_PortfolioChart> {
   /// advance by the minute; long ones by the hour, where a minute is invisible.
   DateTime _nowBucket() {
     final now = DateTime.now();
-    final step = _range.window != null && _range.window! <= const Duration(days: 7)
+    final step =
+        _range.window != null && _range.window! <= const Duration(days: 7)
         ? const Duration(minutes: 1)
         : const Duration(hours: 1);
     return DateTime.fromMillisecondsSinceEpoch(
@@ -1009,8 +1039,10 @@ class _PortfolioChartState extends State<_PortfolioChart> {
     if (_fetchingPrices || (key == _pricesKey && !retryable)) return;
     _fetchingPrices = true;
     _pricesKey = key;
-    final series = await PriceHistoryService.instance
-        .series(currency: currency, days: days);
+    final series = await PriceHistoryService.instance.series(
+      currency: currency,
+      days: days,
+    );
     _fetchingPrices = false;
     if (!mounted) return;
     setState(() {
@@ -1027,16 +1059,16 @@ class _PortfolioChartState extends State<_PortfolioChart> {
   }
 
   int _chainSats(BalanceHistoryPoint p) => switch (_chain) {
-        _ChainFilter.all => p.btcSats + p.lbtcSats,
-        _ChainFilter.btc => p.btcSats,
-        _ChainFilter.liquid => p.lbtcSats,
-      };
+    _ChainFilter.all => p.btcSats + p.lbtcSats,
+    _ChainFilter.btc => p.btcSats,
+    _ChainFilter.liquid => p.lbtcSats,
+  };
 
   int _currentSats(BalanceHistory h) => switch (_chain) {
-        _ChainFilter.all => h.btcSats + h.lbtcSats,
-        _ChainFilter.btc => h.btcSats,
-        _ChainFilter.liquid => h.lbtcSats,
-      };
+    _ChainFilter.all => h.btcSats + h.lbtcSats,
+    _ChainFilter.btc => h.btcSats,
+    _ChainFilter.liquid => h.lbtcSats,
+  };
 
   /// The balance step function clipped to the selected window, as
   /// (time, sats) pairs — always at least two samples.
@@ -1045,8 +1077,8 @@ class _PortfolioChartState extends State<_PortfolioChart> {
     final start = _range.window != null
         ? now.subtract(_range.window!)
         : (points.isNotEmpty
-            ? points.first.time
-            : now.subtract(const Duration(days: 30)));
+              ? points.first.time
+              : now.subtract(const Duration(days: 30)));
 
     final out = <(DateTime, int)>[];
     int? carried;
@@ -1101,11 +1133,12 @@ class _PortfolioChartState extends State<_PortfolioChart> {
     final hKey = h == null
         ? 'none'
         : '${h.points.length}.${h.btcSats}.${h.lbtcSats}.'
-            '${h.points.isEmpty ? 0 : h.points.last.time.millisecondsSinceEpoch}';
+              '${h.points.isEmpty ? 0 : h.points.last.time.millisecondsSinceEpoch}';
     final pKey = _prices.isEmpty
         ? '0'
         : '${_prices.length}.${_prices.last.price}';
-    final key = '$hKey|${_range.name}|${_chain.name}|$fiat|$pKey'
+    final key =
+        '$hKey|${_range.name}|${_chain.name}|$fiat|$pKey'
         '|${_nowBucket().millisecondsSinceEpoch}';
     final cached = _series;
     if (cached != null && key == _seriesKey) return cached;
@@ -1176,13 +1209,13 @@ class _PortfolioChartState extends State<_PortfolioChart> {
           formatValue: (v) => hidden
               ? kMaskedAmount
               : fiat
-                  ? _fiatLabel(v, symbol)
-                  : PriceService.formatUnit(v.round(), sat: useSats),
+              ? _fiatLabel(v, symbol)
+              : PriceService.formatUnit(v.round(), sat: useSats),
           emptyMessage: history != null
               ? 'Not enough history yet'
               : widget.historyFailed
-                  ? 'Balance history unavailable'
-                  : 'Loading history…',
+              ? 'Balance history unavailable'
+              : 'Loading history…',
           // Replay the sweep only when the user changes the view, not on
           // the per-minute edge refresh.
           animationKey: '${_range.name}|${_chain.name}|$fiat',
@@ -1334,10 +1367,7 @@ class _PortfolioChartState extends State<_PortfolioChart> {
                     runSpacing: AppSpacing.sm,
                     alignment: WrapAlignment.end,
                     crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      ?chainSwitch,
-                      unitSwitch,
-                    ],
+                    children: [?chainSwitch, unitSwitch],
                   ),
                 ],
               ),
@@ -1350,7 +1380,9 @@ class _PortfolioChartState extends State<_PortfolioChart> {
 
 /// Fiat labels on the chart follow the net-worth headline's compaction.
 String _fiatLabel(double value, String symbol) {
-  if (value >= 1000000) return '$symbol${(value / 1000000).toStringAsFixed(2)}M';
+  if (value >= 1000000) {
+    return '$symbol${(value / 1000000).toStringAsFixed(2)}M';
+  }
   if (value >= 1000) return '$symbol${(value / 1000).toStringAsFixed(2)}k';
   return '$symbol${value.toStringAsFixed(2)}';
 }
@@ -1386,8 +1418,8 @@ class _DeltaReadout extends StatelessWidget {
     return Semantics(
       label: phone
           ? (d == null
-              ? 'No change data'
-              : '${d.toStringAsFixed(1)} percent over $rangeLabel')
+                ? 'No change data'
+                : '${d.toStringAsFixed(1)} percent over $rangeLabel')
           : null,
       excludeSemantics: phone,
       child: Row(
@@ -1397,8 +1429,8 @@ class _DeltaReadout extends StatelessWidget {
             flat
                 ? Icons.remove_rounded
                 : (up
-                    ? Icons.arrow_drop_up_rounded
-                    : Icons.arrow_drop_down_rounded),
+                      ? Icons.arrow_drop_up_rounded
+                      : Icons.arrow_drop_down_rounded),
             size: flat ? 13 : 20,
             color: color,
           ),
@@ -1447,8 +1479,9 @@ class _TextChips<T> extends StatelessWidget {
     final motion = AppMotion.of(context, AppMotion.quick);
     return Row(
       mainAxisSize: spread ? MainAxisSize.max : MainAxisSize.min,
-      mainAxisAlignment:
-          spread ? MainAxisAlignment.spaceBetween : MainAxisAlignment.start,
+      mainAxisAlignment: spread
+          ? MainAxisAlignment.spaceBetween
+          : MainAxisAlignment.start,
       children: [
         for (final (value, label, tint) in options)
           Builder(
@@ -1526,10 +1559,16 @@ class _HeroEyebrow extends StatelessWidget {
                   text: 'TOTAL BALANCE',
                   style: label.copyWith(color: s.inkFaint),
                 ),
-                TextSpan(text: '  ·  ', style: label.copyWith(color: s.inkFaint)),
+                TextSpan(
+                  text: '  ·  ',
+                  style: label.copyWith(color: s.inkFaint),
+                ),
                 // The network answer, once, where the number is read. It is
                 // amber because it is a warning, not a label.
-                TextSpan(text: 'TESTNET', style: label.copyWith(color: s.testnet)),
+                TextSpan(
+                  text: 'TESTNET',
+                  style: label.copyWith(color: s.testnet),
+                ),
               ],
             ),
             maxLines: 1,
@@ -1603,11 +1642,11 @@ class _PhoneBalance extends StatelessWidget {
         // has nothing to swap to.
         final swappable = price.hasPrice;
         final showCoin = coinFirst || !swappable;
-        final headline =
-            showCoin ? coinStr : price.totalFiatDisplay(nativeSats);
+        final headline = showCoin
+            ? coinStr
+            : price.totalFiatDisplay(nativeSats);
         final (value, unit) = _splitUnit(headline);
-        final other =
-            showCoin ? price.totalFiatDisplay(nativeSats) : coinStr;
+        final other = showCoin ? price.totalFiatDisplay(nativeSats) : coinStr;
 
         final line = <String>[
           if (swappable && !hidden) '≈ $other',
@@ -1638,10 +1677,9 @@ class _PhoneBalance extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Text(
                   unit,
-                  style: AppTypography.balanceMediumOf(context).copyWith(
-                    fontSize: 17,
-                    color: s.inkSecondary,
-                  ),
+                  style: AppTypography.balanceMediumOf(
+                    context,
+                  ).copyWith(fontSize: 17, color: s.inkSecondary),
                 ),
               ),
             ],
@@ -1649,7 +1687,11 @@ class _PhoneBalance extends StatelessWidget {
               const SizedBox(width: AppSpacing.xs),
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Icon(Icons.swap_vert_rounded, size: 18, color: s.inkFaint),
+                child: Icon(
+                  Icons.swap_vert_rounded,
+                  size: 18,
+                  color: s.inkFaint,
+                ),
               ),
             ],
           ],
@@ -1787,7 +1829,7 @@ class _PhoneAssets extends StatelessWidget {
           asset: lbtc,
           title: 'Liquid Bitcoin',
           tint: s.liquid,
-          coin: 'L-BTC',
+          coin: 'LBTC',
           useSats: useSats,
           masked: masked,
         ),
@@ -1808,7 +1850,7 @@ class _PhoneAssets extends StatelessWidget {
     );
   }
 
-  /// BTC or L-BTC: the chain's own coin, counted in coins.
+  /// BTC or LBTC: the chain's own coin, counted in coins.
   Widget _nativeRow(
     BuildContext context, {
     required AssetBalance asset,
@@ -1903,8 +1945,7 @@ class _PhoneActivity extends StatelessWidget {
         ListSectionLabel(
           label: 'Recent activity',
           actionLabel: recent.isEmpty ? null : 'All',
-          onAction:
-              recent.isEmpty ? null : () => context.go(AppRoutes.history),
+          onAction: recent.isEmpty ? null : () => context.go(AppRoutes.history),
         ),
         ListCard(children: rows),
       ],
@@ -1924,15 +1965,16 @@ class _PhoneActivity extends StatelessWidget {
       icon: isSelf
           ? Icons.autorenew_rounded
           : isIn
-              ? Icons.south_west_rounded
-              : Icons.north_east_rounded,
+          ? Icons.south_west_rounded
+          : Icons.north_east_rounded,
       tint: isIn ? s.success : s.inkSecondary,
-      title: tx.note ??
+      title:
+          tx.note ??
           (isSelf
               ? 'Internal transfer'
               : isIn
-                  ? 'Received'
-                  : 'Sent'),
+              ? 'Received'
+              : 'Sent'),
       // Which chain, from whom, how long ago — the three things a row of
       // activity is asked, in the order they are asked in.
       subtitle: <String>[
@@ -2000,10 +2042,7 @@ class _WalletKeyBadgeState extends State<_WalletKeyBadge> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              fp,
-              style: AppTypography.monoSmall.copyWith(color: s.accent),
-            ),
+            Text(fp, style: AppTypography.monoSmall.copyWith(color: s.accent)),
             const SizedBox(width: AppSpacing.xs),
             Icon(
               _copied ? Icons.check : Icons.copy_rounded,
@@ -2012,8 +2051,10 @@ class _WalletKeyBadgeState extends State<_WalletKeyBadge> {
             ),
             if (_copied) ...[
               const SizedBox(width: 3),
-              Text(_hasXpub ? 'xpub copied' : 'fingerprint copied',
-                  style: AppTypography.caption.copyWith(color: s.success)),
+              Text(
+                _hasXpub ? 'xpub copied' : 'fingerprint copied',
+                style: AppTypography.caption.copyWith(color: s.success),
+              ),
             ],
           ],
         ),
@@ -2029,7 +2070,7 @@ class _WalletKeyBadgeState extends State<_WalletKeyBadge> {
 // Below the portfolio hero the wallet stops being one number and becomes two
 // chains. A single "Assets" grid and a single "Recent activity" list forced
 // the user to do that separation themselves: a row reading "+100 USDT" says
-// nothing about which chain settled it, and BTC and L-BTC sat side by side as
+// nothing about which chain settled it, and BTC and LBTC sat side by side as
 // if they were interchangeable.
 //
 // So: one panel per chain, in the same order the hero chart offers them
@@ -2089,10 +2130,12 @@ class _ChainSections extends StatelessWidget {
           rail: AppScheme.of(context).liquid,
           native: lbtc,
           activity: _activity('liquid'),
-          // Loans live on Liquid, so the way into Templar Protocol sits in the
-          // Liquid panel: one tap from the dashboard, as its own row.
-          showProtocol: true,
-          // Everything that is not L-BTC on the Liquid side: issued tokens and
+          // Optional: Settings › Advanced decides whether Loans exists in the
+          // wallet chrome at all, including this dashboard shortcut.
+          showProtocol: context.select<AppState, bool>(
+            (state) => state.loansEnabled,
+          ),
+          // Everything that is not LBTC on the Liquid side: issued tokens and
           // third-party assets, with their reissuance tokens folded in.
           assets: data.assets
               .where((a) => a.ticker != 'BTC' && a.ticker != 'LBTC')
@@ -2153,7 +2196,7 @@ class _ChainPanel extends StatelessWidget {
   final IconData icon;
   final Color rail;
 
-  /// The chain's own coin — BTC or L-BTC. This is the panel's headline.
+  /// The chain's own coin — BTC or LBTC. This is the panel's headline.
   final AssetBalance native;
 
   final List<RecentActivityItem> activity;
@@ -2188,198 +2231,238 @@ class _ChainPanel extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         child: AnimatedBuilder(
-        animation: price,
-        builder: (_, _) {
-          final coin = native.ticker == 'LBTC' ? 'L-BTC' : 'BTC';
-          final unit =
-              PriceService.formatUnit(native.amount, sat: useSats, coin: coin);
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header: glyph tile, chain name in its hue, sync state.
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                    gutter, phone ? AppSpacing.md : AppSpacing.lg, gutter, 0),
-                child: Row(
-                  children: [
-                    ListIconTile(icon: icon, tint: rail, size: 36),
-                    const SizedBox(width: kListGap),
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: AppTypography.sectionTitleOf(context)
-                            .copyWith(color: rail),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (native.status != 'synced')
-                      StatusBadge(
-                        label: native.status,
-                        variant: native.status == 'unavailable'
-                            ? BadgeVariant.danger
-                            : BadgeVariant.neutral,
-                      ),
-                  ],
-                ),
-              ),
-              // Balance.
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                    gutter, AppSpacing.md, gutter, AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (phone)
-                      // Scales a long sats figure down to the panel instead
-                      // of wrapping the number onto two lines.
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Amount(
-                          hidden ? kMaskedAmount : unit,
-                          maxLines: 1,
-                          style: AppTypography.balanceMediumOf(context)
-                              .copyWith(fontSize: 22, color: s.ink),
-                        ),
-                      )
-                    else
-                      Amount(
-                        hidden ? kMaskedAmount : unit,
-                        style: AppTypography.balanceMedium
-                            .copyWith(fontSize: 24, color: s.ink),
-                      ),
-                    const SizedBox(height: 2),
-                    if (phone)
-                      // One wrapping line; a Row of three Texts overflows
-                      // once the fiat figure grows.
-                      Text(
-                        [
-                          if (price.hasPrice && !hidden)
-                            '≈ ${price.fiatDisplay(native.amount)}',
-                          '${native.utxoCount} '
-                              'coin${native.utxoCount == 1 ? '' : 's'}',
-                        ].join('  ·  '),
-                        style: AppTypography.bodySmall
-                            .copyWith(color: s.inkSecondary),
-                        softWrap: true,
-                      )
-                    else
-                      Row(
-                        children: [
-                          if (price.hasPrice && !hidden)
-                            Text(
-                              '≈ ${price.fiatDisplay(native.amount)}',
-                              style: AppTypography.bodySmall
-                                  .copyWith(color: s.inkSecondary),
-                            ),
-                          if (price.hasPrice && !hidden)
-                            Text(
-                              '  ·  ',
-                              style: AppTypography.bodySmall
-                                  .copyWith(color: s.inkFaint),
-                            ),
-                          Text(
-                            '${native.utxoCount} '
-                            'coin${native.utxoCount == 1 ? '' : 's'}',
-                            style: AppTypography.bodySmall
-                                .copyWith(color: s.inkSecondary),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-              ),
-              // Templar Protocol — Liquid only. A row, not a button: it goes
-              // somewhere, like the rows underneath it — to the Loans page,
-              // which is where the protocol's state is read; the settings
-              // are one tap further from there.
-              if (showProtocol) ...[
-                Divider(height: 1, color: s.edge),
-                HoverRow(
-                  onTap: () => context.go(AppRoutes.loans),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(
-                        horizontal: gutter, vertical: AppSpacing.sm),
-                    child: Row(
-                      children: [
-                        ListIconTile(
-                            icon: Icons.handshake_outlined, tint: rail, size: 28),
-                        const SizedBox(width: kListGap),
-                        Expanded(
-                          child: Text('Loans · Templar Protocol',
-                              style: AppTypography.body.copyWith(color: s.ink)),
-                        ),
-                        Icon(Icons.chevron_right, size: 18, color: s.inkFaint),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-              // Assets — Liquid only.
-              if (assets != null) ...[
-                Divider(height: 1, color: s.edge),
-                _PanelAssets(
-                  assets: assets!,
-                  issuedAssets: issuedAssets,
-                  hiddenAssets: hiddenAssets,
-                  showHidden: showHidden,
-                  onToggleShowHidden: onToggleShowHidden,
-                ),
-              ],
-              // Latest transactions on this chain.
-              Divider(height: 1, color: s.edge),
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                    gutter, phone ? AppSpacing.xs : AppSpacing.md, gutter, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'LATEST',
-                        style: AppTypography.navSection
-                            .copyWith(color: s.inkFaint, letterSpacing: 1.2),
-                      ),
-                    ),
-                    // On a phone the quiet tile keeps a resting hairline
-                    // and a 48-dp height (buttons.dart), so it reads as an
-                    // action without hover.
-                    GhostButton(
-                      label: 'All activity',
-                      onPressed: () => context.go(AppRoutes.history),
-                    ),
-                  ],
-                ),
-              ),
-              if (activity.isEmpty)
+          animation: price,
+          builder: (_, _) {
+            final coin = native.ticker == 'LBTC' ? 'LBTC' : 'BTC';
+            final unit = PriceService.formatUnit(
+              native.amount,
+              sat: useSats,
+              coin: coin,
+            );
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header: glyph tile, chain name in its hue, sync state.
                 Padding(
                   padding: EdgeInsets.fromLTRB(
-                      gutter, AppSpacing.md, gutter, AppSpacing.lg),
-                  child: Text(
-                    'Nothing yet on this chain.',
-                    style: AppTypography.caption.copyWith(color: s.inkFaint),
+                    gutter,
+                    phone ? AppSpacing.md : AppSpacing.lg,
+                    gutter,
+                    0,
                   ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: Column(
+                  child: Row(
                     children: [
-                      for (var i = 0; i < activity.length; i++)
-                        HoverRow(
-                          zebra: i.isOdd,
-                          // On a phone the rows look like a list, so they
-                          // act like one and open the activity page.
-                          onTap: phone
-                              ? () => context.go(AppRoutes.history)
-                              : null,
-                          child: _ActivityRow(tx: activity[i]),
+                      ListIconTile(icon: icon, tint: rail, size: 36),
+                      const SizedBox(width: kListGap),
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: AppTypography.sectionTitleOf(
+                            context,
+                          ).copyWith(color: rail),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (native.status != 'synced')
+                        StatusBadge(
+                          label: native.status,
+                          variant: native.status == 'unavailable'
+                              ? BadgeVariant.danger
+                              : BadgeVariant.neutral,
                         ),
                     ],
                   ),
                 ),
-            ],
-          );
-        },
+                // Balance.
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    gutter,
+                    AppSpacing.md,
+                    gutter,
+                    AppSpacing.md,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (phone)
+                        // Scales a long sats figure down to the panel instead
+                        // of wrapping the number onto two lines.
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Amount(
+                            hidden ? kMaskedAmount : unit,
+                            maxLines: 1,
+                            style: AppTypography.balanceMediumOf(
+                              context,
+                            ).copyWith(fontSize: 22, color: s.ink),
+                          ),
+                        )
+                      else
+                        Amount(
+                          hidden ? kMaskedAmount : unit,
+                          style: AppTypography.balanceMedium.copyWith(
+                            fontSize: 24,
+                            color: s.ink,
+                          ),
+                        ),
+                      const SizedBox(height: 2),
+                      if (phone)
+                        // One wrapping line; a Row of three Texts overflows
+                        // once the fiat figure grows.
+                        Text(
+                          [
+                            if (price.hasPrice && !hidden)
+                              '≈ ${price.fiatDisplay(native.amount)}',
+                            '${native.utxoCount} '
+                                'coin${native.utxoCount == 1 ? '' : 's'}',
+                          ].join('  ·  '),
+                          style: AppTypography.bodySmall.copyWith(
+                            color: s.inkSecondary,
+                          ),
+                          softWrap: true,
+                        )
+                      else
+                        Row(
+                          children: [
+                            if (price.hasPrice && !hidden)
+                              Text(
+                                '≈ ${price.fiatDisplay(native.amount)}',
+                                style: AppTypography.bodySmall.copyWith(
+                                  color: s.inkSecondary,
+                                ),
+                              ),
+                            if (price.hasPrice && !hidden)
+                              Text(
+                                '  ·  ',
+                                style: AppTypography.bodySmall.copyWith(
+                                  color: s.inkFaint,
+                                ),
+                              ),
+                            Text(
+                              '${native.utxoCount} '
+                              'coin${native.utxoCount == 1 ? '' : 's'}',
+                              style: AppTypography.bodySmall.copyWith(
+                                color: s.inkSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+                // Templar Protocol — Liquid only. A row, not a button: it goes
+                // somewhere, like the rows underneath it — to the Loans page,
+                // which is where the protocol's state is read; the settings
+                // are one tap further from there.
+                if (showProtocol) ...[
+                  Divider(height: 1, color: s.edge),
+                  HoverRow(
+                    onTap: () => context.go(AppRoutes.loans),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: gutter,
+                        vertical: AppSpacing.sm,
+                      ),
+                      child: Row(
+                        children: [
+                          ListIconTile(
+                            icon: Icons.handshake_outlined,
+                            tint: rail,
+                            size: 28,
+                          ),
+                          const SizedBox(width: kListGap),
+                          Expanded(
+                            child: Text(
+                              'Loans · Templar Protocol',
+                              style: AppTypography.body.copyWith(color: s.ink),
+                            ),
+                          ),
+                          Icon(
+                            Icons.chevron_right,
+                            size: 18,
+                            color: s.inkFaint,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                // Assets — Liquid only.
+                if (assets != null) ...[
+                  Divider(height: 1, color: s.edge),
+                  _PanelAssets(
+                    assets: assets!,
+                    issuedAssets: issuedAssets,
+                    hiddenAssets: hiddenAssets,
+                    showHidden: showHidden,
+                    onToggleShowHidden: onToggleShowHidden,
+                  ),
+                ],
+                // Latest transactions on this chain.
+                Divider(height: 1, color: s.edge),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    gutter,
+                    phone ? AppSpacing.xs : AppSpacing.md,
+                    gutter,
+                    0,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'LATEST',
+                          style: AppTypography.navSection.copyWith(
+                            color: s.inkFaint,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ),
+                      // On a phone the quiet tile keeps a resting hairline
+                      // and a 48-dp height (buttons.dart), so it reads as an
+                      // action without hover.
+                      GhostButton(
+                        label: 'All activity',
+                        onPressed: () => context.go(AppRoutes.history),
+                      ),
+                    ],
+                  ),
+                ),
+                if (activity.isEmpty)
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      gutter,
+                      AppSpacing.md,
+                      gutter,
+                      AppSpacing.lg,
+                    ),
+                    child: Text(
+                      'Nothing yet on this chain.',
+                      style: AppTypography.caption.copyWith(color: s.inkFaint),
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < activity.length; i++)
+                          HoverRow(
+                            zebra: i.isOdd,
+                            // On a phone the rows look like a list, so they
+                            // act like one and open the activity page.
+                            onTap: phone
+                                ? () => context.go(AppRoutes.history)
+                                : null,
+                            child: _ActivityRow(tx: activity[i]),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -2409,14 +2492,19 @@ class _PanelAssets extends StatelessWidget {
     final visible = showHidden
         ? groups
         : groups.where((g) => !hiddenAssets.contains(g.main.assetId)).toList();
-    final hiddenCount =
-        groups.where((g) => hiddenAssets.contains(g.main.assetId)).length;
+    final hiddenCount = groups
+        .where((g) => hiddenAssets.contains(g.main.assetId))
+        .length;
     final phone = AppLayout.isPhone(context);
     final gutter = phone ? AppSpacing.cardPaddingSmall : AppSpacing.lg;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(
-          gutter, phone ? AppSpacing.sm : AppSpacing.md, gutter, AppSpacing.md),
+        gutter,
+        phone ? AppSpacing.sm : AppSpacing.md,
+        gutter,
+        AppSpacing.md,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2425,8 +2513,10 @@ class _PanelAssets extends StatelessWidget {
               Expanded(
                 child: Text(
                   'ASSETS',
-                  style: AppTypography.navSection
-                      .copyWith(color: s.inkFaint, letterSpacing: 1.2),
+                  style: AppTypography.navSection.copyWith(
+                    color: s.inkFaint,
+                    letterSpacing: 1.2,
+                  ),
                 ),
               ),
               if (hiddenCount > 0 && onToggleShowHidden != null)
@@ -2437,9 +2527,12 @@ class _PanelAssets extends StatelessWidget {
                     padding: phone
                         ? const EdgeInsets.symmetric(
                             horizontal: AppSpacing.sm,
-                            vertical: AppSpacing.sm + 2)
+                            vertical: AppSpacing.sm + 2,
+                          )
                         : const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xs, vertical: 2),
+                            horizontal: AppSpacing.xs,
+                            vertical: 2,
+                          ),
                     child: Text(
                       showHidden
                           ? 'Hide hidden ($hiddenCount)'
@@ -2478,8 +2571,7 @@ class _PanelAssets extends StatelessWidget {
             LayoutBuilder(
               builder: (context, c) {
                 final cols = (c.maxWidth / 190).floor().clamp(1, 4);
-                final w =
-                    (c.maxWidth - (cols - 1) * AppSpacing.sm) / cols;
+                final w = (c.maxWidth - (cols - 1) * AppSpacing.sm) / cols;
                 return Wrap(
                   spacing: AppSpacing.sm,
                   runSpacing: AppSpacing.sm,
@@ -2538,8 +2630,9 @@ class _ActivityRow extends StatelessWidget {
 
     return Padding(
       padding: EdgeInsets.symmetric(
-          horizontal: phone ? AppSpacing.cardPaddingSmall : AppSpacing.lg,
-          vertical: phone ? AppSpacing.sm + 3 : AppSpacing.sm + 1),
+        horizontal: phone ? AppSpacing.cardPaddingSmall : AppSpacing.lg,
+        vertical: phone ? AppSpacing.sm + 3 : AppSpacing.sm + 1,
+      ),
       child: Row(
         children: [
           Icon(icon, size: 15, color: isIn ? s.success : s.inkSecondary),
@@ -2550,8 +2643,10 @@ class _ActivityRow extends StatelessWidget {
               children: [
                 Text(
                   tx.note ?? tx.counterparty ?? (isIn ? 'Received' : 'Sent'),
-                  style: AppTypography.bodySmall
-                      .copyWith(fontWeight: FontWeight.w500, color: s.ink),
+                  style: AppTypography.bodySmall.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: s.ink,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
@@ -2580,4 +2675,3 @@ class _ActivityRow extends StatelessWidget {
     );
   }
 }
-

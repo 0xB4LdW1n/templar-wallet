@@ -18,7 +18,7 @@ you confirm. This guide covers what changed and how to use it.
 | Loan signing | Every step that needs your signature (origination, repayment, default, liquidation) opens a **review screen**: the site's summary on the left, the wallet's own reading of the transaction on the right. You tick a statement, press *Sign and send*, enter the app password. The site broadcasts; the wallet never does. |
 | Wallet Info | Shows the Liquid network the wallet is open on. |
 | Co-sign screen | Liquid transactions now list their inputs, tagged *your coin* / *escrow · your key* / *not yours*, and outputs as *This wallet* / *Escrow contract* / *External*. |
-| Peg, public swap book, asset registry | Unavailable on regtest (clear error, not a crash). |
+| Peg, public services, asset registry | Public services are unavailable on regtest. The localhost LiquiDEX book works on both testnet and regtest. |
 
 ---
 
@@ -33,7 +33,7 @@ you confirm. This guide covers what changed and how to use it.
 
    Switching closes the open wallet: open it again and press **Sync**.
 5. Get test coins:
-   - testnet: https://liquidtestnet.com/faucet or https://faucet.vulpem.com, paste a Liquid receive address from *Receive › L-BTC*;
+   - testnet: https://liquidtestnet.com/faucet or https://faucet.vulpem.com, paste a Liquid receive address from *Receive › LBTC*;
    - regtest: fund your `el1…` address from the protocol's regtest node, then Sync.
 
 Linux only: install the desktop entry once so the browser can open the wallet:

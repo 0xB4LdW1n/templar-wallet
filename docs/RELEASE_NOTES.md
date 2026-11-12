@@ -85,7 +85,7 @@ Desktop tester builds update in place.
    and is asked again before a send is signed and before a phrase is shown.
 2. Create or restore a wallet, open **Receive**, and fund it from a faucet:
    - Bitcoin testnet: https://coinfaucet.eu/en/btc-testnet/
-   - Liquid testnet (L-BTC and test assets): https://liquidtestnet.com/faucet
+   - Liquid testnet (LBTC and test assets): https://liquidtestnet.com/faucet
      or https://faucet.vulpem.com
 3. Press **Sync**. The first Liquid sync scans the whole history and can take
    a minute.
@@ -104,8 +104,12 @@ Desktop tester builds update in place.
 - Testnet and a local regtest only; no mainnet.
 - Camera scanning works on macOS and Android; Windows and Linux import by
   paste or file.
-- Transactions signal RBF, but there is no fee-bump screen yet.
-- On Liquid, a payment that moves an asset other than L-BTC cannot leave
+- Unconfirmed Bitcoin transactions appear under **Pending** in grey. Use the
+  inline **Speed up** action for RBF or CPFP, or **Cancel** to attempt an RBF
+  replacement back to the wallet. Every flow previews the old rate, new
+  sat/vB, total fee and extra cost before signing. Cancellation is a race, not
+  a guarantee: the original payment can still confirm first.
+- On Liquid, a payment that moves an asset other than LBTC cannot leave
   frozen coins out yet: it is refused until the coins it needs are unfrozen.
 - The peg-in / peg-out flow runs against a simulated provider.
 - One instance at a time: a second copy of the app on the same data folder

@@ -14,6 +14,7 @@ import '../features/create_wallet/models/native_device.dart';
 import '../features/dashboard/models/balance_history.dart';
 import '../features/dashboard/models/dashboard_data.dart';
 import '../features/history/models/transaction.dart';
+import '../features/history/models/fee_bump_preview.dart';
 import '../features/receive/models/address_info.dart';
 import '../features/utxos/models/utxo.dart';
 import '../features/wallet_info/models/wallet_info.dart';
@@ -29,10 +30,8 @@ import 'wallet_bridge.dart';
 
 // ── Native function typedefs ──────────────────────────────────────────────────
 
-typedef _WalletCallNative = Pointer<Utf8> Function(
-  Pointer<Utf8> method,
-  Pointer<Utf8> params,
-);
+typedef _WalletCallNative =
+    Pointer<Utf8> Function(Pointer<Utf8> method, Pointer<Utf8> params);
 
 typedef _WalletFreeNative = Void Function(Pointer<Utf8> ptr);
 
@@ -128,10 +127,10 @@ class FfiWalletBridge implements WalletBridge {
   /// already started and kept its own choice).
   static int setDataDir(String path) {
     final lib = _loadLib();
-    final setDir =
-        lib.lookupFunction<_SetDataDirNative, int Function(Pointer<Utf8>)>(
-      'wallet_set_data_dir',
-    );
+    final setDir = lib
+        .lookupFunction<_SetDataDirNative, int Function(Pointer<Utf8>)>(
+          'wallet_set_data_dir',
+        );
     final p = path.toNativeUtf8();
     try {
       return setDir(p);
@@ -147,29 +146,29 @@ class FfiWalletBridge implements WalletBridge {
   static Future<Map<String, dynamic>> _callBg(
     String method,
     String paramsJson,
-  ) =>
-      Isolate.run(() {
-        final lib = _loadLib();
-        final call = lib.lookupFunction<_WalletCallNative, _WalletCallNative>(
-          'wallet_call',
+  ) => Isolate.run(() {
+    final lib = _loadLib();
+    final call = lib.lookupFunction<_WalletCallNative, _WalletCallNative>(
+      'wallet_call',
+    );
+    final free = lib
+        .lookupFunction<_WalletFreeNative, void Function(Pointer<Utf8>)>(
+          'wallet_free_string',
         );
-        final free = lib.lookupFunction<
-            _WalletFreeNative,
-            void Function(Pointer<Utf8>)>('wallet_free_string');
 
-        final methodPtr = method.toNativeUtf8();
-        final paramsPtr = paramsJson.toNativeUtf8();
-        Pointer<Utf8> resultPtr;
-        try {
-          resultPtr = call(methodPtr, paramsPtr);
-        } finally {
-          calloc.free(methodPtr);
-          calloc.free(paramsPtr);
-        }
-        final json = resultPtr.toDartString();
-        free(resultPtr);
-        return jsonDecode(json) as Map<String, dynamic>;
-      });
+    final methodPtr = method.toNativeUtf8();
+    final paramsPtr = paramsJson.toNativeUtf8();
+    Pointer<Utf8> resultPtr;
+    try {
+      resultPtr = call(methodPtr, paramsPtr);
+    } finally {
+      calloc.free(methodPtr);
+      calloc.free(paramsPtr);
+    }
+    final json = resultPtr.toDartString();
+    free(resultPtr);
+    return jsonDecode(json) as Map<String, dynamic>;
+  });
 
   Future<dynamic> _ok(String method, Map<String, dynamic> params) async {
     final result = await _callBg(method, jsonEncode(params));
@@ -183,24 +182,34 @@ class FfiWalletBridge implements WalletBridge {
 
   @override
   Future<List<String>> generateMnemonic(int wordCount) async {
-    final raw = await _ok('generate_mnemonic', {'word_count': wordCount}) as List<dynamic>;
+    final raw =
+        await _ok('generate_mnemonic', {'word_count': wordCount})
+            as List<dynamic>;
     return raw.cast<String>();
   }
 
   @override
-  Future<String> createWallet(String name, List<String> mnemonic, {bool liquid = false}) async {
-    final raw = await _ok('create_wallet', {
-      'name': name,
-      'mnemonic': mnemonic.join(' '),
-      'liquid': liquid,
-    }) as Map<String, dynamic>;
+  Future<String> createWallet(
+    String name,
+    List<String> mnemonic, {
+    bool liquid = false,
+  }) async {
+    final raw =
+        await _ok('create_wallet', {
+              'name': name,
+              'mnemonic': mnemonic.join(' '),
+              'liquid': liquid,
+            })
+            as Map<String, dynamic>;
     return raw['id'] as String;
   }
 
   @override
   Future<List<WalletSummary>> listWallets() async {
     final raw = await _ok('list_wallets', {}) as List<dynamic>;
-    return raw.map((e) => WalletSummary.fromJson(e as Map<String, dynamic>)).toList();
+    return raw
+        .map((e) => WalletSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   @override
@@ -210,28 +219,42 @@ class FfiWalletBridge implements WalletBridge {
 
   @override
   Future<DashboardData> getWalletSummary(String walletId) async {
-    final raw = await _ok('get_wallet_summary', {'wallet_id': walletId}) as Map<String, dynamic>;
+    final raw =
+        await _ok('get_wallet_summary', {'wallet_id': walletId})
+            as Map<String, dynamic>;
     return _dashboardFromJson(raw);
   }
 
   @override
-  Future<AddressInfo> generateReceiveAddress(String walletId, String asset,
-      {bool fresh = false}) async {
-    final raw = await _ok('generate_receive_address', {
-      'wallet_id': walletId,
-      'asset': asset,
-      if (fresh) 'fresh': true,
-    }) as Map<String, dynamic>;
+  Future<AddressInfo> generateReceiveAddress(
+    String walletId,
+    String asset, {
+    bool fresh = false,
+  }) async {
+    final raw =
+        await _ok('generate_receive_address', {
+              'wallet_id': walletId,
+              'asset': asset,
+              if (fresh) 'fresh': true,
+            })
+            as Map<String, dynamic>;
     return _addressInfoFromJson(raw);
   }
 
   @override
-  Future<List<AddressInfo>> listPreviousAddresses(String walletId, String asset) async {
-    final raw = await _ok('list_previous_addresses', {
-      'wallet_id': walletId,
-      'asset': asset,
-    }) as List<dynamic>;
-    return raw.map((e) => _addressInfoFromJson(e as Map<String, dynamic>)).toList();
+  Future<List<AddressInfo>> listPreviousAddresses(
+    String walletId,
+    String asset,
+  ) async {
+    final raw =
+        await _ok('list_previous_addresses', {
+              'wallet_id': walletId,
+              'asset': asset,
+            })
+            as List<dynamic>;
+    return raw
+        .map((e) => _addressInfoFromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   @override
@@ -240,16 +263,38 @@ class FfiWalletBridge implements WalletBridge {
     String? chain,
     String? asset,
   }) async {
-    final raw = await _ok('list_activity', {'wallet_id': walletId}) as List<dynamic>;
-    return raw.map((e) => _transactionFromJson(e as Map<String, dynamic>)).toList();
+    final raw =
+        await _ok('list_activity', {'wallet_id': walletId}) as List<dynamic>;
+    return raw
+        .map((e) => _transactionFromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<FeeBumpPreview> previewFeeBump({
+    required String walletId,
+    required String txid,
+    required String action,
+    required String method,
+    required double feeRate,
+  }) async {
+    final raw =
+        await _ok('preview_fee_bump', {
+              'wallet_id': walletId,
+              'txid': txid,
+              'action': action,
+              'method': method,
+              'fee_rate': feeRate,
+            })
+            as Map<String, dynamic>;
+    return FeeBumpPreview.fromJson(raw);
   }
 
   @override
   Future<List<Utxo>> listUtxos(String walletId, String chain) async {
-    final raw = await _ok('list_utxos', {
-      'wallet_id': walletId,
-      'chain': chain,
-    }) as List<dynamic>;
+    final raw =
+        await _ok('list_utxos', {'wallet_id': walletId, 'chain': chain})
+            as List<dynamic>;
     return raw.map((e) => _utxoFromJson(e as Map<String, dynamic>)).toList();
   }
 
@@ -270,21 +315,25 @@ class FfiWalletBridge implements WalletBridge {
 
   @override
   Future<WalletInfo> getWalletInfo(String walletId) async {
-    final raw = await _ok('get_wallet_info', {'wallet_id': walletId}) as Map<String, dynamic>;
+    final raw =
+        await _ok('get_wallet_info', {'wallet_id': walletId})
+            as Map<String, dynamic>;
     return _walletInfoFromJson(raw);
   }
 
   @override
   Future<BalanceHistory> getBalanceHistory(String walletId) async {
-    final raw = await _ok('get_balance_history', {'wallet_id': walletId})
-        as Map<String, dynamic>;
+    final raw =
+        await _ok('get_balance_history', {'wallet_id': walletId})
+            as Map<String, dynamic>;
     return BalanceHistory.fromJson(raw);
   }
 
   @override
   Future<Map<String, String>> syncWallet(String walletId) async {
     final raw =
-        await _ok('sync_wallet', {'wallet_id': walletId}) as Map<String, dynamic>;
+        await _ok('sync_wallet', {'wallet_id': walletId})
+            as Map<String, dynamic>;
     return raw.map((k, v) => MapEntry(k, v.toString()));
   }
 
@@ -296,13 +345,15 @@ class FfiWalletBridge implements WalletBridge {
     required double feeRate,
     List<String>? utxos,
   }) async {
-    final raw = await _ok('preview_transaction', {
-      'wallet_id': walletId,
-      'outputs': outputs.map((o) => o.toJson()).toList(),
-      'asset_id': assetId,
-      'fee_rate': feeRate,
-      'utxos': ?utxos,
-    }) as Map<String, dynamic>;
+    final raw =
+        await _ok('preview_transaction', {
+              'wallet_id': walletId,
+              'outputs': outputs.map((o) => o.toJson()).toList(),
+              'asset_id': assetId,
+              'fee_rate': feeRate,
+              'utxos': ?utxos,
+            })
+            as Map<String, dynamic>;
     return _txPreviewFromJson(raw);
   }
 
@@ -332,7 +383,9 @@ class FfiWalletBridge implements WalletBridge {
   @override
   Future<List<HwDevice>> enumerateHwDevices() async {
     final raw = await _ok('enumerate_hw_devices', {}) as List<dynamic>;
-    return raw.map((e) => HwDevice.fromJson(e as Map<String, dynamic>)).toList();
+    return raw
+        .map((e) => HwDevice.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   @override
@@ -343,8 +396,9 @@ class FfiWalletBridge implements WalletBridge {
 
   @override
   Future<WalletSummary> importJadeLiquidWallet(String name) async {
-    final raw = await _ok('import_jade_liquid_wallet', {'name': name})
-        as Map<String, dynamic>;
+    final raw =
+        await _ok('import_jade_liquid_wallet', {'name': name})
+            as Map<String, dynamic>;
     return WalletSummary.fromJson(raw);
   }
 
@@ -357,33 +411,46 @@ class FfiWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<HwImportResult> importHwWallet(String name, String fingerprint, {bool liquid = false}) async {
-    final raw = await _ok('import_hw_wallet', {
-      'name': name,
-      'fingerprint': fingerprint,
-      'liquid': liquid,
-    }) as Map<String, dynamic>;
+  Future<HwImportResult> importHwWallet(
+    String name,
+    String fingerprint, {
+    bool liquid = false,
+  }) async {
+    final raw =
+        await _ok('import_hw_wallet', {
+              'name': name,
+              'fingerprint': fingerprint,
+              'liquid': liquid,
+            })
+            as Map<String, dynamic>;
     return HwImportResult.fromJson(raw);
   }
 
   @override
   Future<WalletSummary> addLiquidToWallet(String walletId) async {
-    final raw = await _ok('add_liquid_to_wallet', {'wallet_id': walletId})
-        as Map<String, dynamic>;
+    final raw =
+        await _ok('add_liquid_to_wallet', {'wallet_id': walletId})
+            as Map<String, dynamic>;
     return WalletSummary.fromJson(raw);
   }
 
   @override
   Future<WalletSummary> createWatchOnlyWallet(
-      String name, String recvDesc, String changeDesc,
-      {String? liquidCtDescriptor, bool airgap = false}) async {
-    final raw = await _ok('create_watch_only_wallet', {
-      'name': name,
-      'recv_desc': recvDesc,
-      'change_desc': changeDesc,
-      'liquid_ct_desc': liquidCtDescriptor ?? '',
-      'airgap': airgap,
-    }) as Map<String, dynamic>;
+    String name,
+    String recvDesc,
+    String changeDesc, {
+    String? liquidCtDescriptor,
+    bool airgap = false,
+  }) async {
+    final raw =
+        await _ok('create_watch_only_wallet', {
+              'name': name,
+              'recv_desc': recvDesc,
+              'change_desc': changeDesc,
+              'liquid_ct_desc': liquidCtDescriptor ?? '',
+              'airgap': airgap,
+            })
+            as Map<String, dynamic>;
     return WalletSummary.fromJson(raw);
   }
 
@@ -398,16 +465,18 @@ class FfiWalletBridge implements WalletBridge {
     List<String> liquidXpubs = const [],
     int? liquidCapableKeys,
   }) async {
-    final raw = await _ok('create_multisig_wallet', {
-      'name': name,
-      'required_sigs': requiredSigs,
-      'total_signers': totalSigners,
-      'cosigner_xpubs': cosignerXpubs,
-      'local_mnemonic': localMnemonic,
-      'local_mnemonics': ?localMnemonics,
-      'liquid_xpubs': liquidXpubs,
-      'liquid_capable_keys': ?liquidCapableKeys,
-    }) as Map<String, dynamic>;
+    final raw =
+        await _ok('create_multisig_wallet', {
+              'name': name,
+              'required_sigs': requiredSigs,
+              'total_signers': totalSigners,
+              'cosigner_xpubs': cosignerXpubs,
+              'local_mnemonic': localMnemonic,
+              'local_mnemonics': ?localMnemonics,
+              'liquid_xpubs': liquidXpubs,
+              'liquid_capable_keys': ?liquidCapableKeys,
+            })
+            as Map<String, dynamic>;
     return WalletSummary.fromJson(raw);
   }
 
@@ -420,8 +489,9 @@ class FfiWalletBridge implements WalletBridge {
   @override
   Future<String> getJadeLiquidCosignerXpub({String? expectFingerprint}) async {
     return await _ok('get_jade_liquid_cosigner_xpub', {
-      'fingerprint': expectFingerprint ?? '',
-    }) as String;
+          'fingerprint': expectFingerprint ?? '',
+        })
+        as String;
   }
 
   @override
@@ -453,9 +523,8 @@ class FfiWalletBridge implements WalletBridge {
 
   @override
   Future<String> deriveCosignerXpub(List<String> mnemonic) async {
-    return await _ok('derive_cosigner_xpub', {
-      'mnemonic': mnemonic.join(' '),
-    }) as String;
+    return await _ok('derive_cosigner_xpub', {'mnemonic': mnemonic.join(' ')})
+        as String;
   }
 
   @override
@@ -466,8 +535,9 @@ class FfiWalletBridge implements WalletBridge {
   @override
   Future<String> deriveLiquidCosignerXpub(List<String> mnemonic) async {
     return await _ok('derive_liquid_cosigner_xpub', {
-      'mnemonic': mnemonic.join(' '),
-    }) as String;
+          'mnemonic': mnemonic.join(' '),
+        })
+        as String;
   }
 
   @override
@@ -478,24 +548,27 @@ class FfiWalletBridge implements WalletBridge {
 
   @override
   Future<WalletSummary> repairMultisigWallet(String walletId) async {
-    final raw = await _ok('repair_multisig_wallet', {'wallet_id': walletId})
-        as Map<String, dynamic>;
+    final raw =
+        await _ok('repair_multisig_wallet', {'wallet_id': walletId})
+            as Map<String, dynamic>;
     return WalletSummary.fromJson(raw);
   }
 
   @override
-  Future<CosignerKeyInfo> validateCosignerKey(String key,
-      {bool liquid = false}) async {
-    final raw = await _ok('validate_cosigner_key', {
-      'key': key,
-      'liquid': liquid,
-    }) as Map<String, dynamic>;
+  Future<CosignerKeyInfo> validateCosignerKey(
+    String key, {
+    bool liquid = false,
+  }) async {
+    final raw =
+        await _ok('validate_cosigner_key', {'key': key, 'liquid': liquid})
+            as Map<String, dynamic>;
     return CosignerKeyInfo.fromJson(raw);
   }
 
   @override
   Future<List<String>> getMnemonic(String walletId) async {
-    final raw = await _ok('get_mnemonic', {'wallet_id': walletId}) as List<dynamic>;
+    final raw =
+        await _ok('get_mnemonic', {'wallet_id': walletId}) as List<dynamic>;
     return raw.cast<String>();
   }
 
@@ -506,16 +579,19 @@ class FfiWalletBridge implements WalletBridge {
 
   @override
   Future<PsbtInspection> inspectPsbt(String psbtBase64) async {
-    final raw = await _ok('inspect_psbt', {'psbt_base64': psbtBase64}) as Map<String, dynamic>;
+    final raw =
+        await _ok('inspect_psbt', {'psbt_base64': psbtBase64})
+            as Map<String, dynamic>;
     return _psbtInspectionFromJson(raw);
   }
 
   @override
   Future<String> signPsbt(String walletId, String psbtBase64) async {
     return await _ok('sign_psbt', {
-      'wallet_id': walletId,
-      'psbt_base64': psbtBase64,
-    }) as String;
+          'wallet_id': walletId,
+          'psbt_base64': psbtBase64,
+        })
+        as String;
   }
 
   @override
@@ -527,12 +603,13 @@ class FfiWalletBridge implements WalletBridge {
     List<String>? utxos,
   }) async {
     return await _ok('send_transaction_hw', {
-      'wallet_id': walletId,
-      'outputs': outputs.map((o) => o.toJson()).toList(),
-      'asset_id': assetId,
-      'fee_rate': feeRate,
-      'utxos': ?utxos,
-    }) as String;
+          'wallet_id': walletId,
+          'outputs': outputs.map((o) => o.toJson()).toList(),
+          'asset_id': assetId,
+          'fee_rate': feeRate,
+          'utxos': ?utxos,
+        })
+        as String;
   }
 
   @override
@@ -544,20 +621,22 @@ class FfiWalletBridge implements WalletBridge {
     List<String>? utxos,
   }) async {
     return await _ok('build_unsigned_psbt', {
-      'wallet_id': walletId,
-      'outputs': outputs.map((o) => o.toJson()).toList(),
-      'asset_id': assetId,
-      'fee_rate': feeRate,
-      'utxos': ?utxos,
-    }) as String;
+          'wallet_id': walletId,
+          'outputs': outputs.map((o) => o.toJson()).toList(),
+          'asset_id': assetId,
+          'fee_rate': feeRate,
+          'utxos': ?utxos,
+        })
+        as String;
   }
 
   @override
   Future<String> signPsbtHw(String fingerprint, String psbtBase64) async {
     return await _ok('sign_psbt_hw', {
-      'fingerprint': fingerprint,
-      'psbt_base64': psbtBase64,
-    }) as String;
+          'fingerprint': fingerprint,
+          'psbt_base64': psbtBase64,
+        })
+        as String;
   }
 
   @override
@@ -566,43 +645,49 @@ class FfiWalletBridge implements WalletBridge {
 
   @override
   Future<PsetInspection> inspectPset(String walletId, String psetBase64) async {
-    final raw = await _ok('inspect_pset', {
-      'wallet_id': walletId,
-      'pset_base64': psetBase64,
-    }) as Map<String, dynamic>;
+    final raw =
+        await _ok('inspect_pset', {
+              'wallet_id': walletId,
+              'pset_base64': psetBase64,
+            })
+            as Map<String, dynamic>;
     return PsetInspection.fromJson(raw);
   }
 
   @override
   Future<String> signPset(String walletId, String psetBase64) async {
     return await _ok('sign_pset', {
-      'wallet_id': walletId,
-      'pset_base64': psetBase64,
-    }) as String;
+          'wallet_id': walletId,
+          'pset_base64': psetBase64,
+        })
+        as String;
   }
 
   @override
   Future<String> signPsetHw(String walletId, String psetBase64) async {
     return await _ok('sign_pset_hw', {
-      'wallet_id': walletId,
-      'pset_base64': psetBase64,
-    }) as String;
+          'wallet_id': walletId,
+          'pset_base64': psetBase64,
+        })
+        as String;
   }
 
   @override
   Future<String> combinePsets(String walletId, List<String> psetsBase64) async {
     return await _ok('combine_psets', {
-      'wallet_id': walletId,
-      'psets': psetsBase64,
-    }) as String;
+          'wallet_id': walletId,
+          'psets': psetsBase64,
+        })
+        as String;
   }
 
   @override
   Future<String> broadcastPset(String walletId, String psetBase64) async {
     return await _ok('broadcast_pset', {
-      'wallet_id': walletId,
-      'pset_base64': psetBase64,
-    }) as String;
+          'wallet_id': walletId,
+          'pset_base64': psetBase64,
+        })
+        as String;
   }
 
   @override
@@ -614,12 +699,13 @@ class FfiWalletBridge implements WalletBridge {
     List<String>? utxos,
   }) async {
     return await _ok('sign_transaction_hw', {
-      'wallet_id': walletId,
-      'outputs': outputs.map((o) => o.toJson()).toList(),
-      'asset_id': assetId,
-      'fee_rate': feeRate,
-      'utxos': ?utxos,
-    }) as String;
+          'wallet_id': walletId,
+          'outputs': outputs.map((o) => o.toJson()).toList(),
+          'asset_id': assetId,
+          'fee_rate': feeRate,
+          'utxos': ?utxos,
+        })
+        as String;
   }
 
   @override
@@ -628,9 +714,10 @@ class FfiWalletBridge implements WalletBridge {
     required String psbtBase64,
   }) async {
     return await _ok('broadcast_signed_psbt', {
-      'wallet_id': walletId,
-      'psbt_base64': psbtBase64,
-    }) as String;
+          'wallet_id': walletId,
+          'psbt_base64': psbtBase64,
+        })
+        as String;
   }
 
   @override
@@ -641,11 +728,12 @@ class FfiWalletBridge implements WalletBridge {
     required double feeRate,
   }) async {
     return await _ok('consolidate_utxos', {
-      'wallet_id': walletId,
-      'outpoints': outpoints,
-      'chain': chain,
-      'fee_rate': feeRate,
-    }) as String;
+          'wallet_id': walletId,
+          'outpoints': outpoints,
+          'chain': chain,
+          'fee_rate': feeRate,
+        })
+        as String;
   }
 
   @override
@@ -658,15 +746,17 @@ class FfiWalletBridge implements WalletBridge {
     required int amountSats,
     required int reissuanceTokens,
   }) async {
-    final raw = await _ok('issue_asset', {
-      'wallet_id': walletId,
-      'name': name,
-      'ticker': ticker,
-      'precision': precision,
-      'domain': domain,
-      'amount_sats': amountSats,
-      'reissuance_tokens': reissuanceTokens,
-    }) as Map<String, dynamic>;
+    final raw =
+        await _ok('issue_asset', {
+              'wallet_id': walletId,
+              'name': name,
+              'ticker': ticker,
+              'precision': precision,
+              'domain': domain,
+              'amount_sats': amountSats,
+              'reissuance_tokens': reissuanceTokens,
+            })
+            as Map<String, dynamic>;
     return _issueResultFromJson(raw);
   }
 
@@ -676,11 +766,13 @@ class FfiWalletBridge implements WalletBridge {
     required String assetId,
     required int amountSats,
   }) async {
-    final raw = await _ok('reissue_asset', {
-      'wallet_id': walletId,
-      'asset_id': assetId,
-      'amount_sats': amountSats,
-    }) as Map<String, dynamic>;
+    final raw =
+        await _ok('reissue_asset', {
+              'wallet_id': walletId,
+              'asset_id': assetId,
+              'amount_sats': amountSats,
+            })
+            as Map<String, dynamic>;
     return _issueResultFromJson(raw);
   }
 
@@ -691,123 +783,239 @@ class FfiWalletBridge implements WalletBridge {
     required int amountSats,
   }) async {
     return await _ok('burn_asset', {
-      'wallet_id': walletId,
-      'asset_id': assetId,
-      'amount_sats': amountSats,
-    }) as String;
+          'wallet_id': walletId,
+          'asset_id': assetId,
+          'amount_sats': amountSats,
+        })
+        as String;
   }
 
   @override
   Future<List<SwapOffer>> listSwaps({bool includeUnavailable = false}) async {
-    final raw = await _ok('list_swaps', {
-      'include_unavailable': includeUnavailable,
-    }) as List<dynamic>;
-    return raw.map((e) => SwapOffer.fromJson(e as Map<String, dynamic>)).toList();
+    final raw =
+        await _ok('list_swaps', {'include_unavailable': includeUnavailable})
+            as List<dynamic>;
+    return raw
+        .map((e) => SwapOffer.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   @override
-  Future<SwapAnalysis> swapVerify(String proposalJson, {bool deep = false}) async {
-    final raw = await _ok('swap_verify', {
-      'proposal_json': proposalJson,
-      'deep': deep,
-    }) as Map<String, dynamic>;
+  Future<List<MarketOffer>> listMarkets({
+    bool includeUnavailable = false,
+  }) async {
+    final raw =
+        await _ok('list_markets', {'include_unavailable': includeUnavailable})
+            as List<dynamic>;
+    return raw
+        .map((e) => MarketOffer.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<SwapAnalysis> swapVerify(
+    String proposalJson, {
+    bool deep = false,
+  }) async {
+    final raw =
+        await _ok('swap_verify', {'proposal_json': proposalJson, 'deep': deep})
+            as Map<String, dynamic>;
     return SwapAnalysis.fromJson(raw);
   }
 
   @override
-  Future<SwapTakePreview> swapTakePreview(String walletId, String proposalJson,
-      {double? feeRate}) async {
-    final raw = await _ok('swap_take_preview', {
-      'wallet_id': walletId,
-      'proposal_json': proposalJson,
-      'fee_rate': ?feeRate,
-    }) as Map<String, dynamic>;
+  Future<SwapTakePreview> swapTakePreview(
+    String walletId,
+    String proposalJson, {
+    double? feeRate,
+  }) async {
+    final raw =
+        await _ok('swap_take_preview', {
+              'wallet_id': walletId,
+              'proposal_json': proposalJson,
+              'fee_rate': ?feeRate,
+            })
+            as Map<String, dynamic>;
     return SwapTakePreview.fromJson(raw);
   }
 
   @override
-  Future<String> swapTake(String walletId, String proposalJson,
-      {double? feeRate}) async {
+  Future<String> swapTake(
+    String walletId,
+    String proposalJson, {
+    double? feeRate,
+  }) async {
     return await _ok('swap_take', {
-      'wallet_id': walletId,
-      'proposal_json': proposalJson,
-      'fee_rate': ?feeRate,
-    }) as String;
+          'wallet_id': walletId,
+          'proposal_json': proposalJson,
+          'fee_rate': ?feeRate,
+        })
+        as String;
   }
 
   @override
-  Future<MyOffer> swapMake(String walletId, String utxo, String wantAssetId,
-      int wantAmountSats) async {
-    final raw = await _ok('swap_make', {
-      'wallet_id': walletId,
-      'utxo': utxo,
-      'want_asset_id': wantAssetId,
-      'want_amount_sats': wantAmountSats,
-    }) as Map<String, dynamic>;
+  Future<MyOffer> swapMake(
+    String walletId,
+    String utxo,
+    String wantAssetId,
+    int wantAmountSats,
+  ) async {
+    final raw =
+        await _ok('swap_make', {
+              'wallet_id': walletId,
+              'utxo': utxo,
+              'want_asset_id': wantAssetId,
+              'want_amount_sats': wantAmountSats,
+            })
+            as Map<String, dynamic>;
     return MyOffer.fromJson(raw);
   }
 
   @override
-  Future<String> swapMakePrepare(String walletId, String assetId, int amountSats,
-      {double? feeRate}) async {
+  Future<String> swapMakePrepare(
+    String walletId,
+    String assetId,
+    int amountSats, {
+    double? feeRate,
+  }) async {
     return await _ok('swap_make_prepare', {
-      'wallet_id': walletId,
-      'asset_id': assetId,
-      'amount_sats': amountSats,
-      'fee_rate': ?feeRate,
-    }) as String;
+          'wallet_id': walletId,
+          'asset_id': assetId,
+          'amount_sats': amountSats,
+          'fee_rate': ?feeRate,
+        })
+        as String;
+  }
+
+  @override
+  Future<int> swapPublish(String proposalJson, {String note = ''}) async {
+    return await _ok('swap_publish', {
+          'proposal_json': proposalJson,
+          'note': note,
+        })
+        as int;
   }
 
   @override
   Future<List<MyOffer>> listMyOffers(String walletId) async {
-    final raw = await _ok('list_my_offers', {'wallet_id': walletId}) as List<dynamic>;
+    final raw =
+        await _ok('list_my_offers', {'wallet_id': walletId}) as List<dynamic>;
     return raw.map((e) => MyOffer.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   @override
   Future<String> swapCancel(String walletId, String offerId) async {
     return await _ok('swap_cancel', {
-      'wallet_id': walletId,
-      'offer_id': offerId,
-    }) as String;
+          'wallet_id': walletId,
+          'offer_id': offerId,
+        })
+        as String;
+  }
+
+  @override
+  Future<AtomicSwap> atomicSwapCreate({
+    required String walletId,
+    required String direction,
+    required int btcAmountSats,
+    required String liquidAssetId,
+    required String liquidTicker,
+    required String liquidName,
+    required int liquidPrecision,
+    required int liquidAmountSats,
+    String note = '',
+  }) async => AtomicSwap.fromJson(
+    await _ok('atomic_swap_create', {
+          'wallet_id': walletId,
+          'direction': direction,
+          'btc_amount_sats': btcAmountSats,
+          'liquid_asset_id': liquidAssetId,
+          'liquid_ticker': liquidTicker,
+          'liquid_name': liquidName,
+          'liquid_precision': liquidPrecision,
+          'liquid_amount_sats': liquidAmountSats,
+          'note': note,
+        })
+        as Map<String, dynamic>,
+  );
+
+  Future<AtomicSwap> _atomicAction(
+    String method,
+    String walletId,
+    int offerId,
+  ) async => AtomicSwap.fromJson(
+    await _ok(method, {'wallet_id': walletId, 'offer_id': offerId})
+        as Map<String, dynamic>,
+  );
+
+  @override
+  Future<AtomicSwap> atomicSwapJoin(String walletId, int offerId) =>
+      _atomicAction('atomic_swap_join', walletId, offerId);
+  @override
+  Future<AtomicSwap> atomicSwapFund(String walletId, int offerId) =>
+      _atomicAction('atomic_swap_fund', walletId, offerId);
+  @override
+  Future<AtomicSwap> atomicSwapClaim(String walletId, int offerId) =>
+      _atomicAction('atomic_swap_claim', walletId, offerId);
+  @override
+  Future<AtomicSwap> atomicSwapRefund(String walletId, int offerId) =>
+      _atomicAction('atomic_swap_refund', walletId, offerId);
+  @override
+  Future<List<AtomicSwap>> atomicSwapList(String walletId) async {
+    final raw =
+        await _ok('atomic_swap_list', {'wallet_id': walletId}) as List<dynamic>;
+    return raw
+        .map((e) => AtomicSwap.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   @override
   Future<PegQuote> pegQuote(String direction, int amountSats) async {
-    final raw = await _ok('peg_quote', {
-      'direction': direction,
-      'amount_sats': amountSats,
-    }) as Map<String, dynamic>;
+    final raw =
+        await _ok('peg_quote', {
+              'direction': direction,
+              'amount_sats': amountSats,
+            })
+            as Map<String, dynamic>;
     return PegQuote.fromJson(raw);
   }
 
   @override
-  Future<PegOrder> pegStart(String walletId, String direction, int amountSats,
-      String payoutAddress) async {
-    final raw = await _ok('peg_start', {
-      'wallet_id': walletId,
-      'direction': direction,
-      'amount_sats': amountSats,
-      'payout_address': payoutAddress,
-    }) as Map<String, dynamic>;
+  Future<PegOrder> pegStart(
+    String walletId,
+    String direction,
+    int amountSats,
+    String payoutAddress,
+  ) async {
+    final raw =
+        await _ok('peg_start', {
+              'wallet_id': walletId,
+              'direction': direction,
+              'amount_sats': amountSats,
+              'payout_address': payoutAddress,
+            })
+            as Map<String, dynamic>;
     return PegOrder.fromJson(raw);
   }
 
   @override
   Future<PegOrder> pegStatus(String orderId) async {
-    final raw = await _ok('peg_status', {'order_id': orderId}) as Map<String, dynamic>;
+    final raw =
+        await _ok('peg_status', {'order_id': orderId}) as Map<String, dynamic>;
     return PegOrder.fromJson(raw);
   }
 
   @override
   Future<List<PegOrder>> pegList(String walletId) async {
     final raw = await _ok('peg_list', {'wallet_id': walletId}) as List<dynamic>;
-    return raw.map((e) => PegOrder.fromJson(e as Map<String, dynamic>)).toList();
+    return raw
+        .map((e) => PegOrder.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   @override
   Future<PegOrder> pegCancel(String orderId) async {
-    final raw = await _ok('peg_cancel', {'order_id': orderId}) as Map<String, dynamic>;
+    final raw =
+        await _ok('peg_cancel', {'order_id': orderId}) as Map<String, dynamic>;
     return PegOrder.fromJson(raw);
   }
 
@@ -820,14 +1028,16 @@ class FfiWalletBridge implements WalletBridge {
     required int precision,
     required String domain,
   }) async {
-    final raw = await _ok('reregister_asset', {
-      'wallet_id': walletId,
-      'asset_id': assetId,
-      'name': name,
-      'ticker': ticker,
-      'precision': precision,
-      'domain': domain,
-    }) as Map<String, dynamic>;
+    final raw =
+        await _ok('reregister_asset', {
+              'wallet_id': walletId,
+              'asset_id': assetId,
+              'name': name,
+              'ticker': ticker,
+              'precision': precision,
+              'domain': domain,
+            })
+            as Map<String, dynamic>;
     return raw['registered'] as bool? ?? false;
   }
 
@@ -854,11 +1064,12 @@ class FfiWalletBridge implements WalletBridge {
     required double feeRate,
   }) async {
     return await _ok('build_consolidation_psbt', {
-      'wallet_id': walletId,
-      'outpoints': outpoints,
-      'chain': chain,
-      'fee_rate': feeRate,
-    }) as String;
+          'wallet_id': walletId,
+          'outpoints': outpoints,
+          'chain': chain,
+          'fee_rate': feeRate,
+        })
+        as String;
   }
 
   @override
@@ -873,12 +1084,17 @@ class FfiWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<LiquidNetworkInfo> setLiquidNetwork(String network, {String? policyAsset}) async {
-    final raw = await _ok('set_liquid_network', {
-      'network': network,
-      if (policyAsset != null && policyAsset.trim().isNotEmpty)
-        'policy_asset': policyAsset.trim(),
-    }) as Map<String, dynamic>;
+  Future<LiquidNetworkInfo> setLiquidNetwork(
+    String network, {
+    String? policyAsset,
+  }) async {
+    final raw =
+        await _ok('set_liquid_network', {
+              'network': network,
+              if (policyAsset != null && policyAsset.trim().isNotEmpty)
+                'policy_asset': policyAsset.trim(),
+            })
+            as Map<String, dynamic>;
     return LiquidNetworkInfo.fromJson(raw);
   }
 
@@ -887,22 +1103,32 @@ class FfiWalletBridge implements WalletBridge {
       await _ok('get_protocol_escrow_xpub', {'wallet_id': walletId}) as String;
 
   @override
-  Future<ProtocolCheck> protocolCheckPset(String walletId, String challenge) async {
-    final raw = await _ok('protocol_check_pset', {
-      'wallet_id': walletId,
-      'challenge': challenge,
-    }) as Map<String, dynamic>;
+  Future<ProtocolCheck> protocolCheckPset(
+    String walletId,
+    String challenge,
+  ) async {
+    final raw =
+        await _ok('protocol_check_pset', {
+              'wallet_id': walletId,
+              'challenge': challenge,
+            })
+            as Map<String, dynamic>;
     return ProtocolCheck.fromJson(raw);
   }
 
   @override
   Future<ProtocolCheckVerdict> protocolIsCheckPset(
-      String walletId, String challenge, String psetBase64) async {
-    final raw = await _ok('protocol_is_check_pset', {
-      'wallet_id': walletId,
-      'challenge': challenge,
-      'pset_base64': psetBase64,
-    }) as Map<String, dynamic>;
+    String walletId,
+    String challenge,
+    String psetBase64,
+  ) async {
+    final raw =
+        await _ok('protocol_is_check_pset', {
+              'wallet_id': walletId,
+              'challenge': challenge,
+              'pset_base64': psetBase64,
+            })
+            as Map<String, dynamic>;
     return ProtocolCheckVerdict.fromJson(raw);
   }
 
@@ -953,35 +1179,51 @@ class FfiWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<BackupVerification> verifyBackup(String walletId, String mnemonic) async {
-    final raw = await _ok('verify_backup', {
-      'wallet_id': walletId,
-      'mnemonic': mnemonic,
-    }) as Map<String, dynamic>;
+  Future<BackupVerification> verifyBackup(
+    String walletId,
+    String mnemonic,
+  ) async {
+    final raw =
+        await _ok('verify_backup', {
+              'wallet_id': walletId,
+              'mnemonic': mnemonic,
+            })
+            as Map<String, dynamic>;
     return BackupVerification.fromJson(raw);
   }
 
   @override
-  Future<List<String>> urPsbtEncode(String psbtBase64, {int maxFragmentLen = 100}) async {
-    final raw = await _ok('ur_psbt_encode', {
-      'psbt_base64': psbtBase64,
-      'max_fragment_len': maxFragmentLen,
-    }) as List<dynamic>;
+  Future<List<String>> urPsbtEncode(
+    String psbtBase64, {
+    int maxFragmentLen = 100,
+  }) async {
+    final raw =
+        await _ok('ur_psbt_encode', {
+              'psbt_base64': psbtBase64,
+              'max_fragment_len': maxFragmentLen,
+            })
+            as List<dynamic>;
     return raw.cast<String>();
   }
 
   @override
-  Future<List<String>> urPsetEncode(String psetBase64, {int maxFragmentLen = 100}) async {
-    final raw = await _ok('ur_pset_encode', {
-      'pset_base64': psetBase64,
-      'max_fragment_len': maxFragmentLen,
-    }) as List<dynamic>;
+  Future<List<String>> urPsetEncode(
+    String psetBase64, {
+    int maxFragmentLen = 100,
+  }) async {
+    final raw =
+        await _ok('ur_pset_encode', {
+              'pset_base64': psetBase64,
+              'max_fragment_len': maxFragmentLen,
+            })
+            as List<dynamic>;
     return raw.cast<String>();
   }
 
   @override
   Future<UrDecodeResult> urDecodeParts(List<String> parts) async {
-    final raw = await _ok('ur_decode_parts', {'parts': parts}) as Map<String, dynamic>;
+    final raw =
+        await _ok('ur_decode_parts', {'parts': parts}) as Map<String, dynamic>;
     return UrDecodeResult.fromJson(raw);
   }
 
@@ -1005,7 +1247,8 @@ class FfiWalletBridge implements WalletBridge {
     );
   }
 
-  static AssetBalance _assetBalanceFromJson(Map<String, dynamic> j) => AssetBalance(
+  static AssetBalance _assetBalanceFromJson(Map<String, dynamic> j) =>
+      AssetBalance(
         assetId: j['asset_id'] as String? ?? j['ticker'] as String,
         ticker: j['ticker'] as String,
         name: j['name'] as String,
@@ -1032,7 +1275,8 @@ class FfiWalletBridge implements WalletBridge {
     );
   }
 
-  static AddressInfo _addressInfoFromJson(Map<String, dynamic> j) => AddressInfo(
+  static AddressInfo _addressInfoFromJson(Map<String, dynamic> j) =>
+      AddressInfo(
         address: j['address'] as String,
         index: j['index'] as int? ?? 0,
         asset: j['asset'] as String? ?? 'BTC',
@@ -1042,10 +1286,14 @@ class FfiWalletBridge implements WalletBridge {
       );
 
   static Transaction _transactionFromJson(Map<String, dynamic> j) {
-    final dir = (j['direction'] as String?) == 'incoming'
-        ? TxDirection.incoming
-        : TxDirection.outgoing;
-    final chain = (j['chain'] as String?) == 'liquid' ? TxChain.liquid : TxChain.bitcoin;
+    final dir = switch (j['direction'] as String?) {
+      'incoming' => TxDirection.incoming,
+      'self' => TxDirection.self,
+      _ => TxDirection.outgoing,
+    };
+    final chain = (j['chain'] as String?) == 'liquid'
+        ? TxChain.liquid
+        : TxChain.bitcoin;
     final ts = j['timestamp'] as int? ?? 0;
     return Transaction(
       txid: j['txid'] as String,
@@ -1056,6 +1304,14 @@ class FfiWalletBridge implements WalletBridge {
       timestamp: DateTime.fromMillisecondsSinceEpoch(ts * 1000),
       confirmations: j['confirmations'] as int? ?? 0,
       fee: j['fee'] as String?,
+      feeSats: j['fee_sats'] as int?,
+      feeRate: (j['fee_rate'] as num?)?.toDouble(),
+      vsize: j['vsize'] as int? ?? 0,
+      isReplaceable: j['is_replaceable'] as bool? ?? false,
+      canRbf: j['can_rbf'] as bool? ?? false,
+      canCpfp: j['can_cpfp'] as bool? ?? false,
+      canCancel: j['can_cancel'] as bool? ?? false,
+      feeBumpUnavailableReason: j['fee_bump_unavailable_reason'] as String?,
       note: j['note'] as String?,
       counterparty: j['counterparty'] as String?,
       fiatEstimate: j['fiat_estimate'] as String?,
@@ -1103,12 +1359,14 @@ class FfiWalletBridge implements WalletBridge {
       lastBackupAt: backupTs != null
           ? DateTime.fromMillisecondsSinceEpoch(backupTs * 1000)
           : null,
-      cosignerKeys: (j['cosigner_keys'] as List<dynamic>?)
+      cosignerKeys:
+          (j['cosigner_keys'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
           [],
       requiredSigs: (j['required_sigs'] as num?)?.toInt(),
-      localFingerprints: (j['local_fingerprints'] as List<dynamic>?)
+      localFingerprints:
+          (j['local_fingerprints'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
           [],
@@ -1117,23 +1375,24 @@ class FfiWalletBridge implements WalletBridge {
   }
 
   static TxPreview _txPreviewFromJson(Map<String, dynamic> j) => TxPreview(
-        chain: j['chain'] as String? ?? 'bitcoin',
-        recipientAddress: j['recipient_address'] as String? ?? '',
-        amountDisplay: j['amount_display'] as String? ?? '0',
-        feeSats: j['fee_sats'] as int? ?? 0,
-        feeDisplay: j['fee_display'] as String? ?? '0 sats',
-        totalDisplay: j['total_display'] as String? ?? '0',
-        feeRate: (j['fee_rate'] as num?)?.toDouble() ?? 0,
-        vsizeEst: (j['vsize_est'] as num?)?.toInt() ?? 0,
-        inputs: (j['inputs'] as List<dynamic>? ?? [])
-            .map((e) => TxIo.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        outputs: (j['outputs'] as List<dynamic>? ?? [])
-            .map((e) => TxIo.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      );
+    chain: j['chain'] as String? ?? 'bitcoin',
+    recipientAddress: j['recipient_address'] as String? ?? '',
+    amountDisplay: j['amount_display'] as String? ?? '0',
+    feeSats: j['fee_sats'] as int? ?? 0,
+    feeDisplay: j['fee_display'] as String? ?? '0 sats',
+    totalDisplay: j['total_display'] as String? ?? '0',
+    feeRate: (j['fee_rate'] as num?)?.toDouble() ?? 0,
+    vsizeEst: (j['vsize_est'] as num?)?.toInt() ?? 0,
+    inputs: (j['inputs'] as List<dynamic>? ?? [])
+        .map((e) => TxIo.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    outputs: (j['outputs'] as List<dynamic>? ?? [])
+        .map((e) => TxIo.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
 
-  static PsbtInspection _psbtInspectionFromJson(Map<String, dynamic> j) => PsbtInspection(
+  static PsbtInspection _psbtInspectionFromJson(Map<String, dynamic> j) =>
+      PsbtInspection(
         inputs: (j['inputs'] as List<dynamic>? ?? [])
             .map((e) => _psbtInputFromJson(e as Map<String, dynamic>))
             .toList(),
@@ -1144,7 +1403,8 @@ class FfiWalletBridge implements WalletBridge {
         // amount is unknown); it stays null so the UI prints "unknown"
         // rather than a number nobody measured.
         feeSats: j['fee_sats'] as int?,
-        feeDisplay: j['fee_display'] as String? ??
+        feeDisplay:
+            j['fee_display'] as String? ??
             (j['fee_sats'] == null ? 'unknown' : '${j['fee_sats']} sats'),
         sigsPresent: j['sigs_present'] as int? ?? 0,
         sigsRequired: j['sigs_required'] as int?,
@@ -1154,7 +1414,8 @@ class FfiWalletBridge implements WalletBridge {
         policyHint: j['policy_hint'] as String? ?? '',
         rawPsbt: j['raw_psbt'] as String? ?? '',
         finalized: j['finalized'] as bool? ?? false,
-        utxoCheck: PsbtUtxoStatus.fromWire(j['utxo_check'] as String?) ??
+        utxoCheck:
+            PsbtUtxoStatus.fromWire(j['utxo_check'] as String?) ??
             PsbtUtxoStatus.ok,
         ownershipKnown: j['ownership_known'] as bool? ?? false,
       );
@@ -1164,29 +1425,32 @@ class FfiWalletBridge implements WalletBridge {
     return PsbtInput(
       outpoint: j['outpoint'] as String,
       amountSats: amount,
-      displayAmount: j['display_amount'] as String? ??
+      displayAmount:
+          j['display_amount'] as String? ??
           (amount == null ? 'unknown' : '$amount sats'),
       // An engine that reports no status but no amount either is describing
       // a missing previous output in the contract's own terms.
-      utxoStatus: PsbtUtxoStatus.fromWire(j['utxo_status'] as String?) ??
+      utxoStatus:
+          PsbtUtxoStatus.fromWire(j['utxo_status'] as String?) ??
           (amount == null ? PsbtUtxoStatus.missing : PsbtUtxoStatus.ok),
       isMine: j['is_mine'] as bool?,
     );
   }
 
   static PsbtOutput _psbtOutputFromJson(Map<String, dynamic> j) => PsbtOutput(
-        address: j['address'] as String,
-        amountSats: j['amount_sats'] as int? ?? 0,
-        displayAmount: j['display_amount'] as String? ?? '0',
-        isMine: j['is_mine'] as bool?,
-      );
+    address: j['address'] as String,
+    amountSats: j['amount_sats'] as int? ?? 0,
+    displayAmount: j['display_amount'] as String? ?? '0',
+    isMine: j['is_mine'] as bool?,
+  );
 
   static PsbtSigner _psbtSignerFromJson(Map<String, dynamic> j) => PsbtSigner(
-        fingerprint: j['fingerprint'] as String,
-        hasSigned: j['has_signed'] as bool? ?? false,
-      );
+    fingerprint: j['fingerprint'] as String,
+    hasSigned: j['has_signed'] as bool? ?? false,
+  );
 
-  static IssueResult _issueResultFromJson(Map<String, dynamic> j) => IssueResult(
+  static IssueResult _issueResultFromJson(Map<String, dynamic> j) =>
+      IssueResult(
         assetId: j['asset_id'] as String,
         tokenId: j['token_id'] as String?,
         txid: j['txid'] as String,

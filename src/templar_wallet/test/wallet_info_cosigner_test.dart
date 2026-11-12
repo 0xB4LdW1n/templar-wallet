@@ -82,7 +82,9 @@ class _StubBridge implements WalletBridge {
   @override
   Future<String> getLiquidCosignerXpub(String walletId) async {
     cosignerCalls++;
-    if (failLiquid) throw Exception('wallet-ffi: no Liquid side on this wallet');
+    if (failLiquid) {
+      throw Exception('wallet-ffi: no Liquid side on this wallet');
+    }
     return _bip87;
   }
 
@@ -93,15 +95,15 @@ class _StubBridge implements WalletBridge {
 /// [type] is the registry's type label ("Software", "Multisig",
 /// "Hardware (…)", "Watch-only", "Policy (…)"); null leaves no wallet active.
 Widget host(WalletBridge bridge, {String? type}) => MaterialApp(
-      home: ChangeNotifierProvider<AppState>(
-        create: (_) {
-          final st = AppState();
-          if (type != null) st.setActiveWallet('w1', name: 'W', type: type);
-          return st;
-        },
-        child: WalletInfoScreen(bridge: bridge),
-      ),
-    );
+  home: ChangeNotifierProvider<AppState>(
+    create: (_) {
+      final st = AppState();
+      if (type != null) st.setActiveWallet('w1', name: 'W', type: type);
+      return st;
+    },
+    child: WalletInfoScreen(bridge: bridge),
+  ),
+);
 
 void _desktopWindow(WidgetTester t) {
   t.view.physicalSize = const Size(1400, 2400);
@@ -113,8 +115,9 @@ void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
 
   group('singlesig wallet', () {
-    testWidgets('both cosigner keys are shown, each named by its BIP',
-        (t) async {
+    testWidgets('both cosigner keys are shown, each named by its BIP', (
+      t,
+    ) async {
       _desktopWindow(t);
       await t.pumpWidget(host(_StubBridge(), type: 'Software'));
       await t.pumpAndSettle();
@@ -139,8 +142,9 @@ void main() {
       );
     });
 
-    testWidgets('the singlesig XPUB is labelled as not a cosigner key',
-        (t) async {
+    testWidgets('the singlesig XPUB is labelled as not a cosigner key', (
+      t,
+    ) async {
       _desktopWindow(t);
       await t.pumpWidget(host(_StubBridge()));
       await t.pumpAndSettle();
@@ -148,12 +152,15 @@ void main() {
       // Named by its account, so it cannot read as "the" xpub to hand over.
       expect(find.text("XPUB · m/84'/1'/0'"), findsOneWidget);
       expect(find.textContaining('not a cosigner key'), findsOneWidget);
-      expect(find.textContaining('hand over the two keys below'),
-          findsOneWidget);
+      expect(
+        find.textContaining('hand over the two keys below'),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('a missing Liquid key still leaves the Bitcoin one usable',
-        (t) async {
+    testWidgets('a missing Liquid key still leaves the Bitcoin one usable', (
+      t,
+    ) async {
       _desktopWindow(t);
       await t.pumpWidget(host(_StubBridge(liquid: false, failLiquid: true)));
       await t.pumpAndSettle();
@@ -163,28 +170,37 @@ void main() {
       expect(find.textContaining('Bitcoin-only multisig'), findsOneWidget);
     });
 
-    testWidgets('the cosigner keys copy to the clipboard AND show as a QR',
-        (t) async {
+    testWidgets('the cosigner keys copy to the clipboard AND show as a QR', (
+      t,
+    ) async {
       _desktopWindow(t);
       await t.pumpWidget(host(_StubBridge()));
       await t.pumpAndSettle();
 
-      final box = find.widgetWithText(CodeBox, 'Cosigner xpub — Bitcoin (BIP48)');
+      final box = find.widgetWithText(
+        CodeBox,
+        'Cosigner xpub — Bitcoin (BIP48)',
+      );
       expect(box, findsOneWidget);
-      expect(find.descendant(of: box, matching: find.byIcon(Icons.copy)),
-          findsOneWidget);
-      await t.tap(find.descendant(
-        of: box,
-        matching: find.byIcon(Icons.qr_code_2_rounded),
-      ));
+      expect(
+        find.descendant(of: box, matching: find.byIcon(Icons.copy)),
+        findsOneWidget,
+      );
+      await t.tap(
+        find.descendant(
+          of: box,
+          matching: find.byIcon(Icons.qr_code_2_rounded),
+        ),
+      );
       await t.pumpAndSettle();
 
       final qr = t.widget<QrImageView>(find.byType(QrImageView));
       expect((qr.key as ValueKey<String>).value, _bip48);
     });
 
-    testWidgets('a hardware wallet says where its keys are, without asking',
-        (t) async {
+    testWidgets('a hardware wallet says where its keys are, without asking', (
+      t,
+    ) async {
       _desktopWindow(t);
       final bridge = _StubBridge(software: false);
       await t.pumpWidget(host(bridge, type: 'Hardware (a1b2c3d4)'));
@@ -195,8 +211,7 @@ void main() {
       expect(bridge.cosignerCalls, 0);
     });
 
-    testWidgets('a watch-only wallet says it has no keys to give',
-        (t) async {
+    testWidgets('a watch-only wallet says it has no keys to give', (t) async {
       _desktopWindow(t);
       final bridge = _StubBridge(software: false);
       await t.pumpWidget(host(bridge, type: 'Watch-only'));
@@ -210,8 +225,9 @@ void main() {
   });
 
   group('multisig and policy wallets', () {
-    testWidgets('a multisig has no cosigner card and never fetches its keys',
-        (t) async {
+    testWidgets('a multisig has no cosigner card and never fetches its keys', (
+      t,
+    ) async {
       _desktopWindow(t);
       final bridge = _StubBridge(multisig: true);
       await t.pumpWidget(host(bridge, type: 'Multisig'));
@@ -257,8 +273,9 @@ void main() {
     expect(qrGlyphs, findsNWidgets(11));
   });
 
-  testWidgets('the QR button opens a code carrying exactly that value',
-      (t) async {
+  testWidgets('the QR button opens a code carrying exactly that value', (
+    t,
+  ) async {
     _desktopWindow(t);
     await t.pumpWidget(host(_StubBridge()));
     await t.pumpAndSettle();
@@ -266,10 +283,9 @@ void main() {
     // The receive descriptor's CodeBox is the one right under the XPUB box.
     final box = find.widgetWithText(CodeBox, 'Receive descriptor');
     expect(box, findsOneWidget);
-    await t.tap(find.descendant(
-      of: box,
-      matching: find.byIcon(Icons.qr_code_2_rounded),
-    ));
+    await t.tap(
+      find.descendant(of: box, matching: find.byIcon(Icons.qr_code_2_rounded)),
+    );
     await t.pumpAndSettle();
 
     expect(find.byType(ValueQrDialog), findsOneWidget);

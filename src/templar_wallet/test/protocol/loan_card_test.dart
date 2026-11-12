@@ -12,60 +12,63 @@ import 'package:templar_wallet/features/protocol/models/protocol_portfolio.dart'
 import 'package:templar_wallet/theme/app_theme.dart';
 
 final Uri _link = Uri.parse(
-    'templar://sign?url=https%3A%2F%2Fhost%2Fwallet%2Frequests%2Freq_1&nonce=abc');
+  'templar://sign?url=https%3A%2F%2Fhost%2Fwallet%2Frequests%2Freq_1&nonce=abc',
+);
 
 ProtocolLoan _loan({
   ProtocolPendingRequest? pending,
   ProtocolLoanState state = ProtocolLoanState.active,
   int? blocksLeft = 50,
-}) =>
-    ProtocolLoan(
-      id: 1,
-      ref: 'SQ-1',
-      role: 'borrower',
-      state: state,
-      rawState: state.name,
-      principal: const ProtocolMoney(ticker: 'rUSDt', amount: '10000'),
-      collateral: const ProtocolMoney(ticker: 'rLBTC', amount: '0.5'),
-      interest: const ProtocolMoney(ticker: 'rUSDt', amount: '200', rateBps: 200),
-      templarFee:
-          const ProtocolMoney(ticker: 'rUSDt', amount: '50', payer: 'borrower'),
-      owed: const ProtocolMoney(ticker: 'rUSDt', amount: '10200'),
-      startHeight: 118,
-      termHeight: 168,
-      blocksLeft: blocksLeft,
-      dueAtEstimate: DateTime.utc(2026, 10, 3, 6, 30),
-      nextAction: ProtocolNextAction(
-        kind: pending != null ? ProtocolNextKind.sign : ProtocolNextKind.repay,
-        rawKind: pending != null ? 'sign' : 'repay',
-        label: pending != null
-            ? 'Sign the repayment of SQ-1'
-            : 'Repay 10,200 rUSDt before ≈ 50 min',
-        url: Uri.parse('https://host/loans/1'),
-      ),
-      pendingRequest: pending,
-      txids: const ProtocolLoanTxids(origination: 'aa11'),
-      escrowAddress: 'el1qqescrow',
-    );
+}) => ProtocolLoan(
+  id: 1,
+  ref: 'SQ-1',
+  role: 'borrower',
+  state: state,
+  rawState: state.name,
+  principal: const ProtocolMoney(ticker: 'rUSDt', amount: '10000'),
+  collateral: const ProtocolMoney(ticker: 'rLBTC', amount: '0.5'),
+  interest: const ProtocolMoney(ticker: 'rUSDt', amount: '200', rateBps: 200),
+  templarFee: const ProtocolMoney(
+    ticker: 'rUSDt',
+    amount: '50',
+    payer: 'borrower',
+  ),
+  owed: const ProtocolMoney(ticker: 'rUSDt', amount: '10200'),
+  startHeight: 118,
+  termHeight: 168,
+  blocksLeft: blocksLeft,
+  dueAtEstimate: DateTime.utc(2026, 10, 3, 6, 30),
+  nextAction: ProtocolNextAction(
+    kind: pending != null ? ProtocolNextKind.sign : ProtocolNextKind.repay,
+    rawKind: pending != null ? 'sign' : 'repay',
+    label: pending != null
+        ? 'Sign the repayment of SQ-1'
+        : 'Repay 10,200 rUSDt before ≈ 50 min',
+    url: Uri.parse('https://host/loans/1'),
+  ),
+  pendingRequest: pending,
+  txids: const ProtocolLoanTxids(origination: 'aa11'),
+  escrowAddress: 'el1qqescrow',
+);
 
 ProtocolPendingRequest _pending() => ProtocolPendingRequest(
-      id: 'req_1',
-      action: 'repayment',
-      link: _link,
-      expiresAt: DateTime.utc(2026, 10, 3, 9, 0),
-    );
+  id: 'req_1',
+  action: 'repayment',
+  link: _link,
+  expiresAt: DateTime.utc(2026, 10, 3, 9, 0),
+);
 
 Widget _host(Widget child, {AppState? state}) => MaterialApp(
-      theme: AppTheme.dark(),
-      home: ChangeNotifierProvider<AppState>(
-        create: (_) => state ?? AppState(),
-        child: Scaffold(
-          body: SingleChildScrollView(
-            child: Padding(padding: const EdgeInsets.all(16), child: child),
-          ),
-        ),
+  theme: AppTheme.dark(),
+  home: ChangeNotifierProvider<AppState>(
+    create: (_) => state ?? AppState(),
+    child: Scaffold(
+      body: SingleChildScrollView(
+        child: Padding(padding: const EdgeInsets.all(16), child: child),
       ),
-    );
+    ),
+  ),
+);
 
 void main() {
   setUpAll(() {
@@ -84,18 +87,23 @@ void main() {
     addTearDown(t.view.reset);
   }
 
-  testWidgets('a pending request shows Sign now and hands back its link',
-      (t) async {
+  testWidgets('a pending request shows Sign now and hands back its link', (
+    t,
+  ) async {
     desktop(t);
     ProtocolPendingRequest? signed;
     var opened = 0;
-    await t.pumpWidget(_host(LoanCard(
-      loan: _loan(pending: _pending()),
-      tipHeight: 143,
-      now: DateTime.utc(2026, 10, 3, 8, 45),
-      onSign: (r) => signed = r,
-      onOpen: () => opened++,
-    )));
+    await t.pumpWidget(
+      _host(
+        LoanCard(
+          loan: _loan(pending: _pending()),
+          tipHeight: 143,
+          now: DateTime.utc(2026, 10, 3, 8, 45),
+          onSign: (r) => signed = r,
+          onOpen: () => opened++,
+        ),
+      ),
+    );
     await t.pumpAndSettle();
 
     // Who, where, what next.
@@ -113,8 +121,10 @@ void main() {
     expect(find.text('ACTIVE'), findsOneWidget);
     expect(find.text('Your signature'), findsOneWidget);
     expect(find.text('Sign the repayment of SQ-1'), findsOneWidget);
-    expect(find.textContaining('Repayment · request expires in 15 min'),
-        findsOneWidget);
+    expect(
+      find.textContaining('Full repayment · request expires in 15 min'),
+      findsOneWidget,
+    );
 
     // Time: half the term run, 50 blocks ≈ 50 min, the due estimate.
     expect(find.byKey(const Key('loan-time-left')), findsOneWidget);
@@ -153,15 +163,20 @@ void main() {
     expect(find.text('aa11'), findsOneWidget);
   });
 
-  testWidgets('no pending request: no Sign now, the next step still leads',
-      (t) async {
+  testWidgets('no pending request: no Sign now, the next step still leads', (
+    t,
+  ) async {
     desktop(t);
-    await t.pumpWidget(_host(LoanCard(
-      loan: _loan(),
-      tipHeight: 143,
-      onSign: (_) => fail('nothing to sign'),
-      onOpen: () {},
-    )));
+    await t.pumpWidget(
+      _host(
+        LoanCard(
+          loan: _loan(),
+          tipHeight: 143,
+          onSign: (_) => fail('nothing to sign'),
+          onOpen: () {},
+        ),
+      ),
+    );
     await t.pumpAndSettle();
 
     expect(find.byKey(const Key('loan-sign-1')), findsNothing);
@@ -172,11 +187,15 @@ void main() {
 
   testWidgets('a closed loan has no time bar and no amount owed', (t) async {
     desktop(t);
-    await t.pumpWidget(_host(LoanCard(
-      loan: _loan(state: ProtocolLoanState.repaid, blocksLeft: 0),
-      tipHeight: 500,
-      onOpen: () {},
-    )));
+    await t.pumpWidget(
+      _host(
+        LoanCard(
+          loan: _loan(state: ProtocolLoanState.repaid, blocksLeft: 0),
+          tipHeight: 500,
+          onOpen: () {},
+        ),
+      ),
+    );
     await t.pumpAndSettle();
 
     expect(find.text('REPAID'), findsOneWidget);
@@ -192,10 +211,16 @@ void main() {
     desktop(t);
     final state = AppState();
     await state.setBalancesHidden(true);
-    await t.pumpWidget(_host(
-      LoanCard(loan: _loan(pending: _pending()), tipHeight: 143, onSign: (_) {}),
-      state: state,
-    ));
+    await t.pumpWidget(
+      _host(
+        LoanCard(
+          loan: _loan(pending: _pending()),
+          tipHeight: 143,
+          onSign: (_) {},
+        ),
+        state: state,
+      ),
+    );
     await t.pumpAndSettle();
 
     expect(find.text('10,200'), findsNothing);

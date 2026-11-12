@@ -23,8 +23,9 @@ class BridgeErrorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final secondary =
-        isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
+    final secondary = isDark
+        ? AppColors.textSecondaryDark
+        : AppColors.textSecondary;
 
     return Scaffold(
       body: PageBackground(
@@ -46,11 +47,15 @@ class BridgeErrorScreen extends StatelessWidget {
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             color: AppColors.danger.withValues(alpha: 0.15),
-                            borderRadius:
-                                BorderRadius.circular(AppSpacing.radiusSm),
+                            borderRadius: BorderRadius.circular(
+                              AppSpacing.radiusSm,
+                            ),
                           ),
-                          child: const Icon(Icons.link_off,
-                              size: 22, color: AppColors.danger),
+                          child: const Icon(
+                            Icons.link_off,
+                            size: 22,
+                            color: AppColors.danger,
+                          ),
                         ),
                         const SizedBox(width: AppSpacing.md),
                         Expanded(
@@ -77,11 +82,15 @@ class BridgeErrorScreen extends StatelessWidget {
                     const SizedBox(height: AppSpacing.xl),
                     Text('What you can do', style: AppTypography.label),
                     const SizedBox(height: AppSpacing.sm),
-                    _step('Reinstall Templar Wallet — the engine library may be '
-                        'missing or damaged.'),
-                    _step('If the problem persists, report the issue and '
-                        'include the error details above (use the copy '
-                        'button).'),
+                    _step(
+                      'Reinstall Templar Wallet — the engine library may be '
+                      'missing or damaged.',
+                    ),
+                    _step(
+                      'If the problem persists, report the issue and '
+                      'include the error details above (use the copy '
+                      'button).',
+                    ),
                     const SizedBox(height: AppSpacing.xl),
                     Align(
                       alignment: Alignment.centerRight,
@@ -102,18 +111,21 @@ class BridgeErrorScreen extends StatelessWidget {
   }
 
   Widget _step(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(top: 3),
-              child: Icon(Icons.chevron_right,
-                  size: 14, color: AppColors.textMuted),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            Expanded(child: Text(text, style: AppTypography.bodySmall)),
-          ],
+    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 3),
+          child: Icon(
+            Icons.chevron_right,
+            size: 14,
+            color: AppColors.textMuted,
+          ),
         ),
-      );
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(child: Text(text, style: AppTypography.bodySmall)),
+      ],
+    ),
+  );
 }

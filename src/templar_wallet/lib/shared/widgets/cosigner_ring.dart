@@ -66,7 +66,8 @@ List<CosignerEntry> resolveCosigners({
       CosignerEntry(
         index: i,
         key: cosignerKeys[i],
-        label: labels[cosignerId(cosignerKeys, i)] ??
+        label:
+            labels[cosignerId(cosignerKeys, i)] ??
             CosignerLabel(id: cosignerId(cosignerKeys, i)),
         isLocal: local.contains(fingerprintOf(cosignerKeys[i])),
       ),
@@ -202,11 +203,7 @@ class CosignerRing extends StatelessWidget {
             _atAngle(
               slotAngle(shown, positions),
               radius: ringSize / 2,
-              child: _MoreBadge(
-                count: overflow,
-                size: badge,
-                onTap: onTapMore,
-              ),
+              child: _MoreBadge(count: overflow, size: badge, onTap: onTapMore),
             ),
         ],
       ),
@@ -218,7 +215,11 @@ class CosignerRing extends StatelessWidget {
   static double slotAngle(int i, int count) =>
       -math.pi / 2 + (2 * math.pi / count) * (i + 0.5);
 
-  Widget _atAngle(double angle, {required double radius, required Widget child}) {
+  Widget _atAngle(
+    double angle, {
+    required double radius,
+    required Widget child,
+  }) {
     return Transform.translate(
       offset: Offset(math.cos(angle) * radius, math.sin(angle) * radius),
       child: child,
@@ -331,7 +332,9 @@ class _CosignerRingPainter extends CustomPainter {
     final gap = total == 1
         ? 0.0
         : math.min(
-            stroke * _seamStrokes / (rect.width / 2), slot * _maxSeamFraction);
+            stroke * _seamStrokes / (rect.width / 2),
+            slot * _maxSeamFraction,
+          );
 
     final paint = Paint()
       ..style = PaintingStyle.stroke
@@ -509,15 +512,19 @@ class _CosignerRow extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(entry.name,
-                          style: AppTypography.body
-                              .copyWith(fontWeight: FontWeight.w600)),
+                      Text(
+                        entry.name,
+                        style: AppTypography.body.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       Text(
                         entry.fingerprint.isEmpty
                             ? 'Key ${entry.index + 1}'
                             : '${entry.fingerprint} · m/${entry.path}',
-                        style: AppTypography.caption
-                            .copyWith(color: s.inkSecondary),
+                        style: AppTypography.caption.copyWith(
+                          color: s.inkSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -525,7 +532,9 @@ class _CosignerRow extends StatelessWidget {
                 if (entry.isLocal)
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: s.accent.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(4),

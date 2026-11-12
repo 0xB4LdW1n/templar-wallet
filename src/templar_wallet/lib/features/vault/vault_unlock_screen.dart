@@ -174,27 +174,31 @@ class _VaultUnlockScreenState extends State<VaultUnlockScreen> {
                           const SizedBox(width: AppSpacing.md),
                           Text(
                             'Templar Wallet',
-                            style: AppTypography.gallerySection
-                                .copyWith(color: s.inkSecondary),
+                            style: AppTypography.gallerySection.copyWith(
+                              color: s.inkSecondary,
+                            ),
                           ),
                         ],
                       ),
                       SizedBox(
-                          height: AppLayout.isPhone(context)
-                              ? AppSpacing.xl
-                              : AppSpacing.xxxl),
+                        height: AppLayout.isPhone(context)
+                            ? AppSpacing.xl
+                            : AppSpacing.xxxl,
+                      ),
                       Text(
                         'Unlock wallet storage',
-                        style: AppTypography.displayTitleOf(context)
-                            .copyWith(color: s.ink),
+                        style: AppTypography.displayTitleOf(
+                          context,
+                        ).copyWith(color: s.ink),
                       ),
                       const SizedBox(height: AppSpacing.sm),
                       Text(
                         'Your wallets are encrypted on this $device. Enter '
                         'your vault passphrase to decrypt them for this '
                         'session.',
-                        style:
-                            AppTypography.body.copyWith(color: s.inkSecondary),
+                        style: AppTypography.body.copyWith(
+                          color: s.inkSecondary,
+                        ),
                       ),
                       const SizedBox(height: AppSpacing.xl),
                       Container(
@@ -206,8 +210,9 @@ class _VaultUnlockScreenState extends State<VaultUnlockScreen> {
                           color: AppLayout.isPhone(context)
                               ? s.panel
                               : s.cardBase,
-                          borderRadius:
-                              BorderRadius.circular(AppSpacing.radiusXl),
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusXl,
+                          ),
                           border: Border.all(color: s.edge),
                         ),
                         child: Column(
@@ -231,46 +236,50 @@ class _VaultUnlockScreenState extends State<VaultUnlockScreen> {
                               width: double.infinity,
                               child: _checking
                                   ? (AppLayout.isPhone(context)
-                                      // Hold the button's slab while the
-                                      // passphrase is checked. Swapping a
-                                      // 54 dp control for a bare 36 dp
-                                      // spinner collapsed the card and moved
-                                      // "Use fingerprint" under the user's
-                                      // thumb mid-tap; this is the same
-                                      // button's disabled shape and surface.
-                                      ? Container(
-                                          height:
-                                              AppSpacing.phoneControlHeight,
-                                          decoration: BoxDecoration(
-                                            color: s.panelInset,
-                                            borderRadius:
-                                                BorderRadius.circular(
+                                        // Hold the button's slab while the
+                                        // passphrase is checked. Swapping a
+                                        // 54 dp control for a bare 36 dp
+                                        // spinner collapsed the card and moved
+                                        // "Use fingerprint" under the user's
+                                        // thumb mid-tap; this is the same
+                                        // button's disabled shape and surface.
+                                        ? Container(
+                                            height:
+                                                AppSpacing.phoneControlHeight,
+                                            decoration: BoxDecoration(
+                                              color: s.panelInset,
+                                              borderRadius:
+                                                  BorderRadius.circular(
                                                     AppSpacing
-                                                        .radiusPhoneControl),
-                                          ),
-                                          child: const Center(
-                                            child: SizedBox(
-                                              width: 20,
-                                              height: 20,
-                                              child:
-                                                  CircularProgressIndicator(
-                                                      strokeWidth: 2),
+                                                        .radiusPhoneControl,
+                                                  ),
                                             ),
-                                          ),
-                                        )
-                                      : const Center(
-                                          child: Padding(
-                                            padding:
-                                                EdgeInsets.all(AppSpacing.sm),
-                                            child: SizedBox(
-                                              width: 20,
-                                              height: 20,
-                                              child:
-                                                  CircularProgressIndicator(
-                                                      strokeWidth: 2),
+                                            child: const Center(
+                                              child: SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              ),
                                             ),
-                                          ),
-                                        ))
+                                          )
+                                        : const Center(
+                                            child: Padding(
+                                              padding: EdgeInsets.all(
+                                                AppSpacing.sm,
+                                              ),
+                                              child: SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              ),
+                                            ),
+                                          ))
                                   : AccentButton(
                                       label: 'Unlock',
                                       icon: Icons.lock_open_outlined,
@@ -280,9 +289,10 @@ class _VaultUnlockScreenState extends State<VaultUnlockScreen> {
                             ),
                             if (_biometricAvailable) ...[
                               SizedBox(
-                                  height: AppLayout.isPhone(context)
-                                      ? AppSpacing.md
-                                      : AppSpacing.sm),
+                                height: AppLayout.isPhone(context)
+                                    ? AppSpacing.md
+                                    : AppSpacing.sm,
+                              ),
                               SecondaryButton(
                                 label: Platform.isMacOS
                                     ? 'Use Touch ID'
@@ -301,8 +311,9 @@ class _VaultUnlockScreenState extends State<VaultUnlockScreen> {
                       Text(
                         'Forgot the passphrase? Wallets can only be restored '
                         'from their seed-phrase backups.',
-                        style:
-                            AppTypography.caption.copyWith(color: s.inkFaint),
+                        style: AppTypography.caption.copyWith(
+                          color: s.inkFaint,
+                        ),
                       ),
                     ],
                   ),

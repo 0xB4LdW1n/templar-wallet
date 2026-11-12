@@ -29,6 +29,7 @@ class _ReissueScreenState extends State<ReissueScreen> {
   final _bridge = walletBridge;
 
   List<AssetBalance> _reissuableAssets = [];
+
   /// Asset IDs whose reissuance token was recorded at issuance on this
   /// device. Assets outside this set may still be reissuable (wallet restored
   /// elsewhere, token received by transfer) — the store is device-local, so
@@ -41,6 +42,7 @@ class _ReissueScreenState extends State<ReissueScreen> {
   bool _reviewing = false;
   bool _submitting = false;
   String? _error;
+
   /// Raw bridge error kept as secondary detail when [_error] holds a
   /// human-readable translation of it.
   String? _errorDetail;
@@ -60,8 +62,7 @@ class _ReissueScreenState extends State<ReissueScreen> {
       // not to gate: a restored wallet or a transferred-in token would
       // otherwise be locked out.
       final issued = await IssuedAssetStore.instance.getIssuedAssets(walletId);
-      final recorded =
-          issued.values.where((e) => e.tokenId != null).toList();
+      final recorded = issued.values.where((e) => e.tokenId != null).toList();
       final recordedIds = {for (final e in recorded) e.assetId};
 
       List<AssetBalance> balances = [];
@@ -87,10 +88,12 @@ class _ReissueScreenState extends State<ReissueScreen> {
           ),
         // Other held Liquid assets — reissuable only if this wallet holds
         // their token; attempting without it fails cleanly at signing.
-        ...balances.where((a) =>
-            a.ticker != 'BTC' &&
-            a.ticker != 'LBTC' &&
-            !recordedIds.contains(a.assetId)),
+        ...balances.where(
+          (a) =>
+              a.ticker != 'BTC' &&
+              a.ticker != 'LBTC' &&
+              !recordedIds.contains(a.assetId),
+        ),
       ];
       if (mounted) {
         setState(() {
@@ -133,7 +136,8 @@ class _ReissueScreenState extends State<ReissueScreen> {
   /// fails to find a token input to spend).
   String? _friendlyReissueError(String raw, String assetId) {
     final lower = raw.toLowerCase();
-    final tokenMissing = lower.contains('missing issuance') ||
+    final tokenMissing =
+        lower.contains('missing issuance') ||
         (lower.contains('insufficient funds') &&
             !_tokenRecorded.contains(assetId));
     if (tokenMissing) {
@@ -149,7 +153,11 @@ class _ReissueScreenState extends State<ReissueScreen> {
     final amount = int.tryParse(_amountController.text.trim()) ?? 0;
     if (amount <= 0) return;
 
-    setState(() { _error = null; _errorDetail = null; _submitting = true; });
+    setState(() {
+      _error = null;
+      _errorDetail = null;
+      _submitting = true;
+    });
 
     try {
       final walletId = context.read<AppState>().activeWalletId ?? 'wallet-1';
@@ -158,7 +166,12 @@ class _ReissueScreenState extends State<ReissueScreen> {
         assetId: asset.assetId,
         amountSats: amount,
       );
-      if (mounted) setState(() { _result = result; _submitting = false; });
+      if (mounted) {
+        setState(() {
+          _result = result;
+          _submitting = false;
+        });
+      }
     } catch (e) {
       final raw = e.toString();
       final friendly = _friendlyReissueError(raw, asset.assetId);
@@ -188,8 +201,8 @@ class _ReissueScreenState extends State<ReissueScreen> {
             child: _result != null
                 ? _buildResult()
                 : _reviewing
-                    ? _buildReview()
-                    : _buildForm(),
+                ? _buildReview()
+                : _buildForm(),
           ),
         ),
       ),
@@ -205,14 +218,16 @@ class _ReissueScreenState extends State<ReissueScreen> {
           subtitle: 'Mint additional supply of an existing asset',
           actions: [
             GhostButton(
-                label: 'Back to Liquid',
-                onPressed: () => context.go(AppRoutes.liquid))
+              label: 'Back to Liquid',
+              onPressed: () => context.go(AppRoutes.liquid),
+            ),
           ],
         ),
         const InfoBanner(
-            message:
-                'Reissuing requires holding the asset\'s reissuance token. '
-                'Assets issued from this wallet with a token are listed first.'),
+          message:
+              'Reissuing requires holding the asset\'s reissuance token. '
+              'Assets issued from this wallet with a token are listed first.',
+        ),
         const SizedBox(height: AppSpacing.xl),
         if (_loadingAssets)
           const Center(child: CircularProgressIndicator())
@@ -234,21 +249,24 @@ class _ReissueScreenState extends State<ReissueScreen> {
               // beside the text.
               isExpanded: AppLayout.isPhone(context),
               items: _reissuableAssets
-                  .map((a) => DropdownMenuItem(
-                        value: a.assetId,
-                        child: Text(
-                          '${AssetRegistryService.instance.displayTicker(a)} — ${AssetRegistryService.instance.displayName(a)}'
-                          '${_tokenRecorded.contains(a.assetId) ? '' : '  (token not verified)'}',
-                          maxLines: AppLayout.isPhone(context) ? 1 : null,
-                          overflow: AppLayout.isPhone(context)
-                              ? TextOverflow.ellipsis
-                              : null,
-                        ),
-                      ))
+                  .map(
+                    (a) => DropdownMenuItem(
+                      value: a.assetId,
+                      child: Text(
+                        '${AssetRegistryService.instance.displayTicker(a)} — ${AssetRegistryService.instance.displayName(a)}'
+                        '${_tokenRecorded.contains(a.assetId) ? '' : '  (token not verified)'}',
+                        maxLines: AppLayout.isPhone(context) ? 1 : null,
+                        overflow: AppLayout.isPhone(context)
+                            ? TextOverflow.ellipsis
+                            : null,
+                      ),
+                    ),
+                  )
                   .toList(),
               onChanged: (v) => setState(() {
-                _selectedAsset =
-                    _reissuableAssets.firstWhere((a) => a.assetId == v);
+                _selectedAsset = _reissuableAssets.firstWhere(
+                  (a) => a.assetId == v,
+                );
               }),
               decoration: const InputDecoration(hintText: 'Select asset'),
             ),
@@ -260,12 +278,12 @@ class _ReissueScreenState extends State<ReissueScreen> {
                 (
                   label: 'Current holdings',
                   value: _selectedAsset!.displayAmount,
-                  isMono: false
+                  isMono: false,
                 ),
                 (
                   label: 'Base units',
                   value: '${_selectedAsset!.amount}',
-                  isMono: true
+                  isMono: true,
                 ),
               ],
             ),
@@ -308,8 +326,9 @@ class _ReissueScreenState extends State<ReissueScreen> {
           subtitle: 'Review the details before broadcasting',
           actions: [
             GhostButton(
-                label: 'Back to Liquid',
-                onPressed: () => context.go(AppRoutes.liquid))
+              label: 'Back to Liquid',
+              onPressed: () => context.go(AppRoutes.liquid),
+            ),
           ],
         ),
         const WarningBanner(
@@ -335,14 +354,18 @@ class _ReissueScreenState extends State<ReissueScreen> {
               label: 'Asset',
               value:
                   '${AssetRegistryService.instance.displayTicker(asset)} — ${AssetRegistryService.instance.displayName(asset)}',
-              isMono: false
+              isMono: false,
             ),
             (label: 'Asset ID', value: asset.assetId, isMono: true),
-            (label: 'Amount to mint', value: '$amount base units', isMono: false),
+            (
+              label: 'Amount to mint',
+              value: '$amount base units',
+              isMono: false,
+            ),
             (
               label: 'Resulting action',
               value: 'Total supply increases by $amount base units',
-              isMono: false
+              isMono: false,
             ),
           ],
         ),
@@ -365,14 +388,17 @@ class _ReissueScreenState extends State<ReissueScreen> {
             ),
             const SizedBox(width: AppSpacing.md),
             if (_submitting)
-              Row(children: [
-                const SizedBox(
+              Row(
+                children: [
+                  const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2)),
-                const SizedBox(width: AppSpacing.md),
-                Text('Broadcasting…', style: AppTypography.caption),
-              ])
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Text('Broadcasting…', style: AppTypography.caption),
+                ],
+              )
             else
               PrimaryButton(
                 label: 'Confirm & Reissue',
@@ -394,8 +420,9 @@ class _ReissueScreenState extends State<ReissueScreen> {
           subtitle: 'Additional supply minted successfully',
           actions: [
             GhostButton(
-                label: 'Back to Liquid',
-                onPressed: () => context.go(AppRoutes.liquid))
+              label: 'Back to Liquid',
+              onPressed: () => context.go(AppRoutes.liquid),
+            ),
           ],
         ),
         const InfoBanner(message: 'Reissuance transaction broadcast on-chain.'),

@@ -27,9 +27,9 @@ abstract final class AppTheme {
   }
 
   static OutlineInputBorder _phoneField(BorderSide side) => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        borderSide: side,
-      );
+    borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+    borderSide: side,
+  );
 
   static ThemeData _phone(BuildContext context) {
     final base = Theme.of(context);
@@ -43,8 +43,9 @@ abstract final class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: s.panelInset,
-        constraints:
-            const BoxConstraints(minHeight: AppSpacing.phoneFieldHeight),
+        constraints: const BoxConstraints(
+          minHeight: AppSpacing.phoneFieldHeight,
+        ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg,
           vertical: AppSpacing.lg,
@@ -54,10 +55,12 @@ abstract final class AppTheme {
         disabledBorder: _phoneField(BorderSide.none),
         focusedBorder: _phoneField(BorderSide(color: s.accent, width: 1.5)),
         errorBorder: _phoneField(BorderSide(color: s.danger, width: 1.5)),
-        focusedErrorBorder:
-            _phoneField(BorderSide(color: s.danger, width: 1.5)),
-        hintStyle: base.inputDecorationTheme.hintStyle
-            ?.copyWith(color: s.inkFaint),
+        focusedErrorBorder: _phoneField(
+          BorderSide(color: s.danger, width: 1.5),
+        ),
+        hintStyle: base.inputDecorationTheme.hintStyle?.copyWith(
+          color: s.inkFaint,
+        ),
       ),
       // The raw Material buttons a dialog draws take the same slab as the
       // design-system ones, so an action never sits 6 dp shorter than its
@@ -132,8 +135,9 @@ abstract final class AppTheme {
             ? ThemeData.dark().textTheme
             : ThemeData.light().textTheme,
       ),
-      scaffoldBackgroundColor:
-          isDark ? AppColors.backgroundDark : AppColors.backgroundLight,
+      scaffoldBackgroundColor: isDark
+          ? AppColors.backgroundDark
+          : AppColors.backgroundLight,
       cardTheme: CardThemeData(
         color: isDark ? AppColors.surfaceDark : AppColors.surfaceLight,
         elevation: 0,
@@ -152,8 +156,7 @@ abstract final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor:
-            isDark ? AppColors.surfaceDark2 : AppColors.backgroundLight,
+        fillColor: isDark ? AppColors.surfaceDark2 : AppColors.backgroundLight,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
           borderSide: BorderSide(
@@ -230,32 +233,33 @@ abstract final class AppTheme {
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: AppColors.accent,
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.lg,
-            vertical: AppSpacing.sm,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-          ),
-          textStyle: GoogleFonts.ibmPlexSans(
-            fontSize: 15,
-            fontWeight: FontWeight.w500,
-          ),
-        ).copyWith(
-          overlayColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.hovered) ||
-                states.contains(WidgetState.pressed)) {
-              // The wallet tile's resting surface (AppScheme.cardBase), in
-              // the two brightnesses this context-free theme can name.
-              return isDark
-                  ? Colors.white.withValues(alpha: 0.075)
-                  : Colors.black.withValues(alpha: 0.05);
-            }
-            return Colors.transparent;
-          }),
-        ),
+        style:
+            TextButton.styleFrom(
+              foregroundColor: AppColors.accent,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg,
+                vertical: AppSpacing.sm,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              ),
+              textStyle: GoogleFonts.ibmPlexSans(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ).copyWith(
+              overlayColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.hovered) ||
+                    states.contains(WidgetState.pressed)) {
+                  // The wallet tile's resting surface (AppScheme.cardBase), in
+                  // the two brightnesses this context-free theme can name.
+                  return isDark
+                      ? Colors.white.withValues(alpha: 0.075)
+                      : Colors.black.withValues(alpha: 0.05);
+                }
+                return Colors.transparent;
+              }),
+            ),
       ),
     );
   }

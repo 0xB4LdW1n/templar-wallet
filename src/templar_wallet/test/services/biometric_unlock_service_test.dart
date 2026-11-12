@@ -168,19 +168,21 @@ void main() {
     expect(store.sealed, isNotNull);
   });
 
-  test('tryUnlock switches itself off when the key no longer matches',
-      () async {
-    await bio.enable();
-    // The vault is re-created: a new key, the sealed one is now stale.
-    await bridge.setupVault('a different passphrase');
-    await bridge.lockVault();
+  test(
+    'tryUnlock switches itself off when the key no longer matches',
+    () async {
+      await bio.enable();
+      // The vault is re-created: a new key, the sealed one is now stale.
+      await bridge.setupVault('a different passphrase');
+      await bridge.lockVault();
 
-    expect(await bio.tryUnlock(), isFalse);
-    expect(await vaultUnlocked(), isFalse);
-    expect(await bio.isEnabled(), isFalse);
-    expect(store.deletes, 1);
-    expect(store.sealed, isNull);
-  });
+      expect(await bio.tryUnlock(), isFalse);
+      expect(await vaultUnlocked(), isFalse);
+      expect(await bio.isEnabled(), isFalse);
+      expect(store.deletes, 1);
+      expect(store.sealed, isNull);
+    },
+  );
 
   test('tryUnlock switches itself off when the sealed key is gone', () async {
     await bio.enable();
@@ -231,13 +233,15 @@ void main() {
   });
 
   group('confirm (the Mac\'s Touch ID at a password gate)', () {
-    test('is not offered until unlock is on, and then is on by default',
-        () async {
-      expect(await bio.confirmAvailable(), isFalse);
-      await bio.enable();
-      expect(await bio.isConfirmEnabled(), isTrue);
-      expect(await bio.confirmAvailable(), isTrue);
-    });
+    test(
+      'is not offered until unlock is on, and then is on by default',
+      () async {
+        expect(await bio.confirmAvailable(), isFalse);
+        await bio.enable();
+        expect(await bio.isConfirmEnabled(), isTrue);
+        expect(await bio.confirmAvailable(), isTrue);
+      },
+    );
 
     test('the switch turns it off without touching the unlock', () async {
       await bio.enable();
@@ -248,14 +252,19 @@ void main() {
       expect(store.reads, 0, reason: 'no prompt when the switch is off');
     });
 
-    test('off the Mac it is never offered, whatever the preferences say',
-        () async {
-      final elsewhere = BiometricUnlockService.forTest(
-          store: store, bridge: bridge, confirmPlatformSupported: false);
-      await elsewhere.enable();
-      expect(await elsewhere.isConfirmEnabled(), isFalse);
-      expect(await elsewhere.confirmAvailable(), isFalse);
-    });
+    test(
+      'off the Mac it is never offered, whatever the preferences say',
+      () async {
+        final elsewhere = BiometricUnlockService.forTest(
+          store: store,
+          bridge: bridge,
+          confirmPlatformSupported: false,
+        );
+        await elsewhere.enable();
+        expect(await elsewhere.isConfirmEnabled(), isFalse);
+        expect(await elsewhere.confirmAvailable(), isFalse);
+      },
+    );
 
     test('a pass proves the key without opening a session', () async {
       await bio.enable();
@@ -275,14 +284,16 @@ void main() {
       expect(await bio.isEnabled(), isTrue);
     });
 
-    test('a key that no longer matches switches the feature off and says so',
-        () async {
-      await bio.enable();
-      store.sealed = 'ff' * 32;
-      expect(await bio.confirm(reason: 'sign'), isFalse);
-      expect(await bio.isEnabled(), isFalse);
-      expect(bio.lastMessage, contains('no longer matches'));
-    });
+    test(
+      'a key that no longer matches switches the feature off and says so',
+      () async {
+        await bio.enable();
+        store.sealed = 'ff' * 32;
+        expect(await bio.confirm(reason: 'sign'), isFalse);
+        expect(await bio.isEnabled(), isFalse);
+        expect(bio.lastMessage, contains('no longer matches'));
+      },
+    );
 
     test('a vanished key switches the feature off and says so', () async {
       await bio.enable();

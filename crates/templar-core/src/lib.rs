@@ -5,6 +5,7 @@
 
 pub mod bitcoin;
 pub mod config;
+pub mod cross_chain;
 pub mod derivation;
 pub mod error;
 pub mod frozen;
@@ -16,6 +17,7 @@ pub mod types;
 pub mod vault;
 
 // Re-exports for convenience
+pub use bdk::bitcoin::Txid as BitcoinTxid;
 #[cfg(feature = "hardware")]
 pub use bitcoin::device::{
     enumerate_native, hid_device_count, DeviceFamily, NativeDeviceInfo,
@@ -34,9 +36,15 @@ pub use bitcoin::psbt::{
     check_input_utxos, inspect_psbt, PsbtInputInfo, PsbtInspectionResult, PsbtOutputInfo,
     PsbtSignerInfo, UtxoStatus,
 };
-pub use bitcoin::wallet::{TxPreviewIo, WalletManager};
+pub use bitcoin::wallet::{FeeBumpCapabilities, FeeBumpPlan, TxPreviewIo, WalletManager};
 pub use bitcoin::watch_only::{liquid_descriptor_from_wpkh, normalize_watch_only_descriptors};
 pub use config::AppConfig;
+pub use cross_chain::{
+    bitcoin_contract, bitcoin_tx_hex, derive_swap_secret_key, htlc_script, liquid_contract,
+    new_swap_secret, payment_hash_hex, spend_bitcoin_htlc, swap_public_key, BitcoinSpendRequest,
+    CrossChain, HtlcContract, HtlcTerms, SwapSecret, MAKER_TIMEOUT_SECS, MIN_CROSS_AMOUNT_SATS,
+    TAKER_TIMEOUT_SECS,
+};
 pub use derivation::{
     account_xpub_bip84, derive_liquid_descriptor, generate_mnemonic_phrase, hwi_fingerprint_to_hex,
     keyorigin_xpub_bip48, master_xprv, public_descriptor, slip77_blinding_key, validate_mnemonic,
@@ -62,8 +70,9 @@ pub use liquid::hardware::{
     LIQUID_HW_SIGNING_SUPPORTED,
 };
 pub use liquid::liquidex::{
-    broadcast_transaction, build_cancel_tx, make_proposal, proposal_utxo_unspent, take_preview,
-    take_preview_excluding, take_proposal, take_proposal_excluding, verify_proposal, LiquidexLeg,
+    broadcast_transaction, build_cancel_tx, make_proposal, proposal_utxo_unspent,
+    spend_liquid_htlc, take_preview, take_preview_excluding, take_proposal,
+    take_proposal_excluding, verify_proposal, LiquidHtlcSpendRequest, LiquidexLeg,
     LiquidexProposal, SwapLeg, SwapNetwork, TakePreview, TakeResult, VerifyCheck, VerifyResult,
     LBTC_MAINNET_ASSET_ID, LBTC_TESTNET_ASSET_ID,
 };

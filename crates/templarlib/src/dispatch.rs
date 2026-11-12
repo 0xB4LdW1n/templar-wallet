@@ -4,6 +4,7 @@ use serde_json::Value;
 
 use crate::handlers::backup;
 use crate::handlers::bitcoin;
+use crate::handlers::cross_swaps;
 use crate::handlers::history;
 use crate::handlers::hw;
 use crate::handlers::liquid;
@@ -18,12 +19,12 @@ use crate::types::{
     CombinePsetsParams, ConsolidateUtxosParams, CreateMultisigParams, CreateWalletParams,
     CreateWatchOnlyParams, DeleteWalletParams, DeriveCosignerXpubParams,
     DeriveLiquidDescriptorParams, GenerateAddressParams, GenerateMnemonicParams, InspectPsbtParams,
-    IssueAssetParams, ListActivityParams, ListUtxosParams, OpenWalletParams, PreviewTxParams,
-    ProtocolCheckParams, ProtocolIsCheckParams, PsetParams, ReissueAssetParams, RenameWalletParams,
-    ReregisterAssetParams, SendTxParams, SetLiquidNetworkParams, SetUtxosFrozenParams,
-    SignPsbtParams, SyncOutcomeDto, TxOutputSpec, UrDecodePartsParams, UrPsbtEncodeParams,
-    UrPsetEncodeParams, ValidateCosignerKeyParams, VaultKeyParams, VaultPassphraseParams,
-    VerifyBackupParams, WalletIdParams,
+    IssueAssetParams, ListActivityParams, ListUtxosParams, OpenWalletParams, PreviewFeeBumpParams,
+    PreviewTxParams, ProtocolCheckParams, ProtocolIsCheckParams, PsetParams, ReissueAssetParams,
+    RenameWalletParams, ReregisterAssetParams, SendTxParams, SetLiquidNetworkParams,
+    SetUtxosFrozenParams, SignPsbtParams, SyncOutcomeDto, TxOutputSpec, UrDecodePartsParams,
+    UrPsbtEncodeParams, UrPsetEncodeParams, ValidateCosignerKeyParams, VaultKeyParams,
+    VaultPassphraseParams, VerifyBackupParams, WalletIdParams,
 };
 #[cfg(feature = "hardware")]
 use crate::types::{
@@ -298,6 +299,14 @@ fn try_dispatch(state: &mut AppState, method: &str, params: &Value) -> Result<Va
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
             ensure_wallet_open(state, &p.wallet_id)?;
             bitcoin::list_transactions(state).map(|v| serde_json::to_value(v).unwrap())
+        }
+
+        "preview_fee_bump" => {
+            let p: PreviewFeeBumpParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            ensure_wallet_open(state, &p.wallet_id)?;
+            bitcoin::preview_fee_bump(state, &p.txid, &p.action, &p.method, p.fee_rate)
+                .map(|v| serde_json::to_value(v).unwrap())
         }
 
         // ── Balance history (portfolio chart) ────────────────────────────────
@@ -796,6 +805,13 @@ fn try_dispatch(state: &mut AppState, method: &str, params: &Value) -> Result<Va
                 .map(|v| serde_json::to_value(v).unwrap())
         }
 
+        "list_markets" => {
+            let p: swaps::ListMarketsParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            swaps::list_markets(state, p.include_unavailable)
+                .map(|v| serde_json::to_value(v).unwrap())
+        }
+
         "swap_verify" => {
             let p: swaps::SwapVerifyParams =
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
@@ -839,6 +855,13 @@ fn try_dispatch(state: &mut AppState, method: &str, params: &Value) -> Result<Va
                 .map(serde_json::Value::String)
         }
 
+        "swap_publish" => {
+            let p: swaps::SwapPublishParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            swaps::publish(state, &p.proposal_json, &p.note)
+                .map(|id| serde_json::Value::Number(id.into()))
+        }
+
         "list_my_offers" => {
             let p: swaps::ListMyOffersParams =
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
@@ -851,6 +874,44 @@ fn try_dispatch(state: &mut AppState, method: &str, params: &Value) -> Result<Va
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
             ensure_wallet_open(state, &p.wallet_id)?;
             swaps::cancel(state, &p.wallet_id, &p.offer_id).map(serde_json::Value::String)
+        }
+
+        // ── Bitcoin testnet <-> Liquid testnet HTLC swaps ──────────────────
+        "atomic_swap_create" => {
+            let p: cross_swaps::CreateParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            ensure_wallet_open(state, &p.wallet_id)?;
+            cross_swaps::create(state, p).map(|v| serde_json::to_value(v).unwrap())
+        }
+        "atomic_swap_join" => {
+            let p: cross_swaps::IdParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            ensure_wallet_open(state, &p.wallet_id)?;
+            cross_swaps::join(state, p).map(|v| serde_json::to_value(v).unwrap())
+        }
+        "atomic_swap_list" => {
+            let p: cross_swaps::ListParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            ensure_wallet_open(state, &p.wallet_id)?;
+            cross_swaps::list_mine(state, &p.wallet_id).map(|v| serde_json::to_value(v).unwrap())
+        }
+        "atomic_swap_fund" => {
+            let p: cross_swaps::IdParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            ensure_wallet_open(state, &p.wallet_id)?;
+            cross_swaps::fund(state, p).map(|v| serde_json::to_value(v).unwrap())
+        }
+        "atomic_swap_claim" => {
+            let p: cross_swaps::IdParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            ensure_wallet_open(state, &p.wallet_id)?;
+            cross_swaps::claim(state, p).map(|v| serde_json::to_value(v).unwrap())
+        }
+        "atomic_swap_refund" => {
+            let p: cross_swaps::IdParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            ensure_wallet_open(state, &p.wallet_id)?;
+            cross_swaps::refund(state, p).map(|v| serde_json::to_value(v).unwrap())
         }
 
         _ => Err(format!("Unknown method: {}", method)),
@@ -874,7 +935,7 @@ fn ensure_wallet_open(state: &mut AppState, wallet_id: &str) -> Result<(), Strin
 /// hand it to HWI or to a QR signer, neither of which knows anything about
 /// Liquid. The UI hides Liquid assets for these wallets, but the guard lives
 /// here as well: the send screen used to branch on wallet *type* alone, so
-/// picking L-BTC on an air-gap wallet quietly built a Bitcoin transaction.
+/// picking LBTC on an air-gap wallet quietly built a Bitcoin transaction.
 /// A backend that can't be talked into it is the durable fix.
 fn ensure_bitcoin_asset(asset_id: &str) -> Result<(), String> {
     let a = asset_id.trim();
@@ -1013,10 +1074,10 @@ mod tests {
 
     /// A Liquid asset id must be refused with the stable tag the UI keys on,
     /// so an air-gap or hardware wallet can never build a Bitcoin transaction
-    /// while the user believes they are sending L-BTC.
+    /// while the user believes they are sending LBTC.
     #[test]
     fn bitcoin_asset_guard_rejects_liquid() {
-        // L-BTC testnet.
+        // LBTC testnet.
         let lbtc = "144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49";
         let err = ensure_bitcoin_asset(lbtc).unwrap_err();
         assert!(err.starts_with("LIQUID_HW_UNSUPPORTED: "), "got: {err}");

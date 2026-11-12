@@ -5,17 +5,16 @@ PendingConsolidation make({
   String txid = 'aa11bb22cc33dd44',
   List<String> inputs = const ['x:0', 'y:1'],
   DateTime? startedAt,
-}) =>
-    PendingConsolidation(
-      txid: txid,
-      walletId: 'w1',
-      chain: 'BTC',
-      inputs: inputs,
-      amount: 120000,
-      displayAmount: '120000 sats',
-      ticker: 'BTC',
-      startedAt: startedAt ?? DateTime.now(),
-    );
+}) => PendingConsolidation(
+  txid: txid,
+  walletId: 'w1',
+  chain: 'BTC',
+  inputs: inputs,
+  amount: 120000,
+  displayAmount: '120000 sats',
+  ticker: 'BTC',
+  startedAt: startedAt ?? DateTime.now(),
+);
 
 void main() {
   group('isSettledBy', () {
@@ -78,9 +77,11 @@ void main() {
         isNull,
       );
       expect(
-        PendingConsolidation.fromJson(
-          {'txid': 'a', 'wallet_id': 'w1', 'started_at': 'not-a-date'},
-        ),
+        PendingConsolidation.fromJson({
+          'txid': 'a',
+          'wallet_id': 'w1',
+          'started_at': 'not-a-date',
+        }),
         isNull,
       );
     });

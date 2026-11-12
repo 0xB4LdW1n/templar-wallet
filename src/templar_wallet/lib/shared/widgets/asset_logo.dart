@@ -3,7 +3,7 @@ import '../../theme/app_colors.dart';
 
 /// Renders a circular logo for a given asset ticker.
 ///   BTC          → orange circle with ₿  (on-chain Bitcoin)
-///   LBTC / L-BTC → teal circle with ₿    (Liquid Bitcoin — pegged, so ₿ in teal)
+///   LBTC / legacy L-BTC → teal circle with ₿
 ///   other tokens → teal circle with the Liquid water-drop logo
 /// A reissuance token reuses its parent's logo wrapped in a dashed outline ring.
 class AssetLogo extends StatelessWidget {
@@ -48,8 +48,11 @@ class AssetLogo extends StatelessWidget {
       return _circle(s, AppColors.liquid, child: _btcSymbol(s));
     }
     // Every other Liquid token → liquid teal logo (water drop).
-    return _circle(s, AppColors.liquid,
-        child: Icon(Icons.water_drop, size: s * 0.46, color: Colors.white));
+    return _circle(
+      s,
+      AppColors.liquid,
+      child: Icon(Icons.water_drop, size: s * 0.46, color: Colors.white),
+    );
   }
 
   static Widget _circle(double size, Color bg, {required Widget child}) {
@@ -118,15 +121,28 @@ class WalletTypeIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (icon, bg, fg) = switch (type.toLowerCase()) {
-      'multisig' => (Icons.group_outlined, AppColors.accentLight, AppColors.accentDark),
-      'watch-only' || 'watchonly' || 'watch_only' => (Icons.visibility_outlined, const Color(0xFFE8EAF6), const Color(0xFF5C6BC0)),
+      'multisig' => (
+        Icons.group_outlined,
+        AppColors.accentLight,
+        AppColors.accentDark,
+      ),
+      'watch-only' || 'watchonly' || 'watch_only' => (
+        Icons.visibility_outlined,
+        const Color(0xFFE8EAF6),
+        const Color(0xFF5C6BC0),
+      ),
       _ => (Icons.key_outlined, AppColors.accentLight, AppColors.accentDark),
     };
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(size * 0.28)),
-      child: Center(child: Icon(icon, size: size * 0.52, color: fg)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(size * 0.28),
+      ),
+      child: Center(
+        child: Icon(icon, size: size * 0.52, color: fg),
+      ),
     );
   }
 }

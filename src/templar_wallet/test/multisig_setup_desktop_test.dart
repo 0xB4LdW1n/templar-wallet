@@ -40,8 +40,10 @@ class _EmptyBridge implements WalletBridge {
   Future<List<WalletSummary>> listWallets() async => const [];
 
   @override
-  Future<CosignerKeyInfo> validateCosignerKey(String key,
-      {bool liquid = false}) async {
+  Future<CosignerKeyInfo> validateCosignerKey(
+    String key, {
+    bool liquid = false,
+  }) async {
     checked.add(key);
     if (keyError != null) throw Exception('wallet-ffi: $keyError');
     return const CosignerKeyInfo(
@@ -56,11 +58,11 @@ class _EmptyBridge implements WalletBridge {
 }
 
 Widget _host([WalletBridge? bridge]) => MaterialApp(
-      home: ChangeNotifierProvider<AppState>(
-        create: (_) => AppState(),
-        child: MultisigSetupScreen(bridge: bridge ?? _EmptyBridge()),
-      ),
-    );
+  home: ChangeNotifierProvider<AppState>(
+    create: (_) => AppState(),
+    child: MultisigSetupScreen(bridge: bridge ?? _EmptyBridge()),
+  ),
+);
 
 /// The step's own progress line, e.g. "0 of 3 provided". Read rather than
 /// hardcoded: the default threshold belongs to the wizard, not to this test.
@@ -130,8 +132,10 @@ void main() {
     expect(find.byWidgetPredicate((w) => w is ChoiceList), findsOneWidget);
     expect(find.byWidgetPredicate((w) => w is ChoiceListRow), findsNWidgets(3));
     // The option the user cannot take says why, in place.
-    expect(find.text('No software wallet in this app to lend a key'),
-        findsOneWidget);
+    expect(
+      find.text('No software wallet in this app to lend a key'),
+      findsOneWidget,
+    );
     // "Air-gap / QR" named one of the three things this source does, and the
     // common one — a key from another wallet of your own, or from a phone —
     // was not it.
@@ -143,8 +147,9 @@ void main() {
   // A key typed or scanned by hand had no way to say "that one is done": every
   // other source advances the queue itself, so a pasted key left the card open
   // and the count unchanged, with nothing to press.
-  testWidgets('Done checks the typed key and moves to the next slot',
-      (t) async {
+  testWidgets('Done checks the typed key and moves to the next slot', (
+    t,
+  ) async {
     _desktopWindow(t);
     final bridge = _EmptyBridge();
     await t.pumpWidget(_host(bridge));
@@ -160,19 +165,23 @@ void main() {
     // the key by what a signing device knows it as.
     expect(_provided(t), startsWith('1 of '));
     expect(find.textContaining("f0b68896 · m/48'/1'/0'/2'"), findsOneWidget);
-    expect(find.text('Cosigner xpub'), findsOneWidget,
-        reason: 'the next key is the open card now');
+    expect(
+      find.text('Cosigner xpub'),
+      findsOneWidget,
+      reason: 'the next key is the open card now',
+    );
   });
 
   // The failure that started this: a key the engine cannot use was carried all
   // the way to a created wallet, which then could not be opened — ever, from
   // any screen. It has to stop at the field it was typed into.
-  testWidgets('a key the engine refuses is reported and does not count',
-      (t) async {
+  testWidgets('a key the engine refuses is reported and does not count', (
+    t,
+  ) async {
     _desktopWindow(t);
-    await t.pumpWidget(_host(_EmptyBridge(
-      keyError: 'This key has no origin.',
-    )));
+    await t.pumpWidget(
+      _host(_EmptyBridge(keyError: 'This key has no origin.')),
+    );
     await t.pumpAndSettle();
 
     await _typeFirstKey(t, 'tpubNOORIGIN');
@@ -226,7 +235,9 @@ void main() {
     expect(find.text("Key f0b68896 at m/48'/1'/0'/2'"), findsOneWidget);
 
     await t.enterText(
-        find.widgetWithText(TextField, 'Cosigner xpub').first, 'something else');
+      find.widgetWithText(TextField, 'Cosigner xpub').first,
+      'something else',
+    );
     await t.pumpAndSettle();
 
     expect(find.text("Key f0b68896 at m/48'/1'/0'/2'"), findsNothing);

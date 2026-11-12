@@ -128,7 +128,9 @@ Future<HwOpenChoice> showHwOpenChoiceDialog(
             _HwOpenOption(
               icon: Icons.visibility_outlined,
               iconColor: AppColors.textSecondary,
-              iconBg: isDark ? AppColors.surfaceDark : AppColors.backgroundLight,
+              iconBg: isDark
+                  ? AppColors.surfaceDark
+                  : AppColors.backgroundLight,
               title: 'Open watch-only',
               subtitle: 'View balance and receive. No device needed.',
               onTap: () => Navigator.of(ctx).pop(HwOpenChoice.watchOnly),
@@ -179,7 +181,8 @@ class _HwOpenOption extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
           border: Border.all(
-              color: isDark ? AppColors.borderDark : AppColors.borderLight),
+            color: isDark ? AppColors.borderDark : AppColors.borderLight,
+          ),
         ),
         child: Row(
           children: [
@@ -198,9 +201,12 @@ class _HwOpenOption extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(title,
-                      style: AppTypography.body
-                          .copyWith(fontWeight: FontWeight.w600)),
+                  Text(
+                    title,
+                    style: AppTypography.body.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(height: 2),
                   Text(subtitle, style: AppTypography.caption),
                 ],
@@ -242,9 +248,9 @@ class LedgerConnectDialog extends StatefulWidget {
 
   /// Every fingerprint that satisfies the gate, lower-cased. Empty = any.
   Set<String> get wanted => {
-        if (expectedFingerprint != null) expectedFingerprint!.toLowerCase(),
-        ...?expectedFingerprints?.map((f) => f.toLowerCase()),
-      };
+    if (expectedFingerprint != null) expectedFingerprint!.toLowerCase(),
+    ...?expectedFingerprints?.map((f) => f.toLowerCase()),
+  };
 
   @override
   State<LedgerConnectDialog> createState() => _LedgerConnectDialogState();
@@ -318,7 +324,8 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
       // driver alone would leave those users watching a spinner for a device
       // sitting right there.
       final present =
-          detected.any((d) => d.drivable) || (detected.isNotEmpty && hwiFallbackUsable);
+          detected.any((d) => d.drivable) ||
+          (detected.isNotEmpty && hwiFallbackUsable);
       // A device unplugged and plugged back in deserves a fresh attempt —
       // reconnecting is exactly how a user retries.
       if (!present && _identifyAttempted) _identifyAttempted = false;
@@ -347,7 +354,11 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
   /// On a Jade this prompts for the PIN, so it runs once per attached device
   /// and then waits for the user.
   Future<void> _identify() async {
-    if (_found || _hwiMissing || _permissionBlocked || _scanInFlight || !mounted) {
+    if (_found ||
+        _hwiMissing ||
+        _permissionBlocked ||
+        _scanInFlight ||
+        !mounted) {
       return;
     }
     _scanInFlight = true;
@@ -378,15 +389,17 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
       // A device answered, but not this wallet's device. Worth saying which:
       // with two devices on the desk the fix is to swap cables, and silence
       // here used to look identical to "still searching".
-      setState(() => _error = devices.isEmpty
-          ? null
-          : wanted.length > 1
-              ? 'Connected device ${devices.first.fingerprint} is not one of '
+      setState(
+        () => _error = devices.isEmpty
+            ? null
+            : wanted.length > 1
+            ? 'Connected device ${devices.first.fingerprint} is not one of '
                   'this wallet\'s hardware keys (${wanted.join(', ')}). '
                   'Connect one of those and press Retry.'
-              : 'Connected device ${devices.first.fingerprint} is not the one '
+            : 'Connected device ${devices.first.fingerprint} is not the one '
                   'this wallet was created from (${wanted.join()}). '
-                  'Connect that device and press Retry.');
+                  'Connect that device and press Retry.',
+      );
     } catch (e) {
       if (!mounted) return;
       final failure = classifyHwError(e);
@@ -394,7 +407,10 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
         // Missing toolkit is fixable in place — pause polling (each failing
         // attempt spawns a subprocess) and offer the installer.
         _poll?.cancel();
-        setState(() { _hwiMissing = true; _error = null; });
+        setState(() {
+          _hwiMissing = true;
+          _error = null;
+        });
       } else if (failure.isPermission && UdevInstaller.supported) {
         _poll?.cancel();
         setState(() {
@@ -501,16 +517,16 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
           Text(
             _found
                 ? widget.confirmLabel != null
-                    ? '${_device?.model ?? 'Device'} ready '
-                        '(${_device?.fingerprint ?? ''}). Press '
-                        '“${widget.confirmLabel}”, then approve the '
-                        'transaction on the device screen.'
-                    : '${_device?.model ?? 'Device'} ready (${_device?.fingerprint ?? ''}).'
+                      ? '${_device?.model ?? 'Device'} ready '
+                            '(${_device?.fingerprint ?? ''}). Press '
+                            '“${widget.confirmLabel}”, then approve the '
+                            'transaction on the device screen.'
+                      : '${_device?.model ?? 'Device'} ready (${_device?.fingerprint ?? ''}).'
                 : _devicePresent
-                    ? 'Device detected. Unlock it with your PIN — and on a '
-                        'Ledger, open the Bitcoin Testnet app.'
-                    : 'Plug in your device with its cable, then unlock it with '
-                        'your PIN.',
+                ? 'Device detected. Unlock it with your PIN — and on a '
+                      'Ledger, open the Bitcoin Testnet app.'
+                : 'Plug in your device with its cable, then unlock it with '
+                      'your PIN.',
             textAlign: TextAlign.center,
             style: AppTypography.body,
           ),
@@ -525,8 +541,7 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
                     height: 12,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation(AppColors.accentMuted),
+                      valueColor: AlwaysStoppedAnimation(AppColors.accentMuted),
                     ),
                   )
                 else
@@ -540,8 +555,8 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
                   _scanInFlight
                       ? 'Reading the device…'
                       : _devicePresent
-                          ? 'Connected — waiting for you to unlock it'
-                          : 'Watching for a device…',
+                      ? 'Connected — waiting for you to unlock it'
+                      : 'Watching for a device…',
                   style: AppTypography.caption,
                 ),
               ],
@@ -561,20 +576,22 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
       ),
       actions: _found
           ? (widget.confirmLabel == null
-              ? null
-              : [
-                  TextButton(
-                    onPressed: () => Navigator.of(context)
-                        .pop(LedgerConnectResult.cancelled),
-                    child: const Text('Cancel'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: () => Navigator.of(context)
-                        .pop(LedgerConnectResult.connected),
-                    icon: const Icon(Icons.draw_outlined, size: 16),
-                    label: Text(widget.confirmLabel!),
-                  ),
-                ])
+                ? null
+                : [
+                    TextButton(
+                      onPressed: () => Navigator.of(
+                        context,
+                      ).pop(LedgerConnectResult.cancelled),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: () => Navigator.of(
+                        context,
+                      ).pop(LedgerConnectResult.connected),
+                      icon: const Icon(Icons.draw_outlined, size: 16),
+                      label: Text(widget.confirmLabel!),
+                    ),
+                  ])
           : [
               TextButton(
                 onPressed: () =>
@@ -622,8 +639,11 @@ class _Indicator extends StatelessWidget {
               color: AppColors.successLight,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.check_rounded,
-                color: AppColors.success, size: 40),
+            child: const Icon(
+              Icons.check_rounded,
+              color: AppColors.success,
+              size: 40,
+            ),
           ),
         ),
       );
@@ -657,8 +677,11 @@ class _Indicator extends StatelessWidget {
                   color: AppColors.accentLight,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.usb_rounded,
-                    color: AppColors.accent, size: 32),
+                child: Icon(
+                  Icons.usb_rounded,
+                  color: AppColors.accent,
+                  size: 32,
+                ),
               ),
             ],
           ),

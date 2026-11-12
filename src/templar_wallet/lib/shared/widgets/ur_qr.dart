@@ -190,8 +190,8 @@ Future<void> showCameraUnsupportedDialog(BuildContext context) {
   final os = Platform.isWindows
       ? 'Windows'
       : Platform.isLinux
-          ? 'Linux'
-          : 'this platform';
+      ? 'Linux'
+      : 'this platform';
   return showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
@@ -203,9 +203,13 @@ Future<void> showCameraUnsupportedDialog(BuildContext context) {
         children: [
           const Icon(Icons.videocam_off_outlined, color: Colors.white70),
           const SizedBox(width: AppSpacing.sm),
-          Text('Camera not available',
-              style: AppTypography.body.copyWith(
-                  color: Colors.white, fontWeight: FontWeight.w700)),
+          Text(
+            'Camera not available',
+            style: AppTypography.body.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
       content: Text(
@@ -273,7 +277,9 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
 
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (_finishing) return;
-    final raw = capture.barcodes.isNotEmpty ? capture.barcodes.first.rawValue : null;
+    final raw = capture.barcodes.isNotEmpty
+        ? capture.barcodes.first.rawValue
+        : null;
     if (raw == null || raw.isEmpty) return;
     final value = raw.trim();
 
@@ -287,8 +293,8 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
         looksLikePset
             ? UrScanOutcome(kind: 'pset', psetBase64: value)
             : widget.expectPsbt || looksLikePsbt
-                ? UrScanOutcome(kind: 'psbt', psbtBase64: value)
-                : UrScanOutcome(kind: 'descriptor', descriptor: value),
+            ? UrScanOutcome(kind: 'psbt', psbtBase64: value)
+            : UrScanOutcome(kind: 'descriptor', descriptor: value),
       );
       return;
     }
@@ -310,13 +316,15 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
       if (!mounted) return;
       if (result.complete) {
         _finishing = true;
-        Navigator.of(context).pop(UrScanOutcome(
-          kind: result.kind,
-          psbtBase64: result.psbtBase64,
-          psetBase64: result.psetBase64,
-          descriptor: result.descriptor,
-          keyorigin: result.keyorigin,
-        ));
+        Navigator.of(context).pop(
+          UrScanOutcome(
+            kind: result.kind,
+            psbtBase64: result.psbtBase64,
+            psetBase64: result.psetBase64,
+            descriptor: result.descriptor,
+            keyorigin: result.keyorigin,
+          ),
+        );
         return;
       }
       setState(() {
@@ -326,8 +334,10 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
       });
     } catch (e) {
       if (mounted) {
-        final message =
-            e.toString().replaceFirst('Exception: wallet-ffi: ', '');
+        final message = e.toString().replaceFirst(
+          'Exception: wallet-ffi: ',
+          '',
+        );
         setState(() {
           // A locked Jade shows its PIN-unlock QR here. That is not a failed
           // scan, it is an earlier step of the device's own flow, so it gets
@@ -368,15 +378,27 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg, AppSpacing.md, AppSpacing.sm, AppSpacing.md),
+                AppSpacing.lg,
+                AppSpacing.md,
+                AppSpacing.sm,
+                AppSpacing.md,
+              ),
               child: Row(
                 children: [
-                  const Icon(Icons.qr_code_scanner, size: 18, color: Colors.white),
+                  const Icon(
+                    Icons.qr_code_scanner,
+                    size: 18,
+                    color: Colors.white,
+                  ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
-                    child: Text(widget.title,
-                        style: AppTypography.body.copyWith(
-                            color: Colors.white, fontWeight: FontWeight.w700)),
+                    child: Text(
+                      widget.title,
+                      style: AppTypography.body.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, color: Colors.white70),
@@ -387,11 +409,7 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
             ),
             ClipRRect(
               borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-              child: SizedBox(
-                width: 420,
-                height: 420,
-                child: _scanner(),
-              ),
+              child: SizedBox(width: 420, height: 420, child: _scanner()),
             ),
             Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
@@ -413,7 +431,9 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.xs, vertical: AppSpacing.xs),
+                horizontal: AppSpacing.xs,
+                vertical: AppSpacing.xs,
+              ),
               child: Row(
                 children: [
                   IconButton(
@@ -423,11 +443,15 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
                   ),
                   const SizedBox(width: AppSpacing.xs),
                   Expanded(
-                    child: Text(widget.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.body.copyWith(
-                            color: Colors.white, fontWeight: FontWeight.w700)),
+                    child: Text(
+                      widget.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.body.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                   _TorchButton(controller: _controller),
                 ],
@@ -450,10 +474,12 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
                           child: DecoratedBox(
                             decoration: BoxDecoration(
                               border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.7),
-                                  width: 2),
-                              borderRadius:
-                                  BorderRadius.circular(AppSpacing.radiusMd),
+                                color: Colors.white.withValues(alpha: 0.7),
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AppSpacing.radiusMd,
+                              ),
                             ),
                           ),
                         ),
@@ -499,10 +525,11 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
         // The one line a bug report needs. "Camera unavailable" alone told
         // nobody why a particular phone's camera never opened.
         CrashLog.instance.write(
-            'scanner error: ${error.errorCode.name} '
-            '${error.errorDetails?.code ?? ''} '
-            '${error.errorDetails?.message ?? ''} '
-            '${error.errorDetails?.details ?? ''}');
+          'scanner error: ${error.errorCode.name} '
+          '${error.errorDetails?.code ?? ''} '
+          '${error.errorDetails?.message ?? ''} '
+          '${error.errorDetails?.details ?? ''}',
+        );
         return _UrScannerError(
           error: error,
           large: widget.fullScreen,
@@ -517,8 +544,9 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
   }
 
   Widget _caption() {
-    final style = (widget.fullScreen ? AppTypography.bodySmall : AppTypography.caption)
-        .copyWith(color: Colors.white70);
+    final style =
+        (widget.fullScreen ? AppTypography.bodySmall : AppTypography.caption)
+            .copyWith(color: Colors.white70);
     return Column(
       children: [
         if (_parts.isNotEmpty) ...[
@@ -537,9 +565,11 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
           ),
         if (_error != null) ...[
           const SizedBox(height: AppSpacing.sm),
-          Text(_error!,
-              textAlign: widget.fullScreen ? TextAlign.center : null,
-              style: AppTypography.caption.copyWith(color: AppColors.danger)),
+          Text(
+            _error!,
+            textAlign: widget.fullScreen ? TextAlign.center : null,
+            style: AppTypography.caption.copyWith(color: AppColors.danger),
+          ),
         ],
         if (_deviceHint != null) ...[
           const SizedBox(height: AppSpacing.sm),
@@ -605,8 +635,10 @@ class _TorchButton extends StatelessWidget {
         final on = torch == TorchState.on;
         return IconButton(
           tooltip: on ? 'Torch off' : 'Torch on',
-          icon: Icon(on ? Icons.flash_on : Icons.flash_off,
-              color: on ? AppColors.warning : Colors.white),
+          icon: Icon(
+            on ? Icons.flash_on : Icons.flash_off,
+            color: on ? AppColors.warning : Colors.white,
+          ),
           onPressed: controller.toggleTorch,
         );
       },
@@ -642,27 +674,29 @@ class _UrScannerError extends StatelessWidget {
 
   /// A first line the user can act on, per error code.
   String get _headline => switch (error.errorCode) {
-        MobileScannerErrorCode.permissionDenied => Platform.isAndroid
-            ? 'Camera access denied. Allow camera access for Templar Wallet '
+    MobileScannerErrorCode.permissionDenied =>
+      Platform.isAndroid
+          ? 'Camera access denied. Allow camera access for Templar Wallet '
                 'in Settings › Apps › Templar Wallet › Permissions › Camera, '
                 'then try again.'
-            : Platform.isIOS
-                ? 'Camera access denied. Allow camera access for Templar '
-                    'Wallet in Settings › Templar Wallet › Camera, then try '
-                    'again.'
-                : 'Camera access denied. Allow camera access for Templar '
-                    'Wallet in System Settings › Privacy & Security › Camera.',
-        MobileScannerErrorCode.unsupported =>
-          'This device reports no usable camera for scanning. Paste the '
-              'text or load the file instead.',
-        MobileScannerErrorCode.controllerAlreadyInitialized ||
-        MobileScannerErrorCode.controllerInitializing =>
-          'The camera is still busy from a previous scan. Wait a moment and '
-              'try again.',
-        _ => 'The camera could not be opened. If another app is using it, '
-            'close that app and try again — or paste the text or load the '
-            'file instead.',
-      };
+          : Platform.isIOS
+          ? 'Camera access denied. Allow camera access for Templar '
+                'Wallet in Settings › Templar Wallet › Camera, then try '
+                'again.'
+          : 'Camera access denied. Allow camera access for Templar '
+                'Wallet in System Settings › Privacy & Security › Camera.',
+    MobileScannerErrorCode.unsupported =>
+      'This device reports no usable camera for scanning. Paste the '
+          'text or load the file instead.',
+    MobileScannerErrorCode.controllerAlreadyInitialized ||
+    MobileScannerErrorCode.controllerInitializing =>
+      'The camera is still busy from a previous scan. Wait a moment and '
+          'try again.',
+    _ =>
+      'The camera could not be opened. If another app is using it, '
+          'close that app and try again — or paste the text or load the '
+          'file instead.',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -678,8 +712,11 @@ class _UrScannerError extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (large) ...[
-                const Icon(Icons.videocam_off_outlined,
-                    color: Colors.white54, size: 40),
+                const Icon(
+                  Icons.videocam_off_outlined,
+                  color: Colors.white54,
+                  size: 40,
+                ),
                 const SizedBox(height: AppSpacing.md),
               ],
               Text(_headline, textAlign: TextAlign.center, style: style),

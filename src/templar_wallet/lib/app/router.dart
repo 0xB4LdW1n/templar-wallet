@@ -7,6 +7,7 @@ import 'shell.dart';
 import '../features/wallet_picker/wallet_picker_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/loans/loans_screen.dart';
+import '../features/loans/loan_detail_screen.dart';
 import '../features/send/send_screen.dart';
 import '../features/receive/receive_addresses_screen.dart';
 import '../features/receive/receive_screen.dart';
@@ -39,10 +40,7 @@ final appRouter = GoRouter(
       path: AppRoutes.walletPicker,
       builder: (_, _) => const WalletPickerScreen(),
     ),
-    GoRoute(
-      path: AppRoutes.welcome,
-      builder: (_, _) => const WelcomeScreen(),
-    ),
+    GoRoute(path: AppRoutes.welcome, builder: (_, _) => const WelcomeScreen()),
     GoRoute(
       path: AppRoutes.walletType,
       builder: (_, _) => const WalletTypeScreen(),
@@ -94,16 +92,34 @@ final appRouter = GoRouter(
       builder: (context, state, child) =>
           AppShell(currentPath: state.uri.path, child: child),
       routes: [
-        GoRoute(path: AppRoutes.dashboard, builder: (_, _) => const DashboardScreen()),
+        GoRoute(
+          path: AppRoutes.dashboard,
+          builder: (_, _) => const DashboardScreen(),
+        ),
         GoRoute(
           path: AppRoutes.loans,
           // Loans are Liquid contracts; a Bitcoin-only wallet has none and
           // no site can connect it, so the page is not reachable there.
-          redirect: (context, state) =>
-              context.read<AppState>().activeWalletLiquid
-                  ? null
-                  : AppRoutes.dashboard,
+          redirect: (context, state) {
+            final app = context.read<AppState>();
+            return app.activeWalletLiquid && app.loansEnabled
+                ? null
+                : AppRoutes.dashboard;
+          },
           builder: (_, _) => const LoansScreen(),
+        ),
+        GoRoute(
+          path: AppRoutes.loanDetail,
+          redirect: (context, state) {
+            final app = context.read<AppState>();
+            return app.activeWalletLiquid && app.loansEnabled
+                ? null
+                : AppRoutes.dashboard;
+          },
+          builder: (_, state) => LoanDetailScreen(
+            siteKey: state.uri.queryParameters['site'] ?? '',
+            loanId: int.tryParse(state.uri.queryParameters['loan'] ?? '') ?? 0,
+          ),
         ),
         GoRoute(
           path: AppRoutes.send,
@@ -111,51 +127,84 @@ final appRouter = GoRouter(
           // including direct navigation.
           redirect: (context, state) =>
               context.read<AppState>().isActiveWalletWatchOnly
-                  ? AppRoutes.dashboard
-                  : null,
+              ? AppRoutes.dashboard
+              : null,
           builder: (_, s) => SendScreen(
             startInCosign: s.uri.queryParameters['mode'] == 'cosign',
           ),
         ),
-        GoRoute(path: AppRoutes.receive, builder: (_, _) => const ReceiveScreen()),
+        GoRoute(
+          path: AppRoutes.receive,
+          builder: (_, _) => const ReceiveScreen(),
+        ),
         GoRoute(
           path: AppRoutes.receiveAddresses,
           builder: (_, s) => ReceiveAddressesScreen(
             asset: s.uri.queryParameters['asset'] == 'LBTC' ? 'LBTC' : 'BTC',
           ),
         ),
-        GoRoute(path: AppRoutes.history, builder: (_, _) => const HistoryScreen()),
+        GoRoute(
+          path: AppRoutes.history,
+          builder: (_, _) => const HistoryScreen(),
+        ),
         GoRoute(path: AppRoutes.utxos, builder: (_, _) => const UtxoScreen()),
-        GoRoute(path: AppRoutes.walletInfo, builder: (_, _) => const WalletInfoScreen()),
+        GoRoute(
+          path: AppRoutes.walletInfo,
+          builder: (_, _) => const WalletInfoScreen(),
+        ),
         // Legacy deep link — co-sign now lives inside the Send screen.
         GoRoute(
           path: AppRoutes.cosign,
           redirect: (_, _) => '${AppRoutes.send}?mode=cosign',
         ),
-        GoRoute(path: AppRoutes.liquid, builder: (_, _) => const LiquidScreen()),
+        GoRoute(
+          path: AppRoutes.liquid,
+          builder: (_, _) => const LiquidScreen(),
+        ),
         GoRoute(
           path: AppRoutes.swap,
           // Liquid-only feature — block direct navigation from BTC-only
           // wallets, mirroring the Send watch-only redirect.
-          redirect: (context, state) =>
-              context.read<AppState>().activeWalletLiquid
-                  ? null
-                  : AppRoutes.dashboard,
+          redirect: (context, state) {
+            final app = context.read<AppState>();
+            return app.activeWalletLiquid && app.liquidDexEnabled
+                ? null
+                : AppRoutes.dashboard;
+          },
           builder: (_, _) => const SwapScreen(),
         ),
         GoRoute(
           path: AppRoutes.peg,
-          redirect: (context, state) =>
-              context.read<AppState>().activeWalletLiquid
-                  ? null
-                  : AppRoutes.dashboard,
+          redirect: (context, state) {
+            final app = context.read<AppState>();
+            return app.activeWalletLiquid &&
+                    app.activeWalletBitcoin &&
+                    app.pegEnabled
+                ? null
+                : AppRoutes.dashboard;
+          },
           builder: (_, _) => const PegScreen(),
         ),
-        GoRoute(path: AppRoutes.issueAsset, builder: (_, _) => const IssueScreen()),
-        GoRoute(path: AppRoutes.reissueAsset, builder: (_, _) => const ReissueScreen()),
-        GoRoute(path: AppRoutes.burnAsset, builder: (_, _) => const BurnScreen()),
-        GoRoute(path: AppRoutes.assetOperations, builder: (_, _) => const AssetOperationsScreen()),
-        GoRoute(path: AppRoutes.settings, builder: (_, _) => const SettingsScreen()),
+        GoRoute(
+          path: AppRoutes.issueAsset,
+          builder: (_, _) => const IssueScreen(),
+        ),
+        GoRoute(
+          path: AppRoutes.reissueAsset,
+          builder: (_, _) => const ReissueScreen(),
+        ),
+        GoRoute(
+          path: AppRoutes.burnAsset,
+          builder: (_, _) => const BurnScreen(),
+        ),
+        GoRoute(
+          path: AppRoutes.assetOperations,
+          builder: (_, _) => const AssetOperationsScreen(),
+        ),
+        GoRoute(
+          path: AppRoutes.settings,
+          builder: (_, _) => const SettingsScreen(),
+        ),
         GoRoute(
           path: AppRoutes.settingsNetwork,
           builder: (_, _) =>
@@ -172,6 +221,11 @@ final appRouter = GoRouter(
               const SettingsScreen(section: SettingsSection.appearance),
         ),
         GoRoute(
+          path: AppRoutes.settingsAdvanced,
+          builder: (_, _) =>
+              const SettingsScreen(section: SettingsSection.advanced),
+        ),
+        GoRoute(
           path: AppRoutes.settingsProtocol,
           builder: (_, _) =>
               const SettingsScreen(section: SettingsSection.protocol),
@@ -183,8 +237,9 @@ final appRouter = GoRouter(
         ),
         if (kDebugMode)
           GoRoute(
-              path: AppRoutes.designSystem,
-              builder: (_, _) => const DesignSystemScreen()),
+            path: AppRoutes.designSystem,
+            builder: (_, _) => const DesignSystemScreen(),
+          ),
       ],
     ),
   ],

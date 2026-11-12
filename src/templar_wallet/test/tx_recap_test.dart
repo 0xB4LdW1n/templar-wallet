@@ -10,31 +10,32 @@ import 'package:templar_wallet/shared/widgets/hex_text.dart';
 import 'package:templar_wallet/shared/widgets/tx_recap.dart';
 
 const _addr = 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx';
-const _change = 'tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7';
+const _change =
+    'tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7';
 
 TxPreview _preview() => TxPreview(
-      chain: 'bitcoin',
-      recipientAddress: _addr,
-      amountDisplay: '0.00010000 BTC',
-      feeSats: 141,
-      feeDisplay: '141 sats',
-      totalDisplay: '0.00010141 BTC',
-      outputs: const [
-        TxIo(address: _addr, amountSats: 10000, isChange: false),
-        TxIo(address: _change, amountSats: 89859, isChange: true),
-      ],
-    );
+  chain: 'bitcoin',
+  recipientAddress: _addr,
+  amountDisplay: '0.00010000 BTC',
+  feeSats: 141,
+  feeDisplay: '141 sats',
+  totalDisplay: '0.00010141 BTC',
+  outputs: const [
+    TxIo(address: _addr, amountSats: 10000, isChange: false),
+    TxIo(address: _change, amountSats: 89859, isChange: true),
+  ],
+);
 
 Widget _host(double width) => MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: SizedBox(
-            width: width,
-            child: TxRecapPanel(preview: _preview(), ticker: 'BTC'),
-          ),
-        ),
+  home: Scaffold(
+    body: Center(
+      child: SizedBox(
+        width: width,
+        child: TxRecapPanel(preview: _preview(), ticker: 'BTC'),
       ),
-    );
+    ),
+  ),
+);
 
 void main() {
   setUpAll(() {
@@ -50,8 +51,9 @@ void main() {
     expect(amount.left, greaterThan(address.left));
   });
 
-  testWidgets('narrow: amount drops under the address, nothing overflows',
-      (tester) async {
+  testWidgets('narrow: amount drops under the address, nothing overflows', (
+    tester,
+  ) async {
     await tester.pumpWidget(_host(300));
     expect(tester.takeException(), isNull);
     final address = tester.getRect(find.byType(HexText).first);

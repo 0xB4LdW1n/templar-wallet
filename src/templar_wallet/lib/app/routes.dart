@@ -2,11 +2,19 @@ abstract final class AppRoutes {
   static const String walletPicker = '/';
   static const String welcome = '/welcome';
   static const String dashboard = '/dashboard';
+
   /// The wallet's Templar Protocol loans, fed by the connected site
   /// (`GET /connector/portfolio`). Liquid wallets only — loans live there.
   static const String loans = '/loans';
+  static const String loanDetail = '/loans/detail';
+
+  static String loanDetailLocation(String siteKey, int loanId) => Uri(
+    path: loanDetail,
+    queryParameters: {'site': siteKey, 'loan': '$loanId'},
+  ).toString();
   static const String send = '/send';
   static const String receive = '/receive';
+
   /// Every address a chain has handed out, with what each received. Receive
   /// shows the last eight and sends the rest here (`?asset=BTC|LBTC`).
   static const String receiveAddresses = '/receive/addresses';
@@ -22,6 +30,7 @@ abstract final class AppRoutes {
   static const String burnAsset = '/liquid/burn';
   static const String assetOperations = '/asset-ops';
   static const String settings = '/settings';
+
   /// Settings sections as routes of their own. On a phone the settings root
   /// is a list and each section is a sub-page the header's back arrow (and
   /// the system back) returns from; on desktop they open the two-pane
@@ -29,10 +38,13 @@ abstract final class AppRoutes {
   static const String settingsNetwork = '/settings/network';
   static const String settingsSecurity = '/settings/security';
   static const String settingsAppearance = '/settings/appearance';
+  static const String settingsAdvanced = '/settings/advanced';
   static const String settingsAbout = '/settings/about';
+
   /// Templar Protocol: readiness, the paste box, connected sites, what was
   /// signed, and the wallet that answers.
   static const String settingsProtocol = '/settings/protocol';
+
   /// `templar://` request handler (Templar Protocol connect / sign). Outside the
   /// wallet shell: a link may arrive before any wallet is open.
   static const String protocol = '/protocol';
@@ -54,7 +66,11 @@ class NavSection {
 }
 
 class NavItem {
-  const NavItem({required this.route, required this.labelKey, required this.icon});
+  const NavItem({
+    required this.route,
+    required this.labelKey,
+    required this.icon,
+  });
   final String route;
   final String labelKey;
   final Object icon;

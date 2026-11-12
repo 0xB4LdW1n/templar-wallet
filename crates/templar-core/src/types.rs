@@ -63,7 +63,7 @@ pub struct TxInfo {
     /// Transaction ID (hex).
     pub txid: String,
     /// Net amount change in satoshis (positive = received, negative = sent).
-    /// For Liquid, this is the L-BTC delta only.
+    /// For Liquid, this is the LBTC delta only.
     pub amount_sat: i64,
     /// Fee in satoshis.
     pub fee_sat: u64,

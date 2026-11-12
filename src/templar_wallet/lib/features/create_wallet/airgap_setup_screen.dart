@@ -94,7 +94,10 @@ class _AirgapSetupScreenState extends State<AirgapSetupScreen> {
   }
 
   Future<void> _create() async {
-    setState(() { _creating = true; _error = null; });
+    setState(() {
+      _creating = true;
+      _error = null;
+    });
     try {
       final wallet = await _bridge.createWatchOnlyWallet(
         _nameController.text.trim(),
@@ -112,10 +115,19 @@ class _AirgapSetupScreenState extends State<AirgapSetupScreen> {
           type: wallet.typeLabel.isNotEmpty ? wallet.typeLabel : 'Air-gap',
           liquid: false,
         );
-        setState(() { _creating = false; _created = wallet; _step = 4; });
+        setState(() {
+          _creating = false;
+          _created = wallet;
+          _step = 4;
+        });
       }
     } catch (e) {
-      if (mounted) setState(() { _creating = false; _error = e.toString(); });
+      if (mounted) {
+        setState(() {
+          _creating = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -137,55 +149,62 @@ class _AirgapSetupScreenState extends State<AirgapSetupScreen> {
   }
 
   String get _stepTitle => switch (_step) {
-        1 => 'Choose your device',
-        2 => 'Export descriptor',
-        3 => 'Paste descriptor & name',
-        _ => 'Pairing summary',
-      };
+    1 => 'Choose your device',
+    2 => 'Export descriptor',
+    3 => 'Paste descriptor & name',
+    _ => 'Pairing summary',
+  };
 
   String get _stepSubtitle => switch (_step) {
-        1 => 'Select the air-gap device you are using',
-        2 => 'Follow the on-device steps to export the wallet descriptor',
-        3 => 'Paste the descriptor shown on your device',
-        _ => 'What was created, and where it came from',
-      };
+    1 => 'Select the air-gap device you are using',
+    2 => 'Follow the on-device steps to export the wallet descriptor',
+    3 => 'Paste the descriptor shown on your device',
+    _ => 'What was created, and where it came from',
+  };
 
   Widget _stepBody(bool isDark) => switch (_step) {
-        1 => _Step1Body(
-              selected: _device,
-              onSelect: (d) => setState(() => _device = d),
-              liquidWanted: _liquidWanted,
-              isDark: isDark,
-            ),
-        2 => _Step2Body(device: _device!, isDark: isDark),
-        3 => _Step3Body(
-              nameController: _nameController,
-              recvController: _recvController,
-              changeController: _changeController,
-              creating: _creating,
-              error: _error,
-              isDark: isDark,
-            ),
-        _ => _RecapBody(
-              wallet: _created!,
-              device: _device!,
-              liquidWanted: _liquidWanted,
-            ),
-      };
+    1 => _Step1Body(
+      selected: _device,
+      onSelect: (d) => setState(() => _device = d),
+      liquidWanted: _liquidWanted,
+      isDark: isDark,
+    ),
+    2 => _Step2Body(device: _device!, isDark: isDark),
+    3 => _Step3Body(
+      nameController: _nameController,
+      recvController: _recvController,
+      changeController: _changeController,
+      creating: _creating,
+      error: _error,
+      isDark: isDark,
+    ),
+    _ => _RecapBody(
+      wallet: _created!,
+      device: _device!,
+      liquidWanted: _liquidWanted,
+    ),
+  };
 
   Widget get _stepActions {
     if (_step == 4) {
       return Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          SecondaryButton(label: 'Get receive address', onPressed: () => context.go(AppRoutes.receive)),
+          SecondaryButton(
+            label: 'Get receive address',
+            onPressed: () => context.go(AppRoutes.receive),
+          ),
           const SizedBox(width: AppSpacing.md),
-          PrimaryButton(label: 'Open Wallet', onPressed: () => context.go(AppRoutes.dashboard)),
+          PrimaryButton(
+            label: 'Open Wallet',
+            onPressed: () => context.go(AppRoutes.dashboard),
+          ),
         ],
       );
     }
     if (_step == 3) {
-      final canCreate = _recvController.text.trim().isNotEmpty &&
+      final canCreate =
+          _recvController.text.trim().isNotEmpty &&
           _nameController.text.trim().isNotEmpty;
       return Row(
         mainAxisAlignment: MainAxisAlignment.end,
@@ -202,11 +221,14 @@ class _AirgapSetupScreenState extends State<AirgapSetupScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        if (_step > 1) GhostButton(label: 'Back', onPressed: () => setState(() => _step--)),
+        if (_step > 1)
+          GhostButton(label: 'Back', onPressed: () => setState(() => _step--)),
         const SizedBox(width: AppSpacing.md),
         PrimaryButton(
           label: 'Continue',
-          onPressed: _step == 1 && _device == null ? null : () => setState(() => _step++),
+          onPressed: _step == 1 && _device == null
+              ? null
+              : () => setState(() => _step++),
         ),
       ],
     );
@@ -239,7 +261,8 @@ class _Step1Body extends StatelessWidget {
         children: [
           const WarningBanner(
             title: 'This wallet will be Bitcoin-only',
-            message: 'Liquid does not travel over QR: a Jade in QR mode signs '
+            message:
+                'Liquid does not travel over QR: a Jade in QR mode signs '
                 'Bitcoin only, and never hands out the blinding key a Liquid '
                 'wallet needs. To use Liquid, go back and connect the Jade by '
                 'USB cable instead — everything else about this setup stays '
@@ -352,14 +375,18 @@ class _DeviceCard extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.xl, vertical: AppSpacing.xxl),
+          horizontal: AppSpacing.xl,
+          vertical: AppSpacing.xxl,
+        ),
         decoration: BoxDecoration(
           color: isSelected
               ? accent.withValues(alpha: isDark ? 0.15 : 0.08)
               : (isDark ? AppColors.surfaceDark : AppColors.surfaceLight),
           borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
           border: Border.all(
-            color: isSelected ? accent : (isDark ? AppColors.borderDark : AppColors.borderLight),
+            color: isSelected
+                ? accent
+                : (isDark ? AppColors.borderDark : AppColors.borderLight),
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -368,14 +395,17 @@ class _DeviceCard extends StatelessWidget {
           children: [
             Icon(icon, color: accent, size: 56),
             const SizedBox(height: AppSpacing.lg),
-            Text(label,
-                style: AppTypography.pageTitle.copyWith(fontSize: 20)),
+            Text(label, style: AppTypography.pageTitle.copyWith(fontSize: 20)),
             const SizedBox(height: AppSpacing.xs),
-            Text(subtitle,
-                textAlign: TextAlign.center,
-                style: AppTypography.bodySmall.copyWith(
-                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
-                )),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondary,
+              ),
+            ),
             if (isSelected) ...[
               const SizedBox(height: AppSpacing.md),
               Icon(Icons.check_circle, color: accent, size: 22),
@@ -419,34 +449,48 @@ class _Step2Body extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InfoBanner(message: 'Follow these steps on your ${device == _AirgapDevice.seedSigner ? "SeedSigner" : "Jade"} device:'),
+        InfoBanner(
+          message:
+              'Follow these steps on your ${device == _AirgapDevice.seedSigner ? "SeedSigner" : "Jade"} device:',
+        ),
         const SizedBox(height: AppSpacing.xl),
-        ...steps.asMap().entries.map((e) => Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text('${e.key + 1}',
-                          style: AppTypography.label.copyWith(color: AppColors.accent)),
+        ...steps.asMap().entries.map(
+          (e) => Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${e.key + 1}',
+                      style: AppTypography.label.copyWith(
+                        color: AppColors.accent,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Text(e.value, style: AppTypography.body.copyWith(
-                      color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
-                    )),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    e.value,
+                    style: AppTypography.body.copyWith(
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondary,
+                    ),
                   ),
-                ],
-              ),
-            )),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -481,11 +525,14 @@ class _Step3BodyState extends State<_Step3Body> {
   Widget build(BuildContext context) {
     if (widget.creating) {
       return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: AppSpacing.lg),
-          Text('Creating wallet…', style: AppTypography.body),
-        ]),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: AppSpacing.lg),
+            Text('Creating wallet…', style: AppTypography.body),
+          ],
+        ),
       );
     }
 
@@ -500,14 +547,16 @@ class _Step3BodyState extends State<_Step3Body> {
           const SizedBox(height: AppSpacing.xl),
           Row(
             children: [
-              Expanded(child: TextField(
-                controller: widget.recvController,
-                decoration: const InputDecoration(
-                  labelText: 'Receive descriptor',
-                  hintText: 'wpkh([fingerprint/84\'/1\'/0\']tpub…/0/*)',
+              Expanded(
+                child: TextField(
+                  controller: widget.recvController,
+                  decoration: const InputDecoration(
+                    labelText: 'Receive descriptor',
+                    hintText: 'wpkh([fingerprint/84\'/1\'/0\']tpub…/0/*)',
+                  ),
+                  maxLines: 3,
                 ),
-                maxLines: 3,
-              )),
+              ),
               const SizedBox(width: AppSpacing.sm),
               // Shared widget rather than a bespoke IconButton: it hides
               // itself where no camera plugin exists, so Windows/Linux see
@@ -532,19 +581,25 @@ class _Step3BodyState extends State<_Step3Body> {
           const SizedBox(height: AppSpacing.sm),
           TextButton(
             onPressed: () => setState(() => _showChange = !_showChange),
-            child: Text(_showChange ? 'Hide change descriptor' : '+ Add change descriptor (optional)'),
+            child: Text(
+              _showChange
+                  ? 'Hide change descriptor'
+                  : '+ Add change descriptor (optional)',
+            ),
           ),
           if (_showChange) ...[
             Row(
               children: [
-                Expanded(child: TextField(
-                  controller: widget.changeController,
-                  decoration: const InputDecoration(
-                    labelText: 'Change descriptor (optional)',
-                    hintText: 'wpkh([fingerprint/84\'/1\'/0\']tpub…/1/*)',
+                Expanded(
+                  child: TextField(
+                    controller: widget.changeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Change descriptor (optional)',
+                      hintText: 'wpkh([fingerprint/84\'/1\'/0\']tpub…/1/*)',
+                    ),
+                    maxLines: 3,
                   ),
-                  maxLines: 3,
-                )),
+                ),
                 const SizedBox(width: AppSpacing.sm),
                 ScanIconButton(
                   controller: widget.changeController,
@@ -606,7 +661,9 @@ class _RecapBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final deviceName = device == _AirgapDevice.seedSigner ? 'SeedSigner' : 'Jade';
+    final deviceName = device == _AirgapDevice.seedSigner
+        ? 'SeedSigner'
+        : 'Jade';
     final fingerprint = wallet.masterFingerprint ?? '';
 
     return PairingRecapView(
@@ -630,7 +687,8 @@ class _RecapBody extends StatelessWidget {
             ok: false,
             // Not a missing feature: Jade's QR mode never exports the blinding
             // key a Liquid wallet needs, so no QR flow can produce one.
-            detail: 'Not possible over QR — connect the Jade by USB to pair '
+            detail:
+                'Not possible over QR — connect the Jade by USB to pair '
                 'Liquid. Everything else about the setup is the same.',
           ),
       ],
@@ -652,7 +710,8 @@ class _RecapBody extends StatelessWidget {
           passed: true,
         ),
       ],
-      footnote: 'Sending builds an unsigned PSBT here, shows it as a QR code '
+      footnote:
+          'Sending builds an unsigned PSBT here, shows it as a QR code '
           'for your device to sign offline, and takes the signed one back by '
           'QR, file or paste. Nothing but public keys ever leaves the device.',
     );

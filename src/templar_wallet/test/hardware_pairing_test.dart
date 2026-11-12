@@ -17,16 +17,15 @@ NativeDevice native({
   String family = 'jade',
   String transport = 'serial',
   bool drivable = true,
-}) =>
-    NativeDevice(
-      family: family,
-      model: model,
-      transport: transport,
-      path: path,
-      vendorId: 0x303a,
-      productId: 0x4001,
-      drivable: drivable,
-    );
+}) => NativeDevice(
+  family: family,
+  model: model,
+  transport: transport,
+  path: path,
+  vendorId: 0x303a,
+  productId: 0x4001,
+  drivable: drivable,
+);
 
 WalletSummary wallet({
   String typeLabel = 'Hardware (deadbeef)',
@@ -37,31 +36,30 @@ WalletSummary wallet({
   String? masterFingerprint,
   int? requiredSigs,
   int? totalSigners,
-}) =>
-    WalletSummary(
-      id: 'w1',
-      name: 'Wallet',
-      type: type,
-      network: WalletNetwork.testnet,
-      balanceSats: 0,
-      txCount: 0,
-      lastSyncAt: DateTime.fromMillisecondsSinceEpoch(0),
-      isWatchOnly: true,
-      typeLabel: typeLabel,
-      liquidEnabled: liquid,
-      bitcoinEnabled: bitcoin,
-      deviceModel: deviceModel,
-      masterFingerprint: masterFingerprint,
-      requiredSigs: requiredSigs,
-      totalSigners: totalSigners,
-    );
+}) => WalletSummary(
+  id: 'w1',
+  name: 'Wallet',
+  type: type,
+  network: WalletNetwork.testnet,
+  balanceSats: 0,
+  txCount: 0,
+  lastSyncAt: DateTime.fromMillisecondsSinceEpoch(0),
+  isWatchOnly: true,
+  typeLabel: typeLabel,
+  liquidEnabled: liquid,
+  bitcoinEnabled: bitcoin,
+  deviceModel: deviceModel,
+  masterFingerprint: masterFingerprint,
+  requiredSigs: requiredSigs,
+  totalSigners: totalSigners,
+);
 
 Future<void> pump(WidgetTester tester, Widget child) => tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData.dark(),
-        home: Scaffold(body: SingleChildScrollView(child: child)),
-      ),
-    );
+  MaterialApp(
+    theme: ThemeData.dark(),
+    home: Scaffold(body: SingleChildScrollView(child: child)),
+  ),
+);
 
 void main() {
   group('mergeDeviceRows', () {
@@ -110,8 +108,11 @@ void main() {
           const HwDevice(model: 'a', fingerprint: 'aabbccdd', path: 'p2'),
         ],
       );
-      expect(duplicate, hasLength(1),
-          reason: 'one fingerprint is one device, whatever the path');
+      expect(
+        duplicate,
+        hasLength(1),
+        reason: 'one fingerprint is one device, whatever the path',
+      );
     });
 
     test('a plugged-in device with no fingerprint yet is still a row', () {
@@ -121,8 +122,11 @@ void main() {
       );
       expect(rows.single.isIdentified, isFalse);
       expect(rows.single.drivable, isTrue);
-      expect(rows.single.supportsLiquid, isTrue,
-          reason: 'a Jade can hold Liquid');
+      expect(
+        rows.single.supportsLiquid,
+        isTrue,
+        reason: 'a Jade can hold Liquid',
+      );
     });
 
     test('an HWI-only device is usable where the helper runs', () {
@@ -180,20 +184,25 @@ void main() {
       expect(says('BTC + Liquid'), findsOneWidget);
     });
 
-    testWidgets('an air-gap wallet is flagged as such, Bitcoin-only',
-        (tester) async {
+    testWidgets('an air-gap wallet is flagged as such, Bitcoin-only', (
+      tester,
+    ) async {
       await pump(
         tester,
         WalletFlags(
-          wallet: wallet(typeLabel: 'Air-gap watch-only', deviceModel: 'air-gap'),
+          wallet: wallet(
+            typeLabel: 'Air-gap watch-only',
+            deviceModel: 'air-gap',
+          ),
         ),
       );
       expect(says('Air-gap'), findsOneWidget);
       expect(says('BTC only'), findsOneWidget);
     });
 
-    testWidgets('a Liquid-only wallet says so rather than claiming Bitcoin',
-        (tester) async {
+    testWidgets('a Liquid-only wallet says so rather than claiming Bitcoin', (
+      tester,
+    ) async {
       await pump(
         tester,
         WalletFlags(wallet: wallet(liquid: true, bitcoin: false)),
@@ -202,8 +211,9 @@ void main() {
       expect(says('BTC'), findsNothing);
     });
 
-    testWidgets('a view-only wallet is not shown as a signing device',
-        (tester) async {
+    testWidgets('a view-only wallet is not shown as a signing device', (
+      tester,
+    ) async {
       await pump(
         tester,
         WalletFlags(
@@ -228,12 +238,16 @@ void main() {
           ),
         ),
       );
-      final line = tester.widget<Text>(find.byType(Text)).textSpan!.toPlainText();
+      final line = tester
+          .widget<Text>(find.byType(Text))
+          .textSpan!
+          .toPlainText();
       expect('2-of-3'.allMatches(line).length, 1, reason: line);
     });
 
-    testWidgets('the fingerprint is the trailing fact when there is one',
-        (tester) async {
+    testWidgets('the fingerprint is the trailing fact when there is one', (
+      tester,
+    ) async {
       await pump(
         tester,
         WalletFlags(wallet: wallet(masterFingerprint: 'f0b68896')),
@@ -241,8 +255,9 @@ void main() {
       expect(says('f0b68896'), findsOneWidget);
     });
 
-    testWidgets('compact drops the chain list, keeps the key origin',
-        (tester) async {
+    testWidgets('compact drops the chain list, keeps the key origin', (
+      tester,
+    ) async {
       await pump(
         tester,
         WalletFlags(wallet: wallet(liquid: true), compact: true),
@@ -277,9 +292,7 @@ void main() {
               detail: 'Imported',
             ),
           ],
-          checks: const [
-            PairingCheck(label: 'Device answered', passed: true),
-          ],
+          checks: const [PairingCheck(label: 'Device answered', passed: true)],
         ),
       );
       expect(find.text('Pairing complete'), findsOneWidget);

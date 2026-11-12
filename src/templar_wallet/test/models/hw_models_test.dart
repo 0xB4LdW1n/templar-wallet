@@ -32,7 +32,8 @@ void main() {
   });
 
   test('HwImportResult decodes a Bitcoin-only pairing', () {
-    final r = HwImportResult.fromJson(decode('''
+    final r = HwImportResult.fromJson(
+      decode('''
       {
         "wallet": {"id": "hw-1", "name": "Ledger", "wallet_type": "watch_only",
                    "is_watch_only": true, "type_label": "Hardware (f00dbabe)",
@@ -44,7 +45,8 @@ void main() {
         "liquid_error": null,
         "liquid_requested": false
       }
-    '''));
+    '''),
+    );
     expect(r.wallet.id, 'hw-1');
     expect(r.wallet.type, WalletType.watchOnly);
     expect(r.wallet.isWatchOnly, isTrue);
@@ -57,7 +59,8 @@ void main() {
   });
 
   test('HwImportResult decodes a wallet with both networks on one entry', () {
-    final r = HwImportResult.fromJson(decode('''
+    final r = HwImportResult.fromJson(
+      decode('''
       {
         "wallet": {"id": "hw-1", "name": "Jade", "wallet_type": "watch_only",
                    "liquid_enabled": true, "device_model": "Blockstream Jade",
@@ -68,7 +71,8 @@ void main() {
         "liquid_descriptor": "ct(slip77(aa),elwpkh([deadbeef/84h/1h/0h]tpubDX/<0;1>/*))",
         "liquid_requested": true
       }
-    '''));
+    '''),
+    );
     expect(r.hasLiquid, isTrue);
     expect(r.isComplete, isTrue);
     // Both sides live on one wallet — there is no second entry to look for.
@@ -79,7 +83,8 @@ void main() {
   });
 
   test('HwImportResult reports a Liquid half that failed to pair', () {
-    final r = HwImportResult.fromJson(decode('''
+    final r = HwImportResult.fromJson(
+      decode('''
       {
         "wallet": {"id": "hw-1", "name": "Jade", "wallet_type": "watch_only",
                    "type_label": "Hardware (deadbeef)"},
@@ -89,7 +94,8 @@ void main() {
         "liquid_error": "Jade is not ready: could not unlock",
         "liquid_requested": true
       }
-    '''));
+    '''),
+    );
     // The Bitcoin wallet is real; only the Liquid side is missing.
     expect(r.wallet.bitcoinEnabled, isTrue);
     expect(r.hasLiquid, isFalse);
@@ -98,11 +104,13 @@ void main() {
   });
 
   test('a Liquid-only wallet reports no Bitcoin side', () {
-    final w = WalletSummary.fromJson(decode('''
+    final w = WalletSummary.fromJson(
+      decode('''
       {"id": "liq-1", "name": "Jade Liquid", "wallet_type": "watch_only",
        "liquid_enabled": true, "bitcoin_enabled": false,
        "device_model": "jade", "type_label": "Hardware (09026b48)"}
-    '''));
+    '''),
+    );
     expect(w.bitcoinEnabled, isFalse);
     expect(w.networksLabel, 'Liquid only');
   });

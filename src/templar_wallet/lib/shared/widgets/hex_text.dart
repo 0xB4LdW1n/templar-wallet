@@ -49,12 +49,7 @@ int charsThatFit(BuildContext context, TextStyle style, double maxWidth) {
 ///
 /// Falls back to the standard `12…8` form when the width is unbounded.
 class MiddleEllipsisText extends StatelessWidget {
-  const MiddleEllipsisText(
-    this.value, {
-    super.key,
-    this.style,
-    this.textAlign,
-  });
+  const MiddleEllipsisText(this.value, {super.key, this.style, this.textAlign});
 
   final String value;
   final TextStyle? style;
@@ -148,19 +143,27 @@ class HexText extends StatelessWidget {
   }
 
   Widget _render(AppScheme s, TextStyle base, String shown) {
-    final headStyle = base.copyWith(color: s.accent, fontWeight: FontWeight.w600);
-    final tailStyle = base.copyWith(color: s.bitcoin, fontWeight: FontWeight.w600);
+    final headStyle = base.copyWith(
+      color: s.accent,
+      fontWeight: FontWeight.w600,
+    );
+    final tailStyle = base.copyWith(
+      color: s.bitcoin,
+      fontWeight: FontWeight.w600,
+    );
 
     // Too short to decompose — plain text.
     if (shown.length <= 8) {
       return Text(shown, style: base);
     }
 
-    final span = TextSpan(children: [
-      TextSpan(text: shown.substring(0, 4), style: headStyle),
-      TextSpan(text: shown.substring(4, shown.length - 4), style: base),
-      TextSpan(text: shown.substring(shown.length - 4), style: tailStyle),
-    ]);
+    final span = TextSpan(
+      children: [
+        TextSpan(text: shown.substring(0, 4), style: headStyle),
+        TextSpan(text: shown.substring(4, shown.length - 4), style: base),
+        TextSpan(text: shown.substring(shown.length - 4), style: tailStyle),
+      ],
+    );
 
     return selectable
         ? SelectableText.rich(span, maxLines: 1)

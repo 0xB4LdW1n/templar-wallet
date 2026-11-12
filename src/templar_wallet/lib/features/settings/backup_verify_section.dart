@@ -75,7 +75,8 @@ class _BackupVerifyCardState extends State<BackupVerifyCard> {
   }
 
   Future<void> _verify() async {
-    final ok = await showAppDialog<bool>(context,
+    final ok = await showAppDialog<bool>(
+      context,
       builder: (_) => _ReEntryDialog(walletId: widget.walletId),
     );
     if (ok == true) {
@@ -179,7 +180,7 @@ class _BackupVerifyCardState extends State<BackupVerifyCard> {
                       // "computer" is wrong on a phone, and the codebase
                       // already knows the difference elsewhere.
                       ? 'Never verified on this '
-                          '${Platform.isAndroid ? 'device' : 'computer'}.'
+                            '${Platform.isAndroid ? 'device' : 'computer'}.'
                       : stale
                       ? 'Last verified ${_ago(last)} — worth checking again.'
                       : 'Backup verified ${_ago(last)}.',
@@ -357,37 +358,38 @@ class _ReEntryDialogState extends State<_ReEntryDialog> {
   /// prefix until the field has focus or content, so an empty grid showed no
   /// positions at all — the one thing the user is checking against paper.
   Widget _wordCell(int i, AppScheme s, bool phone) => Row(
-        children: [
-          SizedBox(
-            width: 22,
-            child: Text(
-              '${i + 1}.',
-              textAlign: TextAlign.right,
-              style: AppTypography.caption.copyWith(color: s.inkFaint),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: TextField(
-              controller: _ctrls[i],
-              autofocus: i == 0,
-              autocorrect: false,
-              enableSuggestions: false,
-              style: AppTypography.mono,
-              // isDense shrinks the box below the phone field's own height —
-              // and 24 of them are the whole task on this screen.
-              decoration: phone
-                  ? const InputDecoration()
-                  : const InputDecoration(isDense: true),
-              textInputAction:
-                  i == _wordCount - 1 ? TextInputAction.done : TextInputAction.next,
-              onSubmitted: (_) {
-                if (i == _wordCount - 1) _check();
-              },
-            ),
-          ),
-        ],
-      );
+    children: [
+      SizedBox(
+        width: 22,
+        child: Text(
+          '${i + 1}.',
+          textAlign: TextAlign.right,
+          style: AppTypography.caption.copyWith(color: s.inkFaint),
+        ),
+      ),
+      const SizedBox(width: AppSpacing.xs),
+      Expanded(
+        child: TextField(
+          controller: _ctrls[i],
+          autofocus: i == 0,
+          autocorrect: false,
+          enableSuggestions: false,
+          style: AppTypography.mono,
+          // isDense shrinks the box below the phone field's own height —
+          // and 24 of them are the whole task on this screen.
+          decoration: phone
+              ? const InputDecoration()
+              : const InputDecoration(isDense: true),
+          textInputAction: i == _wordCount - 1
+              ? TextInputAction.done
+              : TextInputAction.next,
+          onSubmitted: (_) {
+            if (i == _wordCount - 1) _check();
+          },
+        ),
+      ),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -441,8 +443,9 @@ class _ReEntryDialogState extends State<_ReEntryDialog> {
           children: [
             Text(
               'Type the phrase exactly as you wrote it down, in order.',
-              style: AppTypography.caption
-                  .copyWith(color: phone ? s.inkSecondary : null),
+              style: AppTypography.caption.copyWith(
+                color: phone ? s.inkSecondary : null,
+              ),
             ),
             const SizedBox(height: AppSpacing.md),
             // Phone: the same track the Liquid network card uses two pages
@@ -485,7 +488,8 @@ class _ReEntryDialogState extends State<_ReEntryDialog> {
                 builder: (context, c) {
                   // Floored: two cells plus the gap must never round up past
                   // the line, or the grid collapses to one column.
-                  final cell = ((c.maxWidth - AppSpacing.sm) / 2).floorToDouble();
+                  final cell = ((c.maxWidth - AppSpacing.sm) / 2)
+                      .floorToDouble();
                   return Wrap(
                     spacing: AppSpacing.sm,
                     runSpacing: AppSpacing.sm,

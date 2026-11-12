@@ -87,12 +87,13 @@ void main() {
       // Wallets labelled before the flag existed: the wizard gave keys it
       // read over USB the stick or the shield, and nothing else.
       expect(const CosignerLabel(id: 'a', iconId: 'usb').isHardware, isTrue);
-      expect(
-          const CosignerLabel(id: 'a', iconId: 'shield').isHardware, isTrue);
+      expect(const CosignerLabel(id: 'a', iconId: 'shield').isHardware, isTrue);
       expect(const CosignerLabel(id: 'a', iconId: 'phone').isHardware, isFalse);
       expect(const CosignerLabel(id: 'a').isHardware, isFalse);
-      expect(const CosignerLabel(id: 'a', iconId: 'usb').toJson(),
-          isNot(contains('hw')));
+      expect(
+        const CosignerLabel(id: 'a', iconId: 'usb').toJson(),
+        isNot(contains('hw')),
+      );
     });
 
     test('an explicit no beats the icon', () {
@@ -108,7 +109,10 @@ void main() {
       await store.saveOne(
         'w1',
         const CosignerLabel(
-            id: 'aaaaaaaa', name: 'Jade in the safe', iconId: 'shield'),
+          id: 'aaaaaaaa',
+          name: 'Jade in the safe',
+          iconId: 'shield',
+        ),
       );
       store.clearCache();
 
@@ -117,14 +121,16 @@ void main() {
       expect(loaded['aaaaaaaa']?.icon, cosignerIcons['shield']);
     });
 
-    test('clearing a label removes it instead of storing an empty one',
-        () async {
-      final store = CosignerLabelStore.instance;
-      await store.saveOne('w1', const CosignerLabel(id: 'a', name: 'Phone'));
-      await store.saveOne('w1', const CosignerLabel(id: 'a'));
-      store.clearCache();
-      expect(await store.load('w1'), isEmpty);
-    });
+    test(
+      'clearing a label removes it instead of storing an empty one',
+      () async {
+        final store = CosignerLabelStore.instance;
+        await store.saveOne('w1', const CosignerLabel(id: 'a', name: 'Phone'));
+        await store.saveOne('w1', const CosignerLabel(id: 'a'));
+        store.clearCache();
+        expect(await store.load('w1'), isEmpty);
+      },
+    );
 
     test('labels are per wallet and deleting one leaves the other', () async {
       final store = CosignerLabelStore.instance;
@@ -138,8 +144,9 @@ void main() {
     });
 
     test('a corrupt entry costs names, not the wallet', () async {
-      SharedPreferences.setMockInitialValues(
-          {'cosigner_labels_v1_w1': 'not json at all'});
+      SharedPreferences.setMockInitialValues({
+        'cosigner_labels_v1_w1': 'not json at all',
+      });
       CosignerLabelStore.instance.clearCache();
       expect(await CosignerLabelStore.instance.load('w1'), isEmpty);
     });
@@ -166,19 +173,18 @@ void main() {
 
   group('ring', () {
     List<CosignerEntry> entries(int n) => resolveCosigners(
-          cosignerKeys: [
-            for (var i = 0; i < n; i++) _key('${i}0000000'),
-          ],
-          labels: const {},
-        );
+      cosignerKeys: [for (var i = 0; i < n; i++) _key('${i}0000000')],
+      labels: const {},
+    );
 
     Widget host(Widget child) => MaterialApp(
-          home: Scaffold(body: Center(child: child)),
-        );
+      home: Scaffold(body: Center(child: child)),
+    );
 
     testWidgets('every key is drawn while they fit', (t) async {
       await t.pumpWidget(
-          host(CosignerRing(entries: entries(3), requiredSigs: 2)));
+        host(CosignerRing(entries: entries(3), requiredSigs: 2)),
+      );
       expect(find.byIcon(defaultCosignerIcon), findsNWidgets(3));
       expect(find.textContaining('+'), findsNothing);
       expect(find.text('2/3'), findsOneWidget);
@@ -186,7 +192,8 @@ void main() {
 
     testWidgets('past five, the rest collapse into one badge', (t) async {
       await t.pumpWidget(
-          host(CosignerRing(entries: entries(8), requiredSigs: 5)));
+        host(CosignerRing(entries: entries(8), requiredSigs: 5)),
+      );
       // Five drawn, three folded away — and the centre still reports the
       // whole wallet, not the part that fitted.
       expect(find.byIcon(defaultCosignerIcon), findsNWidgets(maxRingIcons));
@@ -196,11 +203,15 @@ void main() {
 
     testWidgets('the overflow badge opens the roster', (t) async {
       var opened = false;
-      await t.pumpWidget(host(CosignerRing(
-        entries: entries(9),
-        requiredSigs: 2,
-        onTapMore: () => opened = true,
-      )));
+      await t.pumpWidget(
+        host(
+          CosignerRing(
+            entries: entries(9),
+            requiredSigs: 2,
+            onTapMore: () => opened = true,
+          ),
+        ),
+      );
       await t.tap(find.text('+4'));
       expect(opened, isTrue);
     });
@@ -215,21 +226,23 @@ void main() {
         },
       );
 
-      await t.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () => showCosignerRoster(
-                context,
-                entries: entries(2),
-                requiredSigs: 2,
-                onEdit: (_) async => renamed,
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showCosignerRoster(
+                  context,
+                  entries: entries(2),
+                  requiredSigs: 2,
+                  onEdit: (_) async => renamed,
+                ),
+                child: const Text('open'),
               ),
-              child: const Text('open'),
             ),
           ),
         ),
-      ));
+      );
       await t.tap(find.text('open'));
       await t.pumpAndSettle();
       expect(find.text('Key 2'), findsOneWidget);
@@ -242,20 +255,22 @@ void main() {
     });
 
     testWidgets('the roster lists every key, drawn or not', (t) async {
-      await t.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () => showCosignerRoster(
-                context,
-                entries: entries(7),
-                requiredSigs: 3,
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showCosignerRoster(
+                  context,
+                  entries: entries(7),
+                  requiredSigs: 3,
+                ),
+                child: const Text('open'),
               ),
-              child: const Text('open'),
             ),
           ),
         ),
-      ));
+      );
       await t.tap(find.text('open'));
       await t.pumpAndSettle();
 
@@ -265,8 +280,11 @@ void main() {
 
       // The two the ring could not draw are in here, past the fold — the
       // roster is the complete list, not a longer truncation of it.
-      await t.scrollUntilVisible(find.text('Key 7'), 120,
-          scrollable: find.byType(Scrollable).last);
+      await t.scrollUntilVisible(
+        find.text('Key 7'),
+        120,
+        scrollable: find.byType(Scrollable).last,
+      );
       expect(find.text('Key 7'), findsOneWidget);
     });
   });

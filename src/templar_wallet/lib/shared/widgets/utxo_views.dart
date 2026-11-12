@@ -114,61 +114,75 @@ String utxoShareText(double share) {
 extension TierColors on BanknoteTier {
   /// Main hue: borders, tiles, meters, shadows, paper blends.
   Color base(bool isDark) => switch (this) {
-        BanknoteTier.dust => isDark ? const Color(0xFF8B93A7) : const Color(0xFF7A8496),
-        BanknoteTier.small => isDark ? const Color(0xFF35B8AC) : const Color(0xFF0E9488),
-        BanknoteTier.big => isDark ? const Color(0xFF5D9BE8) : const Color(0xFF3B82D6),
-        BanknoteTier.huge => isDark ? const Color(0xFFA78BFA) : const Color(0xFF8B5CF6),
-        BanknoteTier.whale => isDark ? const Color(0xFFE8B54A) : const Color(0xFFD99A26),
-      };
+    BanknoteTier.dust =>
+      isDark ? const Color(0xFF8B93A7) : const Color(0xFF7A8496),
+    BanknoteTier.small =>
+      isDark ? const Color(0xFF35B8AC) : const Color(0xFF0E9488),
+    BanknoteTier.big =>
+      isDark ? const Color(0xFF5D9BE8) : const Color(0xFF3B82D6),
+    BanknoteTier.huge =>
+      isDark ? const Color(0xFFA78BFA) : const Color(0xFF8B5CF6),
+    BanknoteTier.whale =>
+      isDark ? const Color(0xFFE8B54A) : const Color(0xFFD99A26),
+  };
 
   /// Readable text shade on the tinted paper (labels, serials).
   Color text(bool isDark) => switch (this) {
-        BanknoteTier.dust => isDark ? const Color(0xFFB6BEC9) : const Color(0xFF4B5563),
-        BanknoteTier.small => isDark ? const Color(0xFF6FD6CB) : const Color(0xFF0A6E66),
-        BanknoteTier.big => isDark ? const Color(0xFF8FBEF2) : const Color(0xFF1D5FB0),
-        BanknoteTier.huge => isDark ? const Color(0xFFC0A6F9) : const Color(0xFF6D3FD1),
-        BanknoteTier.whale => isDark ? const Color(0xFFF2C86B) : const Color(0xFF9A6A00),
-      };
+    BanknoteTier.dust =>
+      isDark ? const Color(0xFFB6BEC9) : const Color(0xFF4B5563),
+    BanknoteTier.small =>
+      isDark ? const Color(0xFF6FD6CB) : const Color(0xFF0A6E66),
+    BanknoteTier.big =>
+      isDark ? const Color(0xFF8FBEF2) : const Color(0xFF1D5FB0),
+    BanknoteTier.huge =>
+      isDark ? const Color(0xFFC0A6F9) : const Color(0xFF6D3FD1),
+    BanknoteTier.whale =>
+      isDark ? const Color(0xFFF2C86B) : const Color(0xFF9A6A00),
+  };
 }
 
 extension TierSpec on BanknoteTier {
   // (width, height) of the note.
   Size get size => switch (this) {
-        BanknoteTier.dust => const Size(150, 92),
-        BanknoteTier.small => const Size(188, 108),
-        BanknoteTier.big => const Size(228, 124),
-        BanknoteTier.huge => const Size(272, 144),
-        BanknoteTier.whale => const Size(330, 172),
-      };
+    BanknoteTier.dust => const Size(150, 92),
+    BanknoteTier.small => const Size(188, 108),
+    BanknoteTier.big => const Size(228, 124),
+    BanknoteTier.huge => const Size(272, 144),
+    BanknoteTier.whale => const Size(330, 172),
+  };
 
   String get label => switch (this) {
-        BanknoteTier.dust => 'DUST',
-        BanknoteTier.small => 'SMALL',
-        BanknoteTier.big => 'BIG',
-        BanknoteTier.huge => 'HUGE',
-        BanknoteTier.whale => 'WHALE',
-      };
+    BanknoteTier.dust => 'DUST',
+    BanknoteTier.small => 'SMALL',
+    BanknoteTier.big => 'BIG',
+    BanknoteTier.huge => 'HUGE',
+    BanknoteTier.whale => 'WHALE',
+  };
 
   /// The rule that put a coin in this tier, for the details sheet.
   String get rule => switch (this) {
-        BanknoteTier.dust => 'At or under $kDustSats sats — costs more to '
-            'spend than it is worth',
-        BanknoteTier.small => 'Under ${(kBigShare * 100).round()}% of what '
-            'you hold in this asset',
-        BanknoteTier.big => '${(kBigShare * 100).round()}–'
-            '${(kHugeShare * 100).round()}% of what you hold in this asset',
-        BanknoteTier.huge => 'Over ${(kHugeShare * 100).round()}% of what '
-            'you hold in this asset',
-        BanknoteTier.whale => 'A whole coin or more',
-      };
+    BanknoteTier.dust =>
+      'At or under $kDustSats sats — costs more to '
+          'spend than it is worth',
+    BanknoteTier.small =>
+      'Under ${(kBigShare * 100).round()}% of what '
+          'you hold in this asset',
+    BanknoteTier.big =>
+      '${(kBigShare * 100).round()}–'
+          '${(kHugeShare * 100).round()}% of what you hold in this asset',
+    BanknoteTier.huge =>
+      'Over ${(kHugeShare * 100).round()}% of what '
+          'you hold in this asset',
+    BanknoteTier.whale => 'A whole coin or more',
+  };
 
   double get amountFontSize => switch (this) {
-        BanknoteTier.dust => 14,
-        BanknoteTier.small => 16,
-        BanknoteTier.big => 19,
-        BanknoteTier.huge => 22,
-        BanknoteTier.whale => 26,
-      };
+    BanknoteTier.dust => 14,
+    BanknoteTier.small => 16,
+    BanknoteTier.big => 19,
+    BanknoteTier.huge => 22,
+    BanknoteTier.whale => 26,
+  };
 }
 
 // ── Small shared pieces ───────────────────────────────────────────────────────
@@ -338,7 +352,10 @@ class ProvisionalNote extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: s.isDark
-            ? Color.alphaBlend(grey.withValues(alpha: 0.10), AppColors.surfaceDark)
+            ? Color.alphaBlend(
+                grey.withValues(alpha: 0.10),
+                AppColors.surfaceDark,
+              )
             : Color.alphaBlend(grey.withValues(alpha: 0.10), Colors.white),
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         // Dashed would be truer to "not settled yet", but Flutter has no dashed
@@ -369,7 +386,8 @@ class ProvisionalNote extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (onInfo != null) UtxoInfoButton(onPressed: onInfo!, color: grey),
+              if (onInfo != null)
+                UtxoInfoButton(onPressed: onInfo!, color: grey),
             ],
           ),
           // NOT a Spacer: this Column is mainAxisSize.min inside a container
@@ -430,12 +448,12 @@ class ConsolidatingNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ProvisionalNote(
-        title: 'Consolidating',
-        displayAmount: displayAmount,
-        caption: '$count coins → 1 · waiting for confirmation',
-        serial: txid.length > 12 ? '${txid.substring(0, 12)}…' : txid,
-        size: size,
-      );
+    title: 'Consolidating',
+    displayAmount: displayAmount,
+    caption: '$count coins → 1 · waiting for confirmation',
+    serial: txid.length > 12 ? '${txid.substring(0, 12)}…' : txid,
+    size: size,
+  );
 }
 
 /// An incoming coin the chain has not confirmed: the same grey note a
@@ -459,18 +477,18 @@ class PendingCoinNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ProvisionalNote(
-        title: 'Incoming',
-        displayAmount: utxo.displayAmount,
-        caption: 'Waiting for confirmation',
-        serial: compact ? utxo.midOutpoint : utxo.shortOutpoint,
-        size: compact ? const Size(double.infinity, 84) : size,
-        onInfo: () => showUtxoDetails(
-          context,
-          utxo: utxo,
-          share: share,
-          tier: utxoTier(utxo, share),
-        ),
-      );
+    title: 'Incoming',
+    displayAmount: utxo.displayAmount,
+    caption: 'Waiting for confirmation',
+    serial: compact ? utxo.midOutpoint : utxo.shortOutpoint,
+    size: compact ? const Size(double.infinity, 84) : size,
+    onInfo: () => showUtxoDetails(
+      context,
+      utxo: utxo,
+      share: share,
+      tier: utxoTier(utxo, share),
+    ),
+  );
 }
 
 // ── Banknote ──────────────────────────────────────────────────────────────────
@@ -507,12 +525,12 @@ class UtxoBanknote extends StatelessWidget {
   final bool compact;
 
   void _details(BuildContext context) => showUtxoDetails(
-        context,
-        utxo: utxo,
-        share: share,
-        tier: tier,
-        onToggleFrozen: onToggleFrozen,
-      );
+    context,
+    utxo: utxo,
+    share: share,
+    tier: tier,
+    onToggleFrozen: onToggleFrozen,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -529,8 +547,14 @@ class UtxoBanknote extends StatelessWidget {
 
     final paper = isDark
         ? [
-            Color.alphaBlend(base.withValues(alpha: 0.18), AppColors.surfaceDark),
-            Color.alphaBlend(base.withValues(alpha: 0.06), AppColors.surfaceDark2),
+            Color.alphaBlend(
+              base.withValues(alpha: 0.18),
+              AppColors.surfaceDark,
+            ),
+            Color.alphaBlend(
+              base.withValues(alpha: 0.06),
+              AppColors.surfaceDark2,
+            ),
           ]
         : [
             Color.alphaBlend(base.withValues(alpha: 0.10), Colors.white),
@@ -607,7 +631,9 @@ class UtxoBanknote extends StatelessWidget {
               style: AppTypography.balanceMedium.copyWith(
                 fontSize: tier.amountFontSize,
                 fontWeight: FontWeight.w800,
-                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimary,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -684,8 +710,9 @@ class UtxoBanknote extends StatelessWidget {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             width: double.infinity,
-            constraints:
-                const BoxConstraints(minHeight: AppLayout.minTouchTarget + 16),
+            constraints: const BoxConstraints(
+              minHeight: AppLayout.minTouchTarget + 16,
+            ),
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -738,7 +765,9 @@ class UtxoBanknote extends StatelessWidget {
                                 ),
                                 const SizedBox(width: AppSpacing.sm),
                                 AssetLogo(
-                                    ticker: utxo.ticker ?? 'BTC', size: 18),
+                                  ticker: utxo.ticker ?? 'BTC',
+                                  size: 18,
+                                ),
                               ],
                             ),
                             const SizedBox(height: 4),
@@ -941,12 +970,12 @@ class _CoinRowState extends State<CoinRow> {
   BanknoteTier get tier => utxoTier(u, widget.share);
 
   void _details() => showUtxoDetails(
-        context,
-        utxo: u,
-        share: widget.share,
-        tier: tier,
-        onToggleFrozen: widget.onToggleFrozen,
-      );
+    context,
+    utxo: u,
+    share: widget.share,
+    tier: tier,
+    onToggleFrozen: widget.onToggleFrozen,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -1019,7 +1048,9 @@ class _CoinRowState extends State<CoinRow> {
     final shareText = utxoShareText(widget.share);
     final row = Padding(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
       child: Row(
         children: [
           _check(s, base, CoinColumns.check),
@@ -1118,7 +1149,10 @@ class _CoinRowState extends State<CoinRow> {
       ),
     );
 
-    final selectedTint = Color.alphaBlend(base.withValues(alpha: 0.10), s.surfaceSolid);
+    final selectedTint = Color.alphaBlend(
+      base.withValues(alpha: 0.10),
+      s.surfaceSolid,
+    );
     return MouseRegion(
       onEnter: locked ? null : (_) => setState(() => _hover = true),
       onExit: locked ? null : (_) => setState(() => _hover = false),
@@ -1163,7 +1197,9 @@ class _CoinRowState extends State<CoinRow> {
     final selected = u.isSelected;
     final shareText = utxoShareText(widget.share);
     final body = Container(
-      constraints: const BoxConstraints(minHeight: AppLayout.minTouchTarget + 8),
+      constraints: const BoxConstraints(
+        minHeight: AppLayout.minTouchTarget + 8,
+      ),
       color: selected
           ? Color.alphaBlend(base.withValues(alpha: 0.10), Colors.transparent)
           : Colors.transparent,
@@ -1251,8 +1287,8 @@ class _CoinRowState extends State<CoinRow> {
       label: pending
           ? 'Incoming coin ${u.displayAmount}, waiting for confirmation'
           : u.isFrozen
-              ? 'Frozen coin ${u.displayAmount}'
-              : 'Coin ${u.displayAmount}',
+          ? 'Frozen coin ${u.displayAmount}'
+          : 'Coin ${u.displayAmount}',
       child: Material(
         type: MaterialType.transparency,
         child: locked ? body : InkWell(onTap: widget.onTap, child: body),
@@ -1298,7 +1334,9 @@ class _UtxoPickerState extends State<UtxoPicker> {
   /// the original indices.
   List<int> get _sortedIndices {
     final idx = List<int>.generate(widget.utxos.length, (i) => i);
-    idx.sort((a, b) => widget.utxos[b].amount.compareTo(widget.utxos[a].amount));
+    idx.sort(
+      (a, b) => widget.utxos[b].amount.compareTo(widget.utxos[a].amount),
+    );
     return idx;
   }
 

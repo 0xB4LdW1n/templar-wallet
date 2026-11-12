@@ -64,6 +64,7 @@ Windows warn on first launch. How to get past that, per platform:
 | `crates/templar-core/` | Chain primitives — BDK 0.30, LWK 0.9, Miniscript, and encrypted storage. No UI dependencies. |
 | `crates/templarlib/` | Reusable application engine — state, workflows, DTOs, and the stable JSON method contract. |
 | `crates/templar-tui/` | Terminal client and TUI. Builds the `templar` binary against `templarlib`. |
+| `crates/templar-orderbook/` | Localhost LiquiDEX order book, SQLite database, and admin dashboard. |
 | `src/wallet-ffi/` | Thin C ABI adapter → `libwallet_ffi.{dylib,so,dll}` for Flutter. |
 | `src/templar_wallet/` | Flutter app (macOS, Windows, Linux, Android) |
 | `assets/brand/` | Logo SVGs — the source of every icon raster |
@@ -84,6 +85,21 @@ templar
 
 See [`docs/guides/TUI.md`](docs/guides/TUI.md) for wallet storage, vault setup,
 wallet creation, receiving, sending, coin freezing, and network configuration.
+
+## Local LiquiDEX market
+
+Start the testnet/regtest order book and admin dashboard:
+
+```bash
+./scripts/run_local_orderbook.sh
+```
+
+Open <http://127.0.0.1:3210>, then use LiquiDEX in the wallet. The service is
+localhost-only, stores no private keys, and persists real Liquid offers,
+multiple token metadata, real Bitcoin-testnet ↔ Liquid-testnet HTLC swaps, and
+clearly labelled non-settling BTC/Liquid demo quotes in SQLite. Full workflow,
+limitations, and DB instructions:
+[`docs/guides/LOCAL_ORDERBOOK.md`](docs/guides/LOCAL_ORDERBOOK.md).
 
 ---
 

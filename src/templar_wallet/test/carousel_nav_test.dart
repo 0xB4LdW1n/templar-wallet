@@ -77,15 +77,21 @@ void main() {
   });
 
   testWidgets('labels only the centred item', (tester) async {
-    await tester.pumpWidget(_host(items: _all, route: '/send', onSelect: (_) {}));
+    await tester.pumpWidget(
+      _host(items: _all, route: '/send', onSelect: (_) {}),
+    );
     expect(find.text('Send'), findsOneWidget);
     expect(find.text('Dashboard'), findsNothing);
     expect(find.text('Receive'), findsNothing);
   });
 
-  testWidgets('a tap on a side icon jumps there and selects it', (tester) async {
+  testWidgets('a tap on a side icon jumps there and selects it', (
+    tester,
+  ) async {
     final selected = <String>[];
-    await tester.pumpWidget(_host(items: _all, route: '/send', onSelect: selected.add));
+    await tester.pumpWidget(
+      _host(items: _all, route: '/send', onSelect: selected.add),
+    );
     await tester.tapAt(const Offset(_centreX + _slot, _rowY));
     await tester.pumpAndSettle();
     expect(selected, ['/receive']);
@@ -94,21 +100,27 @@ void main() {
 
   testWidgets('a tap on the far left wraps round the circle', (tester) async {
     final selected = <String>[];
-    await tester.pumpWidget(_host(items: _all, route: '/dashboard', onSelect: selected.add));
+    await tester.pumpWidget(
+      _host(items: _all, route: '/dashboard', onSelect: selected.add),
+    );
     await tester.tapAt(const Offset(_centreX - _slot, _rowY));
     await tester.pumpAndSettle();
     expect(selected, ['/settings']);
   });
 
-  testWidgets('a tap on the centre icon scrolls to top, never selects', (tester) async {
+  testWidgets('a tap on the centre icon scrolls to top, never selects', (
+    tester,
+  ) async {
     final selected = <String>[];
     var centreTaps = 0;
-    await tester.pumpWidget(_host(
-      items: _all,
-      route: '/send',
-      onSelect: selected.add,
-      onCenterTap: () => centreTaps++,
-    ));
+    await tester.pumpWidget(
+      _host(
+        items: _all,
+        route: '/send',
+        onSelect: selected.add,
+        onCenterTap: () => centreTaps++,
+      ),
+    );
     await tester.tapAt(const Offset(_centreX, _rowY));
     await tester.pumpAndSettle();
     expect(centreTaps, 1);
@@ -116,9 +128,13 @@ void main() {
     expect(find.text('Send'), findsOneWidget);
   });
 
-  testWidgets('a rested finger snaps to the nearest slot without a flick', (tester) async {
+  testWidgets('a rested finger snaps to the nearest slot without a flick', (
+    tester,
+  ) async {
     final selected = <String>[];
-    await tester.pumpWidget(_host(items: _all, route: '/dashboard', onSelect: selected.add));
+    await tester.pumpWidget(
+      _host(items: _all, route: '/dashboard', onSelect: selected.add),
+    );
     final g = await tester.startGesture(const Offset(_centreX, _rowY));
     await g.moveBy(const Offset(-_slot * 0.6, 0));
     await tester.pump();
@@ -132,9 +148,13 @@ void main() {
     expect(find.text('Send'), findsOneWidget);
   });
 
-  testWidgets('a cancelled drag settles back and selects nothing', (tester) async {
+  testWidgets('a cancelled drag settles back and selects nothing', (
+    tester,
+  ) async {
     final selected = <String>[];
-    await tester.pumpWidget(_host(items: _all, route: '/dashboard', onSelect: selected.add));
+    await tester.pumpWidget(
+      _host(items: _all, route: '/dashboard', onSelect: selected.add),
+    );
     final g = await tester.startGesture(const Offset(_centreX, _rowY));
     await g.moveBy(const Offset(-_slot * 0.2, 0));
     await tester.pump();
@@ -152,10 +172,16 @@ void main() {
     expect(find.text('Dashboard'), findsOneWidget);
   });
 
-  testWidgets('an outside route change moves the bar without selecting', (tester) async {
+  testWidgets('an outside route change moves the bar without selecting', (
+    tester,
+  ) async {
     final selected = <String>[];
-    await tester.pumpWidget(_host(items: _all, route: '/dashboard', onSelect: selected.add));
-    await tester.pumpWidget(_host(items: _all, route: '/receive', onSelect: selected.add));
+    await tester.pumpWidget(
+      _host(items: _all, route: '/dashboard', onSelect: selected.add),
+    );
+    await tester.pumpWidget(
+      _host(items: _all, route: '/receive', onSelect: selected.add),
+    );
     await tester.pumpAndSettle();
     expect(selected, isEmpty);
     expect(find.text('Receive'), findsOneWidget);
@@ -163,9 +189,13 @@ void main() {
 
   testWidgets('a gating change keeps the current item', (tester) async {
     final selected = <String>[];
-    await tester.pumpWidget(_host(items: _all, route: '/receive', onSelect: selected.add));
+    await tester.pumpWidget(
+      _host(items: _all, route: '/receive', onSelect: selected.add),
+    );
     final withoutSend = _all.where((it) => it.id != 'send').toList();
-    await tester.pumpWidget(_host(items: withoutSend, route: '/receive', onSelect: selected.add));
+    await tester.pumpWidget(
+      _host(items: withoutSend, route: '/receive', onSelect: selected.add),
+    );
     await tester.pumpAndSettle();
     expect(selected, isEmpty);
     expect(find.text('Receive'), findsOneWidget);

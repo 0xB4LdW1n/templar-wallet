@@ -1,4 +1,4 @@
-//! Balance history — the native-coin (BTC + L-BTC) balance curve behind the
+//! Balance history — the native-coin (BTC + LBTC) balance curve behind the
 //! Home portfolio chart.
 //!
 //! There is no stored balance timeline in either engine, so the series is

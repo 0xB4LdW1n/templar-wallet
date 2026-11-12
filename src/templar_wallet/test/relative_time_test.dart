@@ -7,19 +7,29 @@ void main() {
   final now = DateTime(2026, 9, 6, 12, 0);
 
   test('under a minute is "just now"', () {
-    expect(relativeTimeShort(now.subtract(const Duration(seconds: 5)), now: now),
-        'just now');
-    expect(relativeTimeShort(now.subtract(const Duration(seconds: 59)), now: now),
-        'just now');
+    expect(
+      relativeTimeShort(now.subtract(const Duration(seconds: 5)), now: now),
+      'just now',
+    );
+    expect(
+      relativeTimeShort(now.subtract(const Duration(seconds: 59)), now: now),
+      'just now',
+    );
   });
 
   test('minutes, then hours, then days', () {
-    expect(relativeTimeShort(now.subtract(const Duration(minutes: 12)), now: now),
-        '12 min ago');
-    expect(relativeTimeShort(now.subtract(const Duration(hours: 2)), now: now),
-        '2h ago');
-    expect(relativeTimeShort(now.subtract(const Duration(days: 3)), now: now),
-        '3d ago');
+    expect(
+      relativeTimeShort(now.subtract(const Duration(minutes: 12)), now: now),
+      '12 min ago',
+    );
+    expect(
+      relativeTimeShort(now.subtract(const Duration(hours: 2)), now: now),
+      '2h ago',
+    );
+    expect(
+      relativeTimeShort(now.subtract(const Duration(days: 3)), now: now),
+      '3d ago',
+    );
   });
 
   test('a week out becomes a date, a year out gains the year', () {
@@ -28,7 +38,9 @@ void main() {
   });
 
   test('a timestamp from the future reads as now, never as a negative age', () {
-    expect(relativeTimeShort(now.add(const Duration(minutes: 3)), now: now),
-        'just now');
+    expect(
+      relativeTimeShort(now.add(const Duration(minutes: 3)), now: now),
+      'just now',
+    );
   });
 }

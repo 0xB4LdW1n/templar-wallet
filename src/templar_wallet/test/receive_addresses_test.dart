@@ -18,42 +18,46 @@ class _StubBridge implements WalletBridge {
   final int previousCount;
 
   @override
-  Future<AddressInfo> generateReceiveAddress(String walletId, String asset,
-          {bool fresh = false}) async =>
-      AddressInfo(
-        address: asset == 'BTC'
-            ? 'tb1qcurrent000000000000000000000000000000ab'
-            : 'tlq1qqcurrentliquidaddress00000000000000000000000000000000000000000000000000000000000000ab',
-        index: previousCount,
-        asset: asset,
-        derivationPath: "m/84'/1'/0'/0/$previousCount",
-      );
+  Future<AddressInfo> generateReceiveAddress(
+    String walletId,
+    String asset, {
+    bool fresh = false,
+  }) async => AddressInfo(
+    address: asset == 'BTC'
+        ? 'tb1qcurrent000000000000000000000000000000ab'
+        : 'tlq1qqcurrentliquidaddress00000000000000000000000000000000000000000000000000000000000000ab',
+    index: previousCount,
+    asset: asset,
+    derivationPath: "m/84'/1'/0'/0/$previousCount",
+  );
 
   @override
   Future<List<AddressInfo>> listPreviousAddresses(
-          String walletId, String asset) async =>
-      [
-        for (var i = 0; i < previousCount; i++)
-          AddressInfo(
-            address: 'tb1qprev${i.toString().padLeft(2, '0')}'
-                '0000000000000000000000000000000ab',
-            index: i,
-            asset: asset,
-            receivedSats: i.isEven ? 1000 * (i + 1) : 0,
-            label: i == 3 ? 'Faucet' : null,
-          ),
-      ];
+    String walletId,
+    String asset,
+  ) async => [
+    for (var i = 0; i < previousCount; i++)
+      AddressInfo(
+        address:
+            'tb1qprev${i.toString().padLeft(2, '0')}'
+            '0000000000000000000000000000000ab',
+        index: i,
+        asset: asset,
+        receivedSats: i.isEven ? 1000 * (i + 1) : 0,
+        label: i == 3 ? 'Faucet' : null,
+      ),
+  ];
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Widget _host(Widget child) => MaterialApp(
-      home: ChangeNotifierProvider<AppState>(
-        create: (_) => AppState(),
-        child: child,
-      ),
-    );
+  home: ChangeNotifierProvider<AppState>(
+    create: (_) => AppState(),
+    child: child,
+  ),
+);
 
 void _desktopWindow(WidgetTester t) {
   t.view.physicalSize = const Size(1400, 1600);
@@ -81,7 +85,8 @@ void main() {
   testWidgets('a short list has no hidden count', (t) async {
     _desktopWindow(t);
     await t.pumpWidget(
-        _host(ReceiveScreen(bridge: _StubBridge(previousCount: 3))));
+      _host(ReceiveScreen(bridge: _StubBridge(previousCount: 3))),
+    );
     await t.pumpAndSettle();
 
     expect(find.text('#2'), findsOneWidget);
@@ -90,11 +95,11 @@ void main() {
     expect(find.textContaining('more)'), findsNothing);
   });
 
-  testWidgets('the All addresses page lists every one with amounts',
-      (t) async {
+  testWidgets('the All addresses page lists every one with amounts', (t) async {
     _desktopWindow(t);
-    await t.pumpWidget(_host(
-        ReceiveAddressesScreen(asset: 'BTC', bridge: _StubBridge())));
+    await t.pumpWidget(
+      _host(ReceiveAddressesScreen(asset: 'BTC', bridge: _StubBridge())),
+    );
     await t.pumpAndSettle();
 
     expect(find.text('All addresses'), findsOneWidget);

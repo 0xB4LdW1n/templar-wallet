@@ -201,7 +201,7 @@ Decided with the owner on 2026-09-05 (prototype approved):
      (the fiat ⇅ chip and its equivalence line, which ship on both by design)
      and one belonging to another session (`cosign_view.dart`'s signer donut,
      which replaced `QuorumMeter` ungated).
-   - Send: BTC/L-BTC amount fields take **fiat** — the ⇅ unit chip
+   - Send: BTC/LBTC amount fields take **fiat** — the ⇅ unit chip
      (`shared/widgets/unit_chip.dart`) flips the field and converts the typed
      figure, a line under it shows the other reading, totals carry ≈ fiat.
      Pure arithmetic in `shared/amount_units.dart` (accepts a decimal comma;

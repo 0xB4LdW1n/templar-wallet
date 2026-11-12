@@ -42,9 +42,13 @@ class GlassCard extends StatelessWidget {
         ? baseColors
         : [
             Color.alphaBlend(
-                tint!.withValues(alpha: isDark ? 0.26 : 0.16), baseColors[0]),
+              tint!.withValues(alpha: isDark ? 0.26 : 0.16),
+              baseColors[0],
+            ),
             Color.alphaBlend(
-                tint!.withValues(alpha: isDark ? 0.10 : 0.06), baseColors[1]),
+              tint!.withValues(alpha: isDark ? 0.10 : 0.06),
+              baseColors[1],
+            ),
           ];
 
     final borderColor = tint != null
@@ -146,7 +150,11 @@ class DashboardShimmer extends StatelessWidget {
       // stacked full width under a 16-dp gutter.
       return Padding(
         padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.lg),
+          AppSpacing.lg,
+          AppSpacing.md,
+          AppSpacing.lg,
+          AppSpacing.lg,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -197,7 +205,8 @@ class DashboardShimmer extends StatelessWidget {
           border: Border.all(color: border),
         ),
         padding: EdgeInsets.all(
-            phone ? AppSpacing.cardPaddingSmall : AppSpacing.cardPadding),
+          phone ? AppSpacing.cardPaddingSmall : AppSpacing.cardPadding,
+        ),
         child: phone
             // Fractional widths: the placeholders must fit a 379-dp column.
             ? const Column(

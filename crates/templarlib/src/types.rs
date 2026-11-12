@@ -41,7 +41,7 @@ pub struct TxIoDto {
     /// Liquid asset ID hex (None for Bitcoin).
     #[serde(default)]
     pub asset_id: Option<String>,
-    /// Ticker for display ("L-BTC", token ticker); None for Bitcoin.
+    /// Ticker for display ("LBTC", token ticker); None for Bitcoin.
     #[serde(default)]
     pub ticker: Option<String>,
     /// Pre-formatted amount honoring the asset's precision.
@@ -91,7 +91,7 @@ pub struct TxOutputSpec {
     pub asset_id: Option<String>,
     /// Send the maximum available amount to this output. Bitcoin: drains the
     /// selected coins (or the whole wallet) minus fee. Liquid tokens: the full
-    /// asset balance. L-BTC: balance minus fee. At most one output may set it.
+    /// asset balance. LBTC: balance minus fee. At most one output may set it.
     #[serde(default)]
     pub send_max: bool,
 }
@@ -269,7 +269,7 @@ pub struct LiquidNetworkDto {
     pub network: String,
     /// `testnet` | `regtest`.
     pub short_name: String,
-    /// L-BTC asset id (hex) on this network.
+    /// LBTC asset id (hex) on this network.
     pub policy_asset: String,
     /// `electrum` | `elements_rpc`.
     pub backend: String,
@@ -313,9 +313,65 @@ pub struct TransactionDto {
     pub timestamp: i64,
     pub confirmations: u32,
     pub fee: Option<String>,
+    /// Raw fee facts for RBF/CPFP review. Incoming transactions may have no
+    /// fee until a CPFP preview fetches their foreign prevouts.
+    #[serde(default)]
+    pub fee_sats: Option<i64>,
+    #[serde(default)]
+    pub fee_rate: Option<f64>,
+    #[serde(default)]
+    pub vsize: i64,
+    #[serde(default)]
+    pub is_replaceable: bool,
+    #[serde(default)]
+    pub can_rbf: bool,
+    #[serde(default)]
+    pub can_cpfp: bool,
+    #[serde(default)]
+    pub can_cancel: bool,
+    #[serde(default)]
+    pub fee_bump_unavailable_reason: Option<String>,
     pub note: Option<String>,
     pub counterparty: Option<String>,
     pub fiat_estimate: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct PreviewFeeBumpParams {
+    pub wallet_id: String,
+    pub txid: String,
+    /// `speed_up` | `cancel`.
+    pub action: String,
+    /// `auto` | `rbf` | `cpfp`. Ignored for cancellation.
+    #[serde(default = "default_fee_bump_method")]
+    pub method: String,
+    pub fee_rate: f32,
+}
+
+fn default_fee_bump_method() -> String {
+    "auto".to_string()
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FeeBumpPreviewDto {
+    /// `rbf` | `cpfp` | `cancel`.
+    pub method: String,
+    pub original_txid: String,
+    pub psbt_base64: String,
+    pub old_fee_sats: i64,
+    pub old_fee_rate: f64,
+    pub old_vsize: i64,
+    /// Fee of the replacement or child transaction.
+    pub new_fee_sats: i64,
+    pub new_fee_rate: f64,
+    pub new_vsize: i64,
+    /// Additional cost over the original fee. For CPFP this is the whole
+    /// child fee; for RBF/cancel it is replacement fee minus original fee.
+    pub extra_fee_sats: i64,
+    /// Replacement rate, or parent+child package rate for CPFP.
+    pub effective_fee_rate: f64,
+    /// Replacement fee, or parent+child total for CPFP.
+    pub total_fee_sats: i64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -579,7 +635,7 @@ pub struct PsetRecipientDto {
     /// Confidential address, when the script could be decoded.
     pub address: Option<String>,
     pub asset_id: Option<String>,
-    /// Resolved ticker (`L-BTC`, a token symbol) when the asset is known.
+    /// Resolved ticker (`LBTC`, a token symbol) when the asset is known.
     pub ticker: Option<String>,
     pub amount_sats: Option<i64>,
     /// Amount formatted with the asset's precision.
@@ -671,7 +727,7 @@ pub struct NetChangeDto {
     pub ticker: String,
     /// Signed base units: positive comes in, negative goes out.
     pub amount_sats: i64,
-    /// `+9,950 tUSDt` / `-0.01000000 L-BTC`: signed, with the asset's precision.
+    /// `+9,950 tUSDt` / `-0.01000000 LBTC`: signed, with the asset's precision.
     pub display_amount: String,
 }
 

@@ -16,12 +16,18 @@ void main() {
     test('amount is decimal coin without trailing zeros', () {
       expect(
         PaymentUri.build(
-            address: 'tb1qexample', asset: 'BTC', amountSats: 100000),
+          address: 'tb1qexample',
+          asset: 'BTC',
+          amountSats: 100000,
+        ),
         'bitcoin:tb1qexample?amount=0.001',
       );
       expect(
         PaymentUri.build(
-            address: 'tb1qexample', asset: 'BTC', amountSats: 100000000),
+          address: 'tb1qexample',
+          asset: 'BTC',
+          amountSats: 100000000,
+        ),
         'bitcoin:tb1qexample?amount=1',
       );
       expect(
@@ -44,7 +50,10 @@ void main() {
         amountSats: 100000,
         label: 'Invoice 12 & co',
       );
-      expect(uri, 'bitcoin:tb1qexample?amount=0.001&label=Invoice%2012%20%26%20co');
+      expect(
+        uri,
+        'bitcoin:tb1qexample?amount=0.001&label=Invoice%2012%20%26%20co',
+      );
       expect(uri, isNot(contains('+')));
     });
 
@@ -58,7 +67,11 @@ void main() {
     test('an empty or zero request adds no query', () {
       expect(
         PaymentUri.build(
-            address: 'tb1qexample', asset: 'BTC', amountSats: 0, label: '   '),
+          address: 'tb1qexample',
+          asset: 'BTC',
+          amountSats: 0,
+          label: '   ',
+        ),
         'bitcoin:tb1qexample',
       );
     });
@@ -112,8 +125,7 @@ void main() {
       expect(req.label, isNull);
     });
 
-    test('an amount that is not a number is dropped, the address survives',
-        () {
+    test('an amount that is not a number is dropped, the address survives', () {
       final req = PaymentUri.parse('bitcoin:tb1qexample?amount=abc')!;
       expect(req.address, 'tb1qexample');
       expect(req.amountSats, isNull);
@@ -126,7 +138,8 @@ void main() {
 
     test('unknown parameters are ignored', () {
       final req = PaymentUri.parse(
-          'bitcoin:tb1qexample?amount=0.001&message=hi&req-future=x')!;
+        'bitcoin:tb1qexample?amount=0.001&message=hi&req-future=x',
+      )!;
       expect(req.address, 'tb1qexample');
       expect(req.amountSats, 100000);
       expect(req.label, isNull);
@@ -139,8 +152,7 @@ void main() {
     });
 
     test('Liquid links parse the same way', () {
-      final req =
-          PaymentUri.parse('liquidtestnet:tlq1qexample?amount=0.002')!;
+      final req = PaymentUri.parse('liquidtestnet:tlq1qexample?amount=0.002')!;
       expect(req.address, 'tlq1qexample');
       expect(req.amountSats, 200000);
     });

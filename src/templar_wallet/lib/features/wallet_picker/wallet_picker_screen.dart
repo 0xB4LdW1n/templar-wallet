@@ -68,9 +68,12 @@ class _WalletPickerScreenState extends State<WalletPickerScreen> {
   }
 
   Future<void> _lock() async {
-    await lockVaultAndPrompt(context, onUnlocked: () {
-      if (mounted) _refreshVault();
-    });
+    await lockVaultAndPrompt(
+      context,
+      onUnlocked: () {
+        if (mounted) _refreshVault();
+      },
+    );
     if (mounted) _refreshVault();
   }
 
@@ -82,7 +85,10 @@ class _WalletPickerScreenState extends State<WalletPickerScreen> {
       wallets = await _bridge.listWallets();
     } catch (e) {
       if (mounted) {
-        setState(() { _loading = false; _error = e.toString(); });
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
       }
       return;
     }
@@ -93,11 +99,16 @@ class _WalletPickerScreenState extends State<WalletPickerScreen> {
       context.go(AppRoutes.welcome);
       return;
     }
-    setState(() { _wallets = wallets; _loading = false; _error = null; });
+    setState(() {
+      _wallets = wallets;
+      _loading = false;
+      _error = null;
+    });
   }
 
-  List<WalletSummary> get _filtered => _wallets.where((w) =>
-      w.name.toLowerCase().contains(_query.toLowerCase())).toList();
+  List<WalletSummary> get _filtered => _wallets
+      .where((w) => w.name.toLowerCase().contains(_query.toLowerCase()))
+      .toList();
 
   @override
   void dispose() {
@@ -134,8 +145,9 @@ class _WalletPickerScreenState extends State<WalletPickerScreen> {
                         const SizedBox(width: AppSpacing.md),
                         Text(
                           'Templar Wallet',
-                          style: AppTypography.gallerySection
-                              .copyWith(color: s.inkSecondary),
+                          style: AppTypography.gallerySection.copyWith(
+                            color: s.inkSecondary,
+                          ),
                         ),
                         const Spacer(),
                         // Desktop only: on a phone the lock lives in
@@ -158,14 +170,16 @@ class _WalletPickerScreenState extends State<WalletPickerScreen> {
                           children: [
                             Text(
                               'Your Wallets',
-                              style: AppTypography.displayTitleOf(context)
-                                  .copyWith(color: s.ink),
+                              style: AppTypography.displayTitleOf(
+                                context,
+                              ).copyWith(color: s.ink),
                             ),
                             const SizedBox(height: AppSpacing.xs),
                             Text(
                               'Select a wallet to open',
-                              style: AppTypography.body
-                                  .copyWith(color: s.inkSecondary),
+                              style: AppTypography.body.copyWith(
+                                color: s.inkSecondary,
+                              ),
                             ),
                           ],
                         );
@@ -174,8 +188,7 @@ class _WalletPickerScreenState extends State<WalletPickerScreen> {
                             label: 'Restore',
                             icon: Icons.restore,
                             isFullWidth: phone,
-                            onPressed: () =>
-                                context.go(AppRoutes.importWallet),
+                            onPressed: () => context.go(AppRoutes.importWallet),
                           ),
                           const SizedBox(width: AppSpacing.sm),
                           AccentButton(
@@ -195,18 +208,23 @@ class _WalletPickerScreenState extends State<WalletPickerScreen> {
                               titleBlock,
                               const SizedBox(height: AppSpacing.lg),
                               phone
-                                  ? Row(children: [
-                                      Expanded(child: actions[0]),
-                                      actions[1],
-                                      Expanded(child: actions[2]),
-                                    ])
+                                  ? Row(
+                                      children: [
+                                        Expanded(child: actions[0]),
+                                        actions[1],
+                                        Expanded(child: actions[2]),
+                                      ],
+                                    )
                                   : Row(children: actions),
                             ],
                           );
                         }
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [Expanded(child: titleBlock), ...actions],
+                          children: [
+                            Expanded(child: titleBlock),
+                            ...actions,
+                          ],
                         );
                       },
                     ),
@@ -230,21 +248,21 @@ class _WalletPickerScreenState extends State<WalletPickerScreen> {
                     child: _loading
                         ? const Center(child: CircularProgressIndicator())
                         : _error != null
-                            ? _LoadError(
-                                message: _error!,
-                                onRetry: () {
-                                  setState(() {
-                                    _loading = true;
-                                    _error = null;
-                                  });
-                                  _load();
-                                },
-                              )
-                            : _WalletGallery(
-                                wallets: _filtered,
-                                query: _query,
-                                onSelect: _openWallet,
-                              ),
+                        ? _LoadError(
+                            message: _error!,
+                            onRetry: () {
+                              setState(() {
+                                _loading = true;
+                                _error = null;
+                              });
+                              _load();
+                            },
+                          )
+                        : _WalletGallery(
+                            wallets: _filtered,
+                            query: _query,
+                            onSelect: _openWallet,
+                          ),
                   ),
                 ],
               ),
@@ -270,15 +288,18 @@ class _WalletPickerScreenState extends State<WalletPickerScreen> {
     // Apply the wallet's personal accent across the whole app.
     if (mounted) {
       context.read<AppState>().setAccent(
-            custom.accentColor != null ? Color(custom.accentColor!) : null,
-          );
+        custom.accentColor != null ? Color(custom.accentColor!) : null,
+      );
     }
 
     // For USB hardware wallets, ask intent first: connect the device now, or
     // open watch-only (balance + receive only). "Connect" runs the scan wizard.
     var hwWatchOnly = false;
     if (wallet.isHardwareWallet) {
-      final choice = await showHwOpenChoiceDialog(context, walletName: displayName);
+      final choice = await showHwOpenChoiceDialog(
+        context,
+        walletName: displayName,
+      );
       if (!mounted) return;
       switch (choice) {
         case HwOpenChoice.cancelled:
@@ -302,18 +323,19 @@ class _WalletPickerScreenState extends State<WalletPickerScreen> {
       }
     }
     context.read<AppState>().setActiveWallet(
-          wallet.id,
-          name: displayName,
-          type: wallet.displayType,
-          hwWatchOnly: hwWatchOnly,
-          liquid: wallet.liquidEnabled,
-          bitcoin: wallet.bitcoinEnabled,
-        );
+      wallet.id,
+      name: displayName,
+      type: wallet.displayType,
+      hwWatchOnly: hwWatchOnly,
+      liquid: wallet.liquidEnabled,
+      bitcoin: wallet.bitcoinEnabled,
+    );
     if (mounted) context.go(AppRoutes.dashboard);
   }
 
   Future<bool> _showPasswordPrompt(String storedHash) async {
-    return await showAppDialog<bool>(context,
+    return await showAppDialog<bool>(
+          context,
           barrierDismissible: false,
           builder: (_) => _WalletPasswordDialog(storedHash: storedHash),
         ) ??
@@ -343,8 +365,10 @@ class _LoadError extends StatelessWidget {
             children: [
               Icon(Icons.error_outline_rounded, size: 40, color: s.danger),
               const SizedBox(height: AppSpacing.md),
-              Text('Could not load your wallets',
-                  style: AppTypography.sectionTitle),
+              Text(
+                'Could not load your wallets',
+                style: AppTypography.sectionTitle,
+              ),
               const SizedBox(height: AppSpacing.sm),
               Text(
                 message,
@@ -399,8 +423,8 @@ class _WalletGallery extends StatelessWidget {
       // One wallet per row: a two-column grid at 379 dp gives 165 dp tiles
       // that cannot hold a plate, a two-line name and the fact line.
       return ListView.separated(
-        padding: _gutterOf(context) +
-            const EdgeInsets.only(bottom: AppSpacing.xxl),
+        padding:
+            _gutterOf(context) + const EdgeInsets.only(bottom: AppSpacing.xxl),
         itemCount: wallets.length,
         separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
         itemBuilder: (context, i) => _WalletRow(
@@ -417,8 +441,10 @@ class _WalletGallery extends StatelessWidget {
         // needs to know which column a card is in. Width available to the
         // cards themselves excludes the page gutter the grid pads by.
         final usable = c.maxWidth - _gutter.horizontal;
-        final columns =
-            ((usable + _gap) / (_maxCard + _gap)).ceil().clamp(1, 4);
+        final columns = ((usable + _gap) / (_maxCard + _gap)).ceil().clamp(
+          1,
+          4,
+        );
         return GridView.builder(
           padding: _gutter + const EdgeInsets.only(bottom: AppSpacing.xxl),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -547,8 +573,9 @@ class _WalletRowState extends State<_WalletRow> {
                         Expanded(
                           child: Text(
                             name,
-                            style: AppTypography.galleryTitleOf(context)
-                                .copyWith(color: s.ink, height: 1.12),
+                            style: AppTypography.galleryTitleOf(
+                              context,
+                            ).copyWith(color: s.ink, height: 1.12),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -556,8 +583,11 @@ class _WalletRowState extends State<_WalletRow> {
                         if (locked)
                           Padding(
                             padding: const EdgeInsets.only(left: AppSpacing.sm),
-                            child: Icon(Icons.lock_outline_rounded,
-                                size: 15, color: s.inkFaint),
+                            child: Icon(
+                              Icons.lock_outline_rounded,
+                              size: 15,
+                              color: s.inkFaint,
+                            ),
                           ),
                       ],
                     ),
@@ -633,9 +663,7 @@ class _WalletTileState extends State<_WalletTile> {
             // A hairline, and only a hairline. The card must never cast a
             // shadow — the plate inside it is the one thing on this screen
             // that does.
-            border: Border.all(
-              color: _hover ? s.edgeStrong : s.edge,
-            ),
+            border: Border.all(color: _hover ? s.edgeStrong : s.edge),
           ),
           padding: const EdgeInsets.all(AppSpacing.lg),
           child: Column(
@@ -652,8 +680,11 @@ class _WalletTileState extends State<_WalletTile> {
                   if (locked)
                     Tooltip(
                       message: 'Password protected',
-                      child: Icon(Icons.lock_outline_rounded,
-                          size: 15, color: s.inkFaint),
+                      child: Icon(
+                        Icons.lock_outline_rounded,
+                        size: 15,
+                        color: s.inkFaint,
+                      ),
                     ),
                 ],
               ),
@@ -675,8 +706,10 @@ class _WalletTileState extends State<_WalletTile> {
               // row.
               Text(
                 name,
-                style: AppTypography.galleryTitle
-                    .copyWith(color: s.ink, height: 1.12),
+                style: AppTypography.galleryTitle.copyWith(
+                  color: s.ink,
+                  height: 1.12,
+                ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -731,7 +764,8 @@ class _ThemeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final dark = context.select<AppState, ThemeMode>((st) => st.themeMode) ==
+    final dark =
+        context.select<AppState, ThemeMode>((st) => st.themeMode) ==
         ThemeMode.dark;
     return Tooltip(
       message: dark ? 'Light mode' : 'Dark mode',
@@ -745,8 +779,9 @@ class _ThemeToggle extends StatelessWidget {
         child: ConstrainedBox(
           constraints: BoxConstraints(
             minWidth: AppLayout.isPhone(context) ? AppLayout.minTouchTarget : 0,
-            minHeight:
-                AppLayout.isPhone(context) ? AppLayout.minTouchTarget : 0,
+            minHeight: AppLayout.isPhone(context)
+                ? AppLayout.minTouchTarget
+                : 0,
           ),
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.sm),
@@ -781,7 +816,10 @@ class _WalletPasswordDialogState extends State<_WalletPasswordDialog> {
   }
 
   void _submit() {
-    if (WalletCustomizationStore.verifyPassword(_ctrl.text, widget.storedHash)) {
+    if (WalletCustomizationStore.verifyPassword(
+      _ctrl.text,
+      widget.storedHash,
+    )) {
       Navigator.of(context).pop(true);
     } else {
       setState(() => _error = 'Incorrect password');
@@ -794,14 +832,20 @@ class _WalletPasswordDialogState extends State<_WalletPasswordDialog> {
       title: 'Wallet locked',
       icon: Icons.lock_outline,
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
         FilledButton(onPressed: _submit, child: const Text('Unlock')),
       ],
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Enter the password to open this wallet.', style: AppTypography.caption),
+          Text(
+            'Enter the password to open this wallet.',
+            style: AppTypography.caption,
+          ),
           const SizedBox(height: AppSpacing.md),
           GlassPasswordField(
             controller: _ctrl,

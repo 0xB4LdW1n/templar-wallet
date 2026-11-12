@@ -60,10 +60,14 @@ class _ReceiveAddressesScreenState extends State<ReceiveAddressesScreen> {
     try {
       // `fresh: false` re-reads the current unused address; nothing is
       // derived by opening this page.
-      final current =
-          await _bridge.generateReceiveAddress(walletId, widget.asset);
-      final previous =
-          await _bridge.listPreviousAddresses(walletId, widget.asset);
+      final current = await _bridge.generateReceiveAddress(
+        walletId,
+        widget.asset,
+      );
+      final previous = await _bridge.listPreviousAddresses(
+        walletId,
+        widget.asset,
+      );
       if (!mounted) return;
       final sorted = [...previous]..sort((a, b) => b.index.compareTo(a.index));
       setState(() {
@@ -89,7 +93,7 @@ class _ReceiveAddressesScreenState extends State<ReceiveAddressesScreen> {
     final funded = _all.where((a) => a.receivedSats > 0).toList();
     final totalSats = funded.fold<int>(0, (sum, a) => sum + a.receivedSats);
     final useSats = context.select<AppState, bool>((st) => st.useSats);
-    final coin = widget.asset == 'BTC' ? 'BTC' : 'L-BTC';
+    final coin = widget.asset == 'BTC' ? 'BTC' : 'LBTC';
 
     return Scaffold(
       body: PageBackground.flat(
@@ -101,7 +105,8 @@ class _ReceiveAddressesScreenState extends State<ReceiveAddressesScreen> {
             if (!phone)
               PageHeader(
                 title: 'All addresses',
-                subtitle: '$_chainName · every address this wallet has '
+                subtitle:
+                    '$_chainName · every address this wallet has '
                     'handed out, newest first',
                 actions: [
                   SecondaryButton(
@@ -120,12 +125,17 @@ class _ReceiveAddressesScreenState extends State<ReceiveAddressesScreen> {
               Center(
                 child: Column(
                   children: [
-                    const Icon(Icons.error_outline,
-                        size: 40, color: AppColors.danger),
+                    const Icon(
+                      Icons.error_outline,
+                      size: 40,
+                      color: AppColors.danger,
+                    ),
                     const SizedBox(height: AppSpacing.md),
-                    SelectableText(_error!,
-                        style: AppTypography.caption,
-                        textAlign: TextAlign.center),
+                    SelectableText(
+                      _error!,
+                      style: AppTypography.caption,
+                      textAlign: TextAlign.center,
+                    ),
                     const SizedBox(height: AppSpacing.md),
                     SecondaryButton(
                       label: 'Retry',
@@ -143,17 +153,19 @@ class _ReceiveAddressesScreenState extends State<ReceiveAddressesScreen> {
                   ListRow(
                     icon: Icons.format_list_numbered_rounded,
                     tint: s.inkSecondary,
-                    title: '${_all.length} '
+                    title:
+                        '${_all.length} '
                         'address${_all.length == 1 ? '' : 'es'}',
-                    subtitle: '${funded.length} funded · '
+                    subtitle:
+                        '${funded.length} funded · '
                         '${_all.length - funded.length} never used',
                   ),
                   ListRow(
                     icon: Icons.south_west_rounded,
                     tint: s.success,
                     title: 'Received in total',
-                    subtitle: PriceService.instance.fiatDisplay(totalSats) ==
-                            null
+                    subtitle:
+                        PriceService.instance.fiatDisplay(totalSats) == null
                         ? null
                         : '≈ ${PriceService.instance.fiatDisplay(totalSats)}',
                     trailing: ListAmount(
@@ -226,11 +238,13 @@ class _AddressEntryState extends State<_AddressEntry> {
       HapticFeedback.lightImpact();
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(
-          content: Text('Address copied'),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 2),
-        ));
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Address copied'),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ),
+        );
     }
     setState(() => _copied = true);
     await Future.delayed(const Duration(seconds: 2));
@@ -263,26 +277,39 @@ class _AddressEntryState extends State<_AddressEntry> {
           tint: widget.isCurrent
               ? s.accent
               : funded
-                  ? s.success
-                  : s.inkFaint,
+              ? s.success
+              : s.inkFaint,
           title: title,
-          subtitle: path ??
+          subtitle:
+              path ??
               (widget.isCurrent ? 'Shown on Receive' : 'Previous address'),
           trailing: funded
               ? ListAmount(
                   value: _ReceiveAddressesScreenState._amountValue(
-                      a.receivedSats, widget.useSats, widget.coin),
+                    a.receivedSats,
+                    widget.useSats,
+                    widget.coin,
+                  ),
                   unit: _ReceiveAddressesScreenState._amountUnit(
-                      widget.useSats, widget.coin),
+                    widget.useSats,
+                    widget.coin,
+                  ),
                   maxWidth: 140,
                 )
-              : Icon(_copied ? Icons.check : Icons.copy,
-                  size: 18, color: _copied ? s.success : s.inkFaint),
+              : Icon(
+                  _copied ? Icons.check : Icons.copy,
+                  size: 18,
+                  color: _copied ? s.success : s.inkFaint,
+                ),
           onTap: _copy,
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(
-              kListTextInset, 0, kListPad, AppSpacing.md),
+            kListTextInset,
+            0,
+            kListPad,
+            AppSpacing.md,
+          ),
           child: SelectableText(
             phone ? _shortAddress(a.address) : a.address,
             style: AppTypography.monoSmall.copyWith(color: s.inkSecondary),
@@ -307,4 +334,3 @@ String _plainError(String raw) {
   }
   return msg;
 }
-

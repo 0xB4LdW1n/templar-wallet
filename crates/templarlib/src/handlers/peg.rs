@@ -68,7 +68,7 @@ pub struct PegStatusEntryDto {
 pub struct PegOrderDto {
     pub order_id: String,
     pub wallet_id: String,
-    /// "in" (BTC → L-BTC) or "out" (L-BTC → BTC).
+    /// "in" (BTC → LBTC) or "out" (LBTC → BTC).
     pub direction: String,
     /// "awaiting_deposit" | "deposit_seen" | "confirming" | "settling"
     /// | "completed" | "cancelled".

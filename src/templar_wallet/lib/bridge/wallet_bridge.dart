@@ -10,6 +10,7 @@ import '../features/dashboard/models/balance_history.dart';
 import '../features/dashboard/models/dashboard_data.dart';
 import '../features/receive/models/address_info.dart';
 import '../features/history/models/transaction.dart';
+import '../features/history/models/fee_bump_preview.dart';
 import '../features/utxos/models/utxo.dart';
 import '../features/wallet_info/models/wallet_info.dart';
 import '../features/send/models/tx_preview.dart';
@@ -26,19 +27,45 @@ abstract class WalletBridge {
 
   /// Create and persist a new software wallet. Returns the new wallet ID.
   /// If [liquid] is true, also enables a paired Liquid wallet (ELIP151).
-  Future<String> createWallet(String name, List<String> mnemonic, {bool liquid = false});
+  Future<String> createWallet(
+    String name,
+    List<String> mnemonic, {
+    bool liquid = false,
+  });
 
   Future<List<WalletSummary>> listWallets();
   Future<void> openWallet(String walletId);
   Future<DashboardData> getWalletSummary(String walletId);
+
   /// The wallet's current receive address. With [fresh] the derivation index
   /// advances, so the "New address" button hands out a genuinely new one
   /// (otherwise an unused address is reused rather than burned). Liquid CT
   /// addresses are stable and ignore [fresh].
-  Future<AddressInfo> generateReceiveAddress(String walletId, String asset,
-      {bool fresh = false});
-  Future<List<AddressInfo>> listPreviousAddresses(String walletId, String asset);
-  Future<List<Transaction>> listActivity(String walletId, {String? chain, String? asset});
+  Future<AddressInfo> generateReceiveAddress(
+    String walletId,
+    String asset, {
+    bool fresh = false,
+  });
+  Future<List<AddressInfo>> listPreviousAddresses(
+    String walletId,
+    String asset,
+  );
+  Future<List<Transaction>> listActivity(
+    String walletId, {
+    String? chain,
+    String? asset,
+  });
+
+  /// Build, but do not sign, an RBF/CPFP transaction and return the exact fee
+  /// comparison shown before approval. [action] is `speed_up` or `cancel`;
+  /// [method] is `auto`, `rbf`, or `cpfp`.
+  Future<FeeBumpPreview> previewFeeBump({
+    required String walletId,
+    required String txid,
+    required String action,
+    required String method,
+    required double feeRate,
+  });
   Future<List<Utxo>> listUtxos(String walletId, String chain);
 
   /// Freezes ([frozen] true) or unfreezes coins ("txid:vout") on [chain]
@@ -53,7 +80,7 @@ abstract class WalletBridge {
   });
   Future<WalletInfo> getWalletInfo(String walletId);
 
-  /// Native-coin (BTC + L-BTC) balance over time, reconstructed from the
+  /// Native-coin (BTC + LBTC) balance over time, reconstructed from the
   /// wallet's transaction history. Offline-safe: it reads what is already
   /// stored locally, so it never waits on a chain sync.
   Future<BalanceHistory> getBalanceHistory(String walletId);
@@ -109,9 +136,13 @@ abstract class WalletBridge {
     required int amountSats,
   });
 
-  /// Fetch the live LiquiDEX (v0) order book from liquidex.it. Read-only and
-  /// wallet-independent. Set [includeUnavailable] to also list filled orders.
+  /// Fetch the localhost LiquiDEX v0 book for the active Liquid network.
+  /// Set [includeUnavailable] to also list paused, filled, and cancelled rows.
   Future<List<SwapOffer>> listSwaps({bool includeUnavailable = false});
+
+  /// Unified local market feed: real Liquid LiquiDEX offers plus clearly
+  /// labelled, non-settling BTC/Liquid HTLC demo quotes.
+  Future<List<MarketOffer>> listMarkets({bool includeUnavailable = false});
 
   /// Enumerate connected USB hardware wallet devices through HWI. Entries
   /// carry a master fingerprint, so they can be matched to a wallet.
@@ -133,7 +164,11 @@ abstract class WalletBridge {
   /// sides come from a single device session, so the user is asked for the PIN
   /// once. A Liquid failure leaves the Bitcoin wallet in place and reports the
   /// reason in [HwImportResult.liquidError].
-  Future<HwImportResult> importHwWallet(String name, String fingerprint, {bool liquid = false});
+  Future<HwImportResult> importHwWallet(
+    String name,
+    String fingerprint, {
+    bool liquid = false,
+  });
 
   /// Add a Liquid side to a hardware wallet paired Bitcoin-only.
   ///
@@ -262,7 +297,10 @@ abstract class WalletBridge {
   /// descriptor), and anything unusable throws with the reason. A key that is
   /// merely suspicious — a singlesig account key, an unusual path — comes back
   /// with a [CosignerKeyInfo.warning] instead.
-  Future<CosignerKeyInfo> validateCosignerKey(String key, {bool liquid = false});
+  Future<CosignerKeyInfo> validateCosignerKey(
+    String key, {
+    bool liquid = false,
+  });
 
   /// Return the BIP39 seed words of a software wallet (plain text registry).
   Future<List<String>> getMnemonic(String walletId);
@@ -447,12 +485,18 @@ abstract class WalletBridge {
   // ── Air-gap QR (BC-UR v2: Jade, SeedSigner, Keystone…) ─────────────────────
 
   /// Encode a PSBT as a cycle of `ur:crypto-psbt` fragments for an animated QR.
-  Future<List<String>> urPsbtEncode(String psbtBase64, {int maxFragmentLen = 100});
+  Future<List<String>> urPsbtEncode(
+    String psbtBase64, {
+    int maxFragmentLen = 100,
+  });
 
   /// A Liquid PSET as animated `ur:bytes` frames. The UR registry has no
   /// PSET type and no hardware signer reads one over QR, so this is Templar's
   /// own transport — a co-signer's phone scanning the coordinator's screen.
-  Future<List<String>> urPsetEncode(String psetBase64, {int maxFragmentLen = 100});
+  Future<List<String>> urPsetEncode(
+    String psetBase64, {
+    int maxFragmentLen = 100,
+  });
 
   /// Feed every UR fragment scanned so far (any order); returns progress until
   /// the payload completes as a PSBT or a wallet descriptor. Plain-text QR
@@ -467,19 +511,41 @@ abstract class WalletBridge {
 
   /// Deep-verify and build the real (unsigned) taker transaction to preview
   /// legs, fee, and change honestly. Errors when the order is not takeable.
-  Future<SwapTakePreview> swapTakePreview(String walletId, String proposalJson, {double? feeRate});
+  Future<SwapTakePreview> swapTakePreview(
+    String walletId,
+    String proposalJson, {
+    double? feeRate,
+  });
 
   /// Complete, sign, and broadcast the taker transaction. Returns txid.
   /// Refuses orders that are not on Liquid testnet.
-  Future<String> swapTake(String walletId, String proposalJson, {double? feeRate});
+  Future<String> swapTake(
+    String walletId,
+    String proposalJson, {
+    double? feeRate,
+  });
 
   /// Create, sign, and persist a maker offer from a wallet UTXO ("txid:vout"),
   /// offering the utxo's full amount for [wantAmountSats] of [wantAssetId].
-  Future<MyOffer> swapMake(String walletId, String utxo, String wantAssetId, int wantAmountSats);
+  Future<MyOffer> swapMake(
+    String walletId,
+    String utxo,
+    String wantAssetId,
+    int wantAmountSats,
+  );
 
   /// Self-send that creates an exact-amount UTXO of [assetId] to offer next.
   /// Returns txid; the UI re-syncs before picking the fresh coin.
-  Future<String> swapMakePrepare(String walletId, String assetId, int amountSats, {double? feeRate});
+  Future<String> swapMakePrepare(
+    String walletId,
+    String assetId,
+    int amountSats, {
+    double? feeRate,
+  });
+
+  /// Publish an already-signed proposal to the localhost order book.
+  /// Returns the numeric database order id. No private key is sent.
+  Future<int> swapPublish(String proposalJson, {String note = ''});
 
   /// This wallet's maker offers, statuses refreshed best-effort from chain.
   Future<List<MyOffer>> listMyOffers(String walletId);
@@ -488,15 +554,38 @@ abstract class WalletBridge {
   /// proposal). Returns the cancel txid.
   Future<String> swapCancel(String walletId, String offerId);
 
+  /// Publish a real Bitcoin-testnet <-> Liquid-testnet HTLC offer.
+  Future<AtomicSwap> atomicSwapCreate({
+    required String walletId,
+    required String direction,
+    required int btcAmountSats,
+    required String liquidAssetId,
+    required String liquidTicker,
+    required String liquidName,
+    required int liquidPrecision,
+    required int liquidAmountSats,
+    String note = '',
+  });
+  Future<AtomicSwap> atomicSwapJoin(String walletId, int offerId);
+  Future<List<AtomicSwap>> atomicSwapList(String walletId);
+  Future<AtomicSwap> atomicSwapFund(String walletId, int offerId);
+  Future<AtomicSwap> atomicSwapClaim(String walletId, int offerId);
+  Future<AtomicSwap> atomicSwapRefund(String walletId, int offerId);
+
   // ── Peg-in / peg-out (simulated provider) ───────────────────────────────────
 
-  /// Quote a peg. [direction] is "in" (BTC → L-BTC) or "out" (L-BTC → BTC).
+  /// Quote a peg. [direction] is "in" (BTC → LBTC) or "out" (LBTC → BTC).
   /// Errors when [amountSats] is outside the provider's min/max bounds.
   Future<PegQuote> pegQuote(String direction, int amountSats);
 
   /// Start a peg order; returned in `awaiting_deposit` state with the
   /// (simulated) deposit address to pay.
-  Future<PegOrder> pegStart(String walletId, String direction, int amountSats, String payoutAddress);
+  Future<PegOrder> pegStart(
+    String walletId,
+    String direction,
+    int amountSats,
+    String payoutAddress,
+  );
 
   /// Refresh a single peg order (the provider advances its lifecycle).
   Future<PegOrder> pegStatus(String orderId);
@@ -513,9 +602,12 @@ abstract class WalletBridge {
   Future<LiquidNetworkInfo> getLiquidNetwork();
 
   /// Switch the Liquid network. `network` is `testnet` or `regtest`;
-  /// `policyAsset` (regtest only) overrides the stock `liquidregtest` L-BTC
+  /// `policyAsset` (regtest only) overrides the stock `liquidregtest` LBTC
   /// id. The engine closes the open wallet: reopen it and sync afterwards.
-  Future<LiquidNetworkInfo> setLiquidNetwork(String network, {String? policyAsset});
+  Future<LiquidNetworkInfo> setLiquidNetwork(
+    String network, {
+    String? policyAsset,
+  });
 
   // ── Templar Protocol ─────────────────────────────────────────────
 
@@ -533,7 +625,10 @@ abstract class WalletBridge {
   /// wallet's loan key on the active network (§9.5) — recomputed by the
   /// engine, never trusted from the site.
   Future<ProtocolCheckVerdict> protocolIsCheckPset(
-      String walletId, String challenge, String psetBase64);
+    String walletId,
+    String challenge,
+    String psetBase64,
+  );
 }
 
 /// Result of [WalletBridge.getLiquidNetwork] / [WalletBridge.setLiquidNetwork].
@@ -554,7 +649,7 @@ class LiquidNetworkInfo {
   /// `testnet` | `regtest`.
   final String shortName;
 
-  /// L-BTC asset id (hex) on this network.
+  /// LBTC asset id (hex) on this network.
   final String policyAsset;
 
   /// `electrum` | `elements_rpc`.
@@ -567,19 +662,21 @@ class LiquidNetworkInfo {
   /// the setting cannot be changed from the app.
   final bool envLocked;
 
-  /// Stock regtest L-BTC id, the form's default.
+  /// Stock regtest LBTC id, the form's default.
   final String regtestDefaultPolicyAsset;
 
   bool get isRegtest => shortName == 'regtest';
 
-  factory LiquidNetworkInfo.fromJson(Map<String, dynamic> j) => LiquidNetworkInfo(
+  factory LiquidNetworkInfo.fromJson(Map<String, dynamic> j) =>
+      LiquidNetworkInfo(
         network: j['network'] as String? ?? 'liquid-testnet',
         shortName: j['short_name'] as String? ?? 'testnet',
         policyAsset: j['policy_asset'] as String? ?? '',
         backend: j['backend'] as String? ?? 'electrum',
         backendDescription: j['backend_description'] as String? ?? '',
         envLocked: j['env_locked'] as bool? ?? false,
-        regtestDefaultPolicyAsset: j['regtest_default_policy_asset'] as String? ?? '',
+        regtestDefaultPolicyAsset:
+            j['regtest_default_policy_asset'] as String? ?? '',
       );
 }
 
@@ -642,19 +739,20 @@ class HwiStatus {
   bool get needsUdevRules => udevRulesInstalled == false;
 
   factory HwiStatus.fromJson(Map<String, dynamic> j) => HwiStatus(
-        resolvedBin: j['resolved_bin'] as String?,
-        version: j['version'] as String?,
-        platform: j['platform'] as String? ?? 'unknown',
-        udevRulesInstalled: j['udev_rules_installed'] as bool?,
-        liquidHwSigning: j['liquid_hw_signing'] as bool? ?? false,
-        hidDeviceCount: (j['hid_device_count'] as num?)?.toInt() ?? 0,
-        nativeFamilies: (j['native_families'] as List<dynamic>?)
-                ?.map((e) => e.toString())
-                .toList() ??
-            const [],
-        hwiUsable: j['hwi_usable'] as bool? ?? true,
-        hardwareSupported: j['hardware_supported'] as bool? ?? true,
-      );
+    resolvedBin: j['resolved_bin'] as String?,
+    version: j['version'] as String?,
+    platform: j['platform'] as String? ?? 'unknown',
+    udevRulesInstalled: j['udev_rules_installed'] as bool?,
+    liquidHwSigning: j['liquid_hw_signing'] as bool? ?? false,
+    hidDeviceCount: (j['hid_device_count'] as num?)?.toInt() ?? 0,
+    nativeFamilies:
+        (j['native_families'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const [],
+    hwiUsable: j['hwi_usable'] as bool? ?? true,
+    hardwareSupported: j['hardware_supported'] as bool? ?? true,
+  );
 }
 
 /// Result of [WalletBridge.urDecodeParts].
@@ -689,14 +787,14 @@ class UrDecodeResult {
   final String? keyorigin;
 
   factory UrDecodeResult.fromJson(Map<String, dynamic> j) => UrDecodeResult(
-        progress: (j['progress'] as num?)?.toDouble() ?? 0.0,
-        complete: j['complete'] as bool? ?? false,
-        kind: j['kind'] as String? ?? '',
-        psbtBase64: j['psbt_base64'] as String?,
-        psetBase64: j['pset_base64'] as String?,
-        descriptor: j['descriptor'] as String?,
-        keyorigin: j['keyorigin'] as String?,
-      );
+    progress: (j['progress'] as num?)?.toDouble() ?? 0.0,
+    complete: j['complete'] as bool? ?? false,
+    kind: j['kind'] as String? ?? '',
+    psbtBase64: j['psbt_base64'] as String?,
+    psetBase64: j['pset_base64'] as String?,
+    descriptor: j['descriptor'] as String?,
+    keyorigin: j['keyorigin'] as String?,
+  );
 }
 
 /// One cosigner key, as the engine reads it. See
@@ -720,11 +818,11 @@ class CosignerKeyInfo {
   final String? warning;
 
   factory CosignerKeyInfo.fromJson(Map<String, dynamic> j) => CosignerKeyInfo(
-        normalized: j['normalized'] as String? ?? '',
-        fingerprint: j['fingerprint'] as String? ?? '',
-        path: j['path'] as String? ?? '',
-        warning: j['warning'] as String?,
-      );
+    normalized: j['normalized'] as String? ?? '',
+    fingerprint: j['fingerprint'] as String? ?? '',
+    path: j['path'] as String? ?? '',
+    warning: j['warning'] as String?,
+  );
 }
 
 /// Result of [WalletBridge.vaultStatus].
@@ -774,7 +872,8 @@ class BackupVerification {
   final String expectedFingerprint;
   final bool fingerprintMatch;
 
-  factory BackupVerification.fromJson(Map<String, dynamic> j) => BackupVerification(
+  factory BackupVerification.fromJson(Map<String, dynamic> j) =>
+      BackupVerification(
         matched: j['matched'] as bool? ?? false,
         reason: j['reason'] as String? ?? 'mismatch',
         derivedFingerprint: j['derived_fingerprint'] as String? ?? '',

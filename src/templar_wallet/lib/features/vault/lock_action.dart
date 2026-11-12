@@ -20,18 +20,22 @@ import 'vault_unlock_screen.dart';
 ///
 /// [onUnlocked] runs once the vault is open again — for a screen that stays
 /// underneath the unlock and needs to know (the picker's lock button).
-Future<void> lockVaultAndPrompt(BuildContext context,
-    {VoidCallback? onUnlocked}) async {
+Future<void> lockVaultAndPrompt(
+  BuildContext context, {
+  VoidCallback? onUnlocked,
+}) async {
   final appState = context.read<AppState>();
   try {
     await walletBridge.lockVault();
     SeedRevealGate.reset();
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Could not lock: $e'),
-        backgroundColor: AppColors.danger,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not lock: $e'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
     }
     return;
   }

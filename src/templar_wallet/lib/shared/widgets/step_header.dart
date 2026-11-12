@@ -48,8 +48,9 @@ class StepHeader extends StatelessWidget {
     final phone = AppLayout.isPhone(context);
     final titleStyle = AppTypography.pageTitleOf(context);
     final subtitleStyle = _subtitleStyle(context, phone);
-    final indicatorStyle =
-        AppTypography.stepIndicator.copyWith(color: AppColors.accent);
+    final indicatorStyle = AppTypography.stepIndicator.copyWith(
+      color: AppColors.accent,
+    );
     // Read here, never inside the LayoutBuilder below: its builder runs during
     // layout, and an inherited dependency registered from there is re-checked
     // in the same phase — when the keyboard closes and MediaQuery changes
@@ -77,8 +78,10 @@ class StepHeader extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('Step $currentStep of $totalSteps',
-                          style: indicatorStyle),
+                      Text(
+                        'Step $currentStep of $totalSteps',
+                        style: indicatorStyle,
+                      ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(title, style: titleStyle),
                       if (subtitle != null)
@@ -151,7 +154,8 @@ class StepHeader extends StatelessWidget {
     );
     var tallest = 0.0;
     for (final v in vs) {
-      var h = indicator +
+      var h =
+          indicator +
           AppSpacing.xs +
           measure.height(v.title, titleStyle, width);
       final s = v.subtitle;
@@ -245,8 +249,8 @@ class _StepProgress extends StatelessWidget {
                 color: done
                     ? AppColors.accent
                     : here
-                        ? AppColors.accentMuted
-                        : rest,
+                    ? AppColors.accentMuted
+                    : rest,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -300,20 +304,21 @@ class _SelectableOptionCardState extends State<SelectableOptionCard> {
     final card = AnimatedContainer(
       duration: const Duration(milliseconds: 150),
       padding: EdgeInsets.all(
-          phone ? AppSpacing.cardPaddingSmall : AppSpacing.cardPadding),
+        phone ? AppSpacing.cardPaddingSmall : AppSpacing.cardPadding,
+      ),
       decoration: BoxDecoration(
         color: isSelected
             ? (isDark ? AppColors.sidebarActiveItemBg : AppColors.accentLight)
             : active
-                ? (isDark ? AppColors.surfaceDark2 : AppColors.surfaceLight)
-                : (isDark ? AppColors.surfaceDark : AppColors.surfaceLight),
+            ? (isDark ? AppColors.surfaceDark2 : AppColors.surfaceLight)
+            : (isDark ? AppColors.surfaceDark : AppColors.surfaceLight),
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         border: Border.all(
           color: isSelected
               ? AppColors.accent
               : active
-                  ? s.edgeStrong
-                  : (isDark ? AppColors.borderDark : AppColors.borderLight),
+              ? s.edgeStrong
+              : (isDark ? AppColors.borderDark : AppColors.borderLight),
           width: isSelected ? 2 : 1,
         ),
       ),
@@ -325,7 +330,9 @@ class _SelectableOptionCardState extends State<SelectableOptionCard> {
               size: 24,
               color: isSelected || active
                   ? AppColors.accent
-                  : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondary),
+                  : (isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary),
             ),
             const SizedBox(width: AppSpacing.lg),
           ],
@@ -344,20 +351,35 @@ class _SelectableOptionCardState extends State<SelectableOptionCard> {
                     if (badge != null) ...[
                       const SizedBox(width: AppSpacing.sm),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.warningLight,
-                          borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusSm,
+                          ),
                         ),
-                        child: Text(badge, style: AppTypography.label.copyWith(color: AppColors.warning)),
+                        child: Text(
+                          badge,
+                          style: AppTypography.label.copyWith(
+                            color: AppColors.warning,
+                          ),
+                        ),
                       ),
                     ],
                   ],
                 ),
                 const SizedBox(height: AppSpacing.xs),
-                Text(description, style: AppTypography.bodySmall.copyWith(
-                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
-                )),
+                Text(
+                  description,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary,
+                  ),
+                ),
               ],
             ),
           ),
@@ -370,7 +392,9 @@ class _SelectableOptionCardState extends State<SelectableOptionCard> {
               shape: BoxShape.circle,
               color: isSelected ? AppColors.accent : Colors.transparent,
               border: Border.all(
-                color: isSelected ? AppColors.accent : (isDark ? AppColors.borderDark : AppColors.borderLight),
+                color: isSelected
+                    ? AppColors.accent
+                    : (isDark ? AppColors.borderDark : AppColors.borderLight),
                 width: 2,
               ),
             ),

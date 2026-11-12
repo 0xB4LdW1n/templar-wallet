@@ -5,7 +5,12 @@ import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
-    show HardwareKeyboard, KeyEvent, SystemChrome, SystemUiMode, SystemUiOverlayStyle;
+    show
+        HardwareKeyboard,
+        KeyEvent,
+        SystemChrome,
+        SystemUiMode,
+        SystemUiOverlayStyle;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'app/app_state.dart';
@@ -28,79 +33,86 @@ import 'theme/app_theme.dart';
 void main() {
   // Any uncaught error — sync, async, or framework — lands in the on-disk
   // log. Testers' crash reports otherwise contain nothing on Windows.
-  runZonedGuarded(() async {
-    WidgetsFlutterBinding.ensureInitialized();
-    if (Platform.isAndroid) {
-      // Draw under the status and navigation bars — what Android 15 enforces
-      // anyway, opted into here for every version. Screens keep their content
-      // inside a SafeArea; the bars go transparent so the page ground shows
-      // through them rather than a system-coloured strip.
-      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.transparent,
-        systemNavigationBarDividerColor: Colors.transparent,
-        systemStatusBarContrastEnforced: false,
-        systemNavigationBarContrastEnforced: false,
-      ));
-    }
-    // Android has no conventional data dir the engine could find on its own
-    // (no XDG, no env): the app-private support dir is resolved once here and
-    // handed to both the crash log and the native engine. Own subfolder, as on
-    // desktop — google_fonts and other plugins cache into the support dir too.
-    String? androidDataDir;
-    if (Platform.isAndroid) {
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      if (Platform.isAndroid) {
+        // Draw under the status and navigation bars — what Android 15 enforces
+        // anyway, opted into here for every version. Screens keep their content
+        // inside a SafeArea; the bars go transparent so the page ground shows
+        // through them rather than a system-coloured strip.
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        SystemChrome.setSystemUIOverlayStyle(
+          const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarDividerColor: Colors.transparent,
+            systemStatusBarContrastEnforced: false,
+            systemNavigationBarContrastEnforced: false,
+          ),
+        );
+      }
+      // Android has no conventional data dir the engine could find on its own
+      // (no XDG, no env): the app-private support dir is resolved once here and
+      // handed to both the crash log and the native engine. Own subfolder, as on
+      // desktop — google_fonts and other plugins cache into the support dir too.
+      String? androidDataDir;
+      if (Platform.isAndroid) {
+        try {
+          final support = await getApplicationSupportDirectory();
+          androidDataDir = '${support.path}/templar_wallet';
+        } catch (e) {
+          debugPrint('application support dir: $e');
+        }
+      }
+      await CrashLog.instance.init(dataDir: androidDataDir);
+      FlutterError.onError = (details) {
+        CrashLog.instance.error(details.exception, details.stack);
+        FlutterError.presentError(details);
+      };
+      PlatformDispatcher.instance.onError = (error, stack) {
+        CrashLog.instance.error(error, stack);
+        return true;
+      };
+      if (androidDataDir != null) {
+        try {
+          final rc = FfiWalletBridge.setDataDir(androidDataDir);
+          if (rc != 0) {
+            CrashLog.instance.write('wallet_set_data_dir: status $rc');
+          }
+        } catch (e, st) {
+          CrashLog.instance.error(e, st);
+        }
+      }
+      // Force bridge construction now — top-level finals are lazy in Dart, and a
+      // native-library load failure must be known before the first frame.
+      debugPrint('bridge: ${walletBridge.runtimeType}');
+      if (bridgeLoadError != null) {
+        CrashLog.instance.error(bridgeLoadError!, null);
+      }
+      final appState = AppState();
+      await appState.loadPrefs();
+      // Which Liquid network the engine is on (testnet or a local regtest).
+      // Best-effort: a failed read leaves the shell without its regtest strip,
+      // and the settings screen reports the real error when opened.
       try {
-        final support = await getApplicationSupportDirectory();
-        androidDataDir = '${support.path}/templar_wallet';
+        appState.setLiquidNetworkInfo(await walletBridge.getLiquidNetwork());
       } catch (e) {
-        debugPrint('application support dir: $e');
+        debugPrint('liquid network: $e');
       }
-    }
-    await CrashLog.instance.init(dataDir: androidDataDir);
-    FlutterError.onError = (details) {
-      CrashLog.instance.error(details.exception, details.stack);
-      FlutterError.presentError(details);
-    };
-    PlatformDispatcher.instance.onError = (error, stack) {
+      // Warm up BTC price in background
+      PriceService.instance.fetch();
+      runApp(
+        ChangeNotifierProvider.value(
+          value: appState,
+          child: const TemplarWalletApp(),
+        ),
+      );
+    },
+    (error, stack) {
       CrashLog.instance.error(error, stack);
-      return true;
-    };
-    if (androidDataDir != null) {
-      try {
-        final rc = FfiWalletBridge.setDataDir(androidDataDir);
-        if (rc != 0) CrashLog.instance.write('wallet_set_data_dir: status $rc');
-      } catch (e, st) {
-        CrashLog.instance.error(e, st);
-      }
-    }
-    // Force bridge construction now — top-level finals are lazy in Dart, and a
-    // native-library load failure must be known before the first frame.
-    debugPrint('bridge: ${walletBridge.runtimeType}');
-    if (bridgeLoadError != null) {
-      CrashLog.instance.error(bridgeLoadError!, null);
-    }
-    final appState = AppState();
-    await appState.loadPrefs();
-    // Which Liquid network the engine is on (testnet or a local regtest).
-    // Best-effort: a failed read leaves the shell without its regtest strip,
-    // and the settings screen reports the real error when opened.
-    try {
-      appState.setLiquidNetworkInfo(await walletBridge.getLiquidNetwork());
-    } catch (e) {
-      debugPrint('liquid network: $e');
-    }
-    // Warm up BTC price in background
-    PriceService.instance.fetch();
-    runApp(
-      ChangeNotifierProvider.value(
-        value: appState,
-        child: const TemplarWalletApp(),
-      ),
-    );
-  }, (error, stack) {
-    CrashLog.instance.error(error, stack);
-  });
+    },
+  );
 }
 
 class TemplarWalletApp extends StatefulWidget {
@@ -170,7 +182,11 @@ class _TemplarWalletAppState extends State<TemplarWalletApp> {
     _hiddenAt = null;
     if (since == null) return;
     final seconds = await AutoLockPolicy.seconds();
-    if (AutoLockPolicy.due(since: since, now: DateTime.now(), seconds: seconds)) {
+    if (AutoLockPolicy.due(
+      since: since,
+      now: DateTime.now(),
+      seconds: seconds,
+    )) {
       await _autoLock();
     }
     _restartIdleTimer();
@@ -195,7 +211,9 @@ class _TemplarWalletAppState extends State<TemplarWalletApp> {
   /// replaced by the unlock screen, exactly like the launch gate. Installs
   /// without a vault (hardware / watch-only only) have nothing to lock.
   Future<void> _autoLock() async {
-    if (_locking || _vaultLocked || !_vaultChecked || _plaintextSeeds > 0) return;
+    if (_locking || _vaultLocked || !_vaultChecked || _plaintextSeeds > 0) {
+      return;
+    }
     _locking = true;
     try {
       final status = await walletBridge.vaultStatus();
@@ -297,7 +315,9 @@ class _TemplarWalletAppState extends State<TemplarWalletApp> {
             debugShowCheckedModeBanner: false,
             theme: AppTheme.dark(),
             builder: AppTheme.phoneBuilder,
-            home: const Scaffold(body: Center(child: CircularProgressIndicator())),
+            home: const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            ),
           );
         }
 

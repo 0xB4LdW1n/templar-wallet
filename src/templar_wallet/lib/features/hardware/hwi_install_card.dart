@@ -40,20 +40,34 @@ class _HwiInstallCardState extends State<HwiInstallCard> {
   Future<void> _resolve() async {
     try {
       final release = await _installer.resolveLatest();
-      if (mounted) setState(() { _release = release; _error = null; });
+      if (mounted) {
+        setState(() {
+          _release = release;
+          _error = null;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
   }
 
   Future<void> _install() async {
-    setState(() { _installing = true; _error = null; _progress = 0; });
+    setState(() {
+      _installing = true;
+      _error = null;
+      _progress = 0;
+    });
     try {
       await _installer.install(
         bridge: walletBridge,
         release: _release,
         onProgress: (phase, progress) {
-          if (mounted) setState(() { _phase = phase; _progress = progress; });
+          if (mounted) {
+            setState(() {
+              _phase = phase;
+              _progress = progress;
+            });
+          }
         },
       );
       if (mounted) {
@@ -71,14 +85,13 @@ class _HwiInstallCardState extends State<HwiInstallCard> {
   }
 
   String get _phaseLabel => switch (_phase) {
-        HwiInstallPhase.resolving => 'Finding the latest release…',
-        HwiInstallPhase.downloading =>
-          'Downloading… ${(_progress * 100).round()}%',
-        HwiInstallPhase.verifying => 'Verifying checksum…',
-        HwiInstallPhase.extracting => 'Extracting…',
-        HwiInstallPhase.activating => 'Activating…',
-        null => '',
-      };
+    HwiInstallPhase.resolving => 'Finding the latest release…',
+    HwiInstallPhase.downloading => 'Downloading… ${(_progress * 100).round()}%',
+    HwiInstallPhase.verifying => 'Verifying checksum…',
+    HwiInstallPhase.extracting => 'Extracting…',
+    HwiInstallPhase.activating => 'Activating…',
+    null => '',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -97,12 +110,17 @@ class _HwiInstallCardState extends State<HwiInstallCard> {
         children: [
           Row(
             children: [
-              const Icon(Icons.download_for_offline_outlined,
-                  color: AppColors.warning, size: 22),
+              const Icon(
+                Icons.download_for_offline_outlined,
+                color: AppColors.warning,
+                size: 22,
+              ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: Text('HWI toolkit required',
-                    style: AppTypography.sectionTitle),
+                child: Text(
+                  'HWI toolkit required',
+                  style: AppTypography.sectionTitle,
+                ),
               ),
             ],
           ),
@@ -113,7 +131,9 @@ class _HwiInstallCardState extends State<HwiInstallCard> {
             'Templar can download the official signed build and set it up '
             'automatically.',
             style: AppTypography.bodySmall.copyWith(
-              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondary,
             ),
           ),
           const SizedBox(height: AppSpacing.lg),

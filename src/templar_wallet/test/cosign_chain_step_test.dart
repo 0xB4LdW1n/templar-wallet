@@ -25,17 +25,21 @@ class _NoEngineBridge implements WalletBridge {
 }
 
 Widget _host({required bool liquid}) => MaterialApp(
-      home: Scaffold(
-        body: ChangeNotifierProvider<AppState>(
-          create: (_) => AppState()
-            ..setActiveWallet('w1',
-                name: 'Shared', type: 'Multisig 2-of-2', liquid: liquid),
-          child: SingleChildScrollView(
-            child: CosignView(bridge: _NoEngineBridge()),
-          ),
+  home: Scaffold(
+    body: ChangeNotifierProvider<AppState>(
+      create: (_) => AppState()
+        ..setActiveWallet(
+          'w1',
+          name: 'Shared',
+          type: 'Multisig 2-of-2',
+          liquid: liquid,
         ),
+      child: SingleChildScrollView(
+        child: CosignView(bridge: _NoEngineBridge()),
       ),
-    );
+    ),
+  ),
+);
 
 Future<void> _pump(WidgetTester t, {bool liquid = true}) async {
   t.view.physicalSize = const Size(1280, 1400);
@@ -97,8 +101,9 @@ void main() {
     expect(find.text('WHICH CHAIN?'), findsOneWidget, reason: 'still asking');
   });
 
-  testWidgets('a PSET on the Bitcoin path is refused with the reason',
-      (t) async {
+  testWidgets('a PSET on the Bitcoin path is refused with the reason', (
+    t,
+  ) async {
     await _pump(t);
     await t.tap(find.text('Bitcoin'));
     await t.pumpAndSettle();
@@ -110,18 +115,25 @@ void main() {
 
     // Refused before the engine is asked — the bridge would have thrown.
     expect(find.textContaining('This is a Liquid PSET'), findsOneWidget);
-    expect(find.text('Paste'), findsOneWidget, reason: 'still on the load card');
+    expect(
+      find.text('Paste'),
+      findsOneWidget,
+      reason: 'still on the load card',
+    );
   });
 
-  testWidgets('a PSBT on the Liquid path is refused with the reason',
-      (t) async {
+  testWidgets('a PSBT on the Liquid path is refused with the reason', (
+    t,
+  ) async {
     await _pump(t);
     await t.tap(find.text('Liquid'));
     await t.pumpAndSettle();
     await t.tap(find.text('Paste'));
     await t.pumpAndSettle();
-    await t.enterText(find.byType(TextField),
-        base64Encode([0x70, 0x73, 0x62, 0x74, 0xff, 0, 0, 0]));
+    await t.enterText(
+      find.byType(TextField),
+      base64Encode([0x70, 0x73, 0x62, 0x74, 0xff, 0, 0, 0]),
+    );
     await t.tap(find.text('Load & Inspect'));
     await t.pumpAndSettle();
 

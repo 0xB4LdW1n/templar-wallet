@@ -115,7 +115,10 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
       if (mounted) {
         setState(() {
           _addingLiquid = false;
-          _liquidError = e.toString().replaceFirst('Exception: wallet-ffi: ', '');
+          _liquidError = e.toString().replaceFirst(
+            'Exception: wallet-ffi: ',
+            '',
+          );
         });
       }
     }
@@ -133,12 +136,12 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
       // The wallet gained a chain: the sidebar's Liquid section and the receive
       // tabs read this flag, so it has to be updated before anything reloads.
       context.read<AppState>().setActiveWallet(
-            updated.id,
-            name: updated.name,
-            type: updated.typeLabel,
-            liquid: true,
-            bitcoin: updated.bitcoinEnabled,
-          );
+        updated.id,
+        name: updated.name,
+        type: updated.typeLabel,
+        liquid: true,
+        bitcoin: updated.bitcoinEnabled,
+      );
       setState(() => _addingLiquid = false);
       await _load();
       if (!mounted) return;
@@ -163,12 +166,19 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
       info = await _bridge.getWalletInfo(walletId);
     } catch (e) {
       if (mounted) {
-        setState(() { _loading = false; _error = e.toString(); });
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
       }
       return;
     }
     if (!mounted) return;
-    setState(() { _info = info; _loading = false; _error = null; });
+    setState(() {
+      _info = info;
+      _loading = false;
+      _error = null;
+    });
     if (_isSinglesigWallet) await _loadCosignerKeys(walletId);
   }
 
@@ -185,11 +195,11 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
         _liquidCosignerXpub = null;
         _cosignerKeysError = st.isActiveWalletWatchOnly
             ? 'A watch-only wallet holds no keys, so it has none to hand '
-                'over. Take the cosigner keys from the wallet or device that '
-                'holds its seed.'
+                  'over. Take the cosigner keys from the wallet or device that '
+                  'holds its seed.'
             : 'This wallet keeps its keys on a device. Read them straight '
-                'from it in the multisig wizard — "Read xpub from device" '
-                'over USB, or the device\'s own QR export.';
+                  'from it in the multisig wizard — "Read xpub from device" '
+                  'over USB, or the device\'s own QR export.';
       });
       return;
     }
@@ -222,8 +232,10 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
   }
 
   /// Drops the transport wrapper so the engine's own sentence leads.
-  String _plain(Object e) =>
-      e.toString().replaceFirst('Exception: ', '').replaceFirst('wallet-ffi: ', '');
+  String _plain(Object e) => e
+      .toString()
+      .replaceFirst('Exception: ', '')
+      .replaceFirst('wallet-ffi: ', '');
 
   /// Human-readable descriptor bundle — what a co-signer or another wallet
   /// app needs to reconstruct this wallet watch-only.
@@ -285,11 +297,13 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
       if (_cosignerXpub != null) 'as_cosigner_bip48_xpub': _cosignerXpub,
       if (_liquidCosignerXpub != null)
         'as_cosigner_bip87_liquid_xpub': _liquidCosignerXpub,
-      if (i.liquidDescriptor != null) 'liquid_ct_descriptor': i.liquidDescriptor,
+      if (i.liquidDescriptor != null)
+        'liquid_ct_descriptor': i.liquidDescriptor,
     };
     try {
-      final safeName =
-          i.name.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_').toLowerCase();
+      final safeName = i.name
+          .replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_')
+          .toLowerCase();
       final where = await FileExport.saveOrShareText(
         context,
         suggestedName: 'templar-wallet-$safeName.json',
@@ -308,9 +322,9 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Export failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Export failed: $e')));
     }
   }
 
@@ -321,7 +335,8 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
       context,
       title: 'Descriptor QR',
       value: i.multipathDescriptor ?? i.receiveDescriptor,
-      caption: 'Scan with Sparrow, Specter, or another wallet to import '
+      caption:
+          'Scan with Sparrow, Specter, or another wallet to import '
           'this wallet watch-only.',
     );
   }
@@ -336,8 +351,8 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
   /// keys and has no cosigner key of its own to hand over, so the "Use this
   /// wallet as a cosigner" card belongs to singlesig wallets only.
   bool get _isSinglesigWallet {
-    final type =
-        (context.read<AppState>().activeWalletType ?? '').toLowerCase();
+    final type = (context.read<AppState>().activeWalletType ?? '')
+        .toLowerCase();
     return !_isMultisigWallet &&
         _info!.requiredSigs == null &&
         type != 'multisig' &&
@@ -354,12 +369,14 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
   /// which xpub on this page the wizard wanted.
   Widget _asACosignerCard({required bool phone, required int codeLines}) {
     final s = AppScheme.of(context);
-    final caption =
-        AppTypography.caption.copyWith(color: phone ? s.inkSecondary : null);
+    final caption = AppTypography.caption.copyWith(
+      color: phone ? s.inkSecondary : null,
+    );
     final watchOnly = context.read<AppState>().isActiveWalletWatchOnly;
     return SectionCard(
       title: 'Use this wallet as a cosigner',
-      subtitle: 'The keys another wallet needs to include this one in a '
+      subtitle:
+          'The keys another wallet needs to include this one in a '
           'multisig. Safe to share — neither can spend.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,11 +397,10 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
-                    watchOnly
-                        ? Icons.visibility_outlined
-                        : Icons.usb_rounded,
-                    size: 16,
-                    color: AppColors.textMuted),
+                  watchOnly ? Icons.visibility_outlined : Icons.usb_rounded,
+                  size: 16,
+                  color: AppColors.textMuted,
+                ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(child: Text(err, style: caption)),
               ],
@@ -443,7 +459,10 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
   /// copy target and the measured "Show all" toggle, none of which the
   /// hand-rolled [_CosignerKeyRow] has. The desktop keeps [_CosignerKeyRow]
   /// verbatim so nothing moves there.
-  List<Widget> _cosignerKeyBlocks({required bool phone, required int codeLines}) {
+  List<Widget> _cosignerKeyBlocks({
+    required bool phone,
+    required int codeLines,
+  }) {
     final keys = _info!.cosignerKeys;
     if (!phone) {
       return [
@@ -454,7 +473,12 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
     return [
       for (var i = 0; i < keys.length; i++) ...[
         if (i > 0) const SizedBox(height: AppSpacing.lg),
-        CodeBox(label: 'Key ${i + 1}', value: keys[i], maxLines: codeLines, showQr: true),
+        CodeBox(
+          label: 'Key ${i + 1}',
+          value: keys[i],
+          maxLines: codeLines,
+          showQr: true,
+        ),
       ],
     ];
   }
@@ -487,256 +511,323 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
     return Scaffold(
       body: PageBackground.flat(
         child: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _info == null
-          ? _LoadError(
-              message: _error ?? 'Could not load wallet details.',
-              onRetry: () {
-                setState(() { _loading = true; _error = null; });
-                _load();
-              },
-            )
-          : ListView(
-              padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-              children: [
-                // The phone shell's header already says "Wallet info" with
-                // the arrow back to Settings.
-                if (!phone)
-                  const PageHeader(
+            ? const Center(child: CircularProgressIndicator())
+            : _info == null
+            ? _LoadError(
+                message: _error ?? 'Could not load wallet details.',
+                onRetry: () {
+                  setState(() {
+                    _loading = true;
+                    _error = null;
+                  });
+                  _load();
+                },
+              )
+            : ListView(
+                padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+                children: [
+                  // The phone shell's header already says "Wallet info" with
+                  // the arrow back to Settings.
+                  if (!phone)
+                    const PageHeader(
                       title: 'Wallet Info',
-                      subtitle: 'Keys and descriptors'),
-                // Identity — six label/value readouts, the one real list on
-                // the page. A phone rules them with the same s.edge hairline
-                // ListCard uses between its rows, so this card reads like the
-                // Settings and Dashboard groups; the desktop keeps the theme
-                // divider (null colour = fall through to the theme).
-                SectionCard(
-                  title: 'Identity',
-                  child: Column(
-                    children: [
-                      CopyRow(label: 'Wallet name', value: _info!.name, mono: false, showQr: true),
-                      Divider(height: 1, color: phone ? s.edge : null),
-                      CopyRow(label: 'Network', value: _info!.network, mono: false, showQr: true),
-                      Divider(height: 1, color: phone ? s.edge : null),
-                      CopyRow(
-                        label: 'Liquid network',
-                        value: _info!.liquidNetwork,
-                        mono: false,
-                        showQr: true,
-                      ),
-                      Divider(height: 1, color: phone ? s.edge : null),
-                      CopyRow(label: 'Master fingerprint', value: _info!.masterFingerprint, showQr: true),
-                      Divider(height: 1, color: phone ? s.edge : null),
-                      CopyRow(label: 'Derivation path', value: _info!.derivationPath, showQr: true),
-                      Divider(height: 1, color: phone ? s.edge : null),
-                      CopyRow(label: 'Script type', value: _info!.scriptType, mono: false, showQr: true),
-                    ],
+                      subtitle: 'Keys and descriptors',
+                    ),
+                  // Identity — six label/value readouts, the one real list on
+                  // the page. A phone rules them with the same s.edge hairline
+                  // ListCard uses between its rows, so this card reads like the
+                  // Settings and Dashboard groups; the desktop keeps the theme
+                  // divider (null colour = fall through to the theme).
+                  SectionCard(
+                    title: 'Identity',
+                    child: Column(
+                      children: [
+                        CopyRow(
+                          label: 'Wallet name',
+                          value: _info!.name,
+                          mono: false,
+                          showQr: true,
+                        ),
+                        Divider(height: 1, color: phone ? s.edge : null),
+                        CopyRow(
+                          label: 'Network',
+                          value: _info!.network,
+                          mono: false,
+                          showQr: true,
+                        ),
+                        Divider(height: 1, color: phone ? s.edge : null),
+                        CopyRow(
+                          label: 'Liquid network',
+                          value: _info!.liquidNetwork,
+                          mono: false,
+                          showQr: true,
+                        ),
+                        Divider(height: 1, color: phone ? s.edge : null),
+                        CopyRow(
+                          label: 'Master fingerprint',
+                          value: _info!.masterFingerprint,
+                          showQr: true,
+                        ),
+                        Divider(height: 1, color: phone ? s.edge : null),
+                        CopyRow(
+                          label: 'Derivation path',
+                          value: _info!.derivationPath,
+                          showQr: true,
+                        ),
+                        Divider(height: 1, color: phone ? s.edge : null),
+                        CopyRow(
+                          label: 'Script type',
+                          value: _info!.scriptType,
+                          mono: false,
+                          showQr: true,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                gap,
-                // No backup card here. This page is the public face of the
-                // wallet — descriptors and xpubs, safe to copy and hand to a
-                // co-signer. Seed state belongs with the seed tools, in
-                // Settings, behind the reveal gate; a "Seed: Available" row
-                // next to an Export button trains the user to look for secrets
-                // on the page they screen-share.
-                // Bitcoin descriptors
-                SectionCard(
-                  title: 'Bitcoin Descriptors',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_info!.xpub.isNotEmpty) ...[
+                  gap,
+                  // No backup card here. This page is the public face of the
+                  // wallet — descriptors and xpubs, safe to copy and hand to a
+                  // co-signer. Seed state belongs with the seed tools, in
+                  // Settings, behind the reveal gate; a "Seed: Available" row
+                  // next to an Export button trains the user to look for secrets
+                  // on the page they screen-share.
+                  // Bitcoin descriptors
+                  SectionCard(
+                    title: 'Bitcoin Descriptors',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_info!.xpub.isNotEmpty) ...[
+                          CodeBox(
+                            // Named by its account, not just "XPUB": on a
+                            // singlesig wallet this is m/84'/1'/0', and handing
+                            // it to a co-signer builds a multisig nobody can
+                            // spend. The cosigner section below has the key
+                            // that belongs in the wizard.
+                            label: 'XPUB · ${_info!.derivationPath}',
+                            value: _info!.xpub,
+                            maxLines: codeLines,
+                            showQr: true,
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            _isMultisigWallet
+                                ? 'This wallet\'s own account key.'
+                                : 'This wallet\'s singlesig account key — not a '
+                                      'cosigner key. To join a multisig, hand over '
+                                      'the two keys below.',
+                            style: AppTypography.caption.copyWith(
+                              color: phone ? s.inkSecondary : null,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                        ],
                         CodeBox(
-                          // Named by its account, not just "XPUB": on a
-                          // singlesig wallet this is m/84'/1'/0', and handing
-                          // it to a co-signer builds a multisig nobody can
-                          // spend. The cosigner section below has the key
-                          // that belongs in the wizard.
-                          label: 'XPUB · ${_info!.derivationPath}',
-                          value: _info!.xpub,
+                          label: 'Receive descriptor',
+                          value: _info!.receiveDescriptor,
                           maxLines: codeLines,
                           showQr: true,
                         ),
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          _isMultisigWallet
-                              ? 'This wallet\'s own account key.'
-                              : 'This wallet\'s singlesig account key — not a '
-                                  'cosigner key. To join a multisig, hand over '
-                                  'the two keys below.',
-                          style: AppTypography.caption
-                              .copyWith(color: phone ? s.inkSecondary : null),
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                      ],
-                      CodeBox(label: 'Receive descriptor', value: _info!.receiveDescriptor, maxLines: codeLines, showQr: true),
-                      if (_info!.multipathDescriptor != null) ...[
-                        const SizedBox(height: AppSpacing.lg),
-                        CodeBox(label: 'Multipath descriptor', value: _info!.multipathDescriptor!, maxLines: codeLines, showQr: true),
-                      ],
-                    ],
-                  ),
-                ),
-                // Only a singlesig wallet joins someone else's multisig; a
-                // multisig already lists the keys it is built from below.
-                if (_isSinglesigWallet) ...[
-                  gap,
-                  _asACosignerCard(phone: phone, codeLines: codeLines),
-                ],
-                if (_info!.cosignerKeys.isNotEmpty) ...[
-                  gap,
-                  SectionCard(
-                    // Named for what they are — the keys this wallet is BUILT
-                    // from — so they are not confused with the keys a
-                    // singlesig wallet GIVES to someone else.
-                    title: 'Cosigner Keys in this wallet',
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Each key in [fingerprint/derivation-path]xpub format',
-                          // caption bakes in the light-mode secondary ink, so
-                          // on a dark phone it reads muddy; a null colour in
-                          // copyWith leaves the desktop style untouched.
-                          style: AppTypography.caption
-                              .copyWith(color: phone ? s.inkSecondary : null),
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        ..._cosignerKeyBlocks(phone: phone, codeLines: codeLines),
-                      ],
-                    ),
-                  ),
-                ],
-                if (_info!.liquidDescriptor != null) ...[
-                  gap,
-                  SectionCard(
-                    title: 'Liquid Descriptors',
-                    child: Column(
-                      children: [
-                        CodeBox(label: 'CT descriptor', value: _info!.liquidDescriptor!, maxLines: codeLines, showQr: true),
-                        if (_info!.masterBlindingKey != null) ...[
+                        if (_info!.multipathDescriptor != null) ...[
                           const SizedBox(height: AppSpacing.lg),
-                          CodeBox(label: 'Master blinding key', value: _info!.masterBlindingKey!, maxLines: codeLines, showQr: true),
+                          CodeBox(
+                            label: 'Multipath descriptor',
+                            value: _info!.multipathDescriptor!,
+                            maxLines: codeLines,
+                            showQr: true,
+                          ),
                         ],
                       ],
                     ),
                   ),
-                ] else if (_canEnableLiquidFromSeed) ...[
-                  gap,
-                  SectionCard(
-                    title: 'Liquid Network',
-                    subtitle: 'Not set up for this wallet yet',
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'The same recovery phrase derives a Liquid wallet: '
-                          'confidential L-BTC and Liquid assets, nothing extra '
-                          'to back up. Wallets restored before Templar asked '
-                          'this question came back Bitcoin-only — turning it '
-                          'on here adds the Liquid descriptor and leaves the '
-                          'Bitcoin side untouched.',
-                          style: AppTypography.bodySmall,
-                        ),
-                        if (_liquidError != null) ...[
-                          const SizedBox(height: AppSpacing.md),
-                          SelectableText(
-                            _liquidError!,
-                            style: AppTypography.caption
-                                .copyWith(color: AppColors.danger),
+                  // Only a singlesig wallet joins someone else's multisig; a
+                  // multisig already lists the keys it is built from below.
+                  if (_isSinglesigWallet) ...[
+                    gap,
+                    _asACosignerCard(phone: phone, codeLines: codeLines),
+                  ],
+                  if (_info!.cosignerKeys.isNotEmpty) ...[
+                    gap,
+                    SectionCard(
+                      // Named for what they are — the keys this wallet is BUILT
+                      // from — so they are not confused with the keys a
+                      // singlesig wallet GIVES to someone else.
+                      title: 'Cosigner Keys in this wallet',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Each key in [fingerprint/derivation-path]xpub format',
+                            // caption bakes in the light-mode secondary ink, so
+                            // on a dark phone it reads muddy; a null colour in
+                            // copyWith leaves the desktop style untouched.
+                            style: AppTypography.caption.copyWith(
+                              color: phone ? s.inkSecondary : null,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                          ..._cosignerKeyBlocks(
+                            phone: phone,
+                            codeLines: codeLines,
                           ),
                         ],
-                        const SizedBox(height: AppSpacing.lg),
-                        PrimaryButton(
-                          label: _addingLiquid
-                              ? 'Deriving the Liquid wallet…'
-                              : 'Enable Liquid',
-                          icon: Icons.water_drop_rounded,
-                          onPressed:
-                              _addingLiquid ? null : _enableLiquidFromSeed,
-                          // The card's one action: a slab across the card on a
-                          // phone, the intrinsic desktop button otherwise.
-                          isFullWidth: phone,
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ] else if (_canAddLiquid) ...[
-                  gap,
-                  SectionCard(
-                    title: 'Liquid Network',
-                    subtitle: 'Not set up for this wallet yet',
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'A Blockstream Jade can hold the Liquid side of this '
-                          'same wallet. Connect it over USB and unlock it: its '
-                          'confidential descriptor is read from the device, so '
-                          'the Jade can spend from the Liquid wallet too. '
-                          'Nothing about the Bitcoin side changes.',
-                          style: AppTypography.bodySmall,
-                        ),
-                        if (_liquidError != null) ...[
-                          const SizedBox(height: AppSpacing.md),
-                          SelectableText(
-                            _liquidError!,
-                            style: AppTypography.caption
-                                .copyWith(color: AppColors.danger),
+                  ],
+                  if (_info!.liquidDescriptor != null) ...[
+                    gap,
+                    SectionCard(
+                      title: 'Liquid Descriptors',
+                      child: Column(
+                        children: [
+                          CodeBox(
+                            label: 'CT descriptor',
+                            value: _info!.liquidDescriptor!,
+                            maxLines: codeLines,
+                            showQr: true,
+                          ),
+                          if (_info!.masterBlindingKey != null) ...[
+                            const SizedBox(height: AppSpacing.lg),
+                            CodeBox(
+                              label: 'Master blinding key',
+                              value: _info!.masterBlindingKey!,
+                              maxLines: codeLines,
+                              showQr: true,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ] else if (_canEnableLiquidFromSeed) ...[
+                    gap,
+                    SectionCard(
+                      title: 'Liquid Network',
+                      subtitle: 'Not set up for this wallet yet',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'The same recovery phrase derives a Liquid wallet: '
+                            'confidential LBTC and Liquid assets, nothing extra '
+                            'to back up. Wallets restored before Templar asked '
+                            'this question came back Bitcoin-only — turning it '
+                            'on here adds the Liquid descriptor and leaves the '
+                            'Bitcoin side untouched.',
+                            style: AppTypography.bodySmall,
+                          ),
+                          if (_liquidError != null) ...[
+                            const SizedBox(height: AppSpacing.md),
+                            SelectableText(
+                              _liquidError!,
+                              style: AppTypography.caption.copyWith(
+                                color: AppColors.danger,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: AppSpacing.lg),
+                          PrimaryButton(
+                            label: _addingLiquid
+                                ? 'Deriving the Liquid wallet…'
+                                : 'Enable Liquid',
+                            icon: Icons.water_drop_rounded,
+                            onPressed: _addingLiquid
+                                ? null
+                                : _enableLiquidFromSeed,
+                            // The card's one action: a slab across the card on a
+                            // phone, the intrinsic desktop button otherwise.
+                            isFullWidth: phone,
                           ),
                         ],
-                        const SizedBox(height: AppSpacing.lg),
-                        PrimaryButton(
-                          label: _addingLiquid
-                              ? 'Reading from the device…'
-                              : 'Add Liquid from my Jade',
-                          icon: Icons.water_drop_rounded,
-                          onPressed: _addingLiquid ? null : _addLiquid,
-                          isFullWidth: phone,
-                        ),
-                      ],
+                      ),
                     ),
+                  ] else if (_canAddLiquid) ...[
+                    gap,
+                    SectionCard(
+                      title: 'Liquid Network',
+                      subtitle: 'Not set up for this wallet yet',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'A Blockstream Jade can hold the Liquid side of this '
+                            'same wallet. Connect it over USB and unlock it: its '
+                            'confidential descriptor is read from the device, so '
+                            'the Jade can spend from the Liquid wallet too. '
+                            'Nothing about the Bitcoin side changes.',
+                            style: AppTypography.bodySmall,
+                          ),
+                          if (_liquidError != null) ...[
+                            const SizedBox(height: AppSpacing.md),
+                            SelectableText(
+                              _liquidError!,
+                              style: AppTypography.caption.copyWith(
+                                color: AppColors.danger,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: AppSpacing.lg),
+                          PrimaryButton(
+                            label: _addingLiquid
+                                ? 'Reading from the device…'
+                                : 'Add Liquid from my Jade',
+                            icon: Icons.water_drop_rounded,
+                            onPressed: _addingLiquid ? null : _addLiquid,
+                            isFullWidth: phone,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  gap,
+                  // For other apps
+                  SectionCard(
+                    title: 'For other apps',
+                    subtitle:
+                        'Export for Sparrow, Specter, BlueWallet, Jade, SeedSigner',
+                    // Three intrinsic pills reflow into a ragged 2 + 1 grid on a
+                    // 360 dp screen. A phone stacks them full-width instead, one
+                    // action per line; the desktop keeps the Wrap.
+                    child: phone
+                        ? Column(
+                            children: [
+                              exportBtn(
+                                'Copy descriptor bundle',
+                                Icons.copy,
+                                _copyBundle,
+                              ),
+                              const SizedBox(height: AppSpacing.md),
+                              exportBtn(
+                                'Export JSON',
+                                Icons.download_outlined,
+                                _exportJson,
+                              ),
+                              const SizedBox(height: AppSpacing.md),
+                              exportBtn('Show QR', Icons.qr_code, _showQr),
+                            ],
+                          )
+                        : Wrap(
+                            spacing: AppSpacing.sm,
+                            runSpacing: AppSpacing.sm,
+                            children: [
+                              exportBtn(
+                                'Copy descriptor bundle',
+                                Icons.copy,
+                                _copyBundle,
+                              ),
+                              exportBtn(
+                                'Export JSON',
+                                Icons.download_outlined,
+                                _exportJson,
+                              ),
+                              exportBtn('Show QR', Icons.qr_code, _showQr),
+                            ],
+                          ),
                   ),
                 ],
-                gap,
-                // For other apps
-                SectionCard(
-                  title: 'For other apps',
-                  subtitle: 'Export for Sparrow, Specter, BlueWallet, Jade, SeedSigner',
-                  // Three intrinsic pills reflow into a ragged 2 + 1 grid on a
-                  // 360 dp screen. A phone stacks them full-width instead, one
-                  // action per line; the desktop keeps the Wrap.
-                  child: phone
-                      ? Column(
-                          children: [
-                            exportBtn(
-                                'Copy descriptor bundle', Icons.copy, _copyBundle),
-                            const SizedBox(height: AppSpacing.md),
-                            exportBtn('Export JSON', Icons.download_outlined,
-                                _exportJson),
-                            const SizedBox(height: AppSpacing.md),
-                            exportBtn('Show QR', Icons.qr_code, _showQr),
-                          ],
-                        )
-                      : Wrap(
-                          spacing: AppSpacing.sm,
-                          runSpacing: AppSpacing.sm,
-                          children: [
-                            exportBtn(
-                                'Copy descriptor bundle', Icons.copy, _copyBundle),
-                            exportBtn('Export JSON', Icons.download_outlined,
-                                _exportJson),
-                            exportBtn('Show QR', Icons.qr_code, _showQr),
-                          ],
-                        ),
-                ),
-              ],
-            ),
+              ),
       ),
     );
   }
-
 }
 
 // ── Load failure ──────────────────────────────────────────────────────────────
@@ -764,17 +855,24 @@ class _LoadError extends StatelessWidget {
               children: [
                 Icon(Icons.error_outline_rounded, size: 40, color: s.danger),
                 const SizedBox(height: AppSpacing.md),
-                Text('Could not load wallet details',
-                    style: AppTypography.sectionTitle),
+                Text(
+                  'Could not load wallet details',
+                  style: AppTypography.sectionTitle,
+                ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
                   message,
-                  style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+                  style: AppTypography.bodySmall.copyWith(
+                    color: s.inkSecondary,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 PrimaryButton(
-                    label: 'Retry', onPressed: onRetry, isFullWidth: phone),
+                  label: 'Retry',
+                  onPressed: onRetry,
+                  isFullWidth: phone,
+                ),
               ],
             ),
           ),
@@ -819,10 +917,14 @@ class _CosignerKeyRowState extends State<_CosignerKeyRow> {
                 child: Container(
                   padding: const EdgeInsets.all(AppSpacing.sm),
                   decoration: BoxDecoration(
-                    color: isDark ? AppColors.codeBoxBgDark : AppColors.codeBoxBg,
+                    color: isDark
+                        ? AppColors.codeBoxBgDark
+                        : AppColors.codeBoxBg,
                     borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
                     border: Border.all(
-                      color: isDark ? AppColors.codeBoxBorderDark : AppColors.codeBoxBorder,
+                      color: isDark
+                          ? AppColors.codeBoxBorderDark
+                          : AppColors.codeBoxBorder,
                     ),
                   ),
                   child: SelectableText(
@@ -836,7 +938,9 @@ class _CosignerKeyRowState extends State<_CosignerKeyRow> {
                 icon: Icon(_copied ? Icons.check : Icons.copy, size: 16),
                 onPressed: _copy,
                 tooltip: _copied ? 'Copied!' : 'Copy',
-                color: _copied ? AppColors.success : (isDark ? AppColors.textMutedDark : AppColors.textMuted),
+                color: _copied
+                    ? AppColors.success
+                    : (isDark ? AppColors.textMutedDark : AppColors.textMuted),
               ),
               IconButton(
                 icon: const Icon(Icons.qr_code_2_rounded, size: 16),

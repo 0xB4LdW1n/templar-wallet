@@ -74,8 +74,11 @@ class _TxConfirmDialog extends StatelessWidget {
               color: s.accentSoft,
               border: Border.all(color: s.accent, width: 1.5),
             ),
-            child: Icon(Icons.fact_check_outlined,
-                color: s.accent, size: phone ? 24 : 28),
+            child: Icon(
+              Icons.fact_check_outlined,
+              color: s.accent,
+              size: phone ? 24 : 28,
+            ),
           ),
         ),
         SizedBox(height: phone ? AppSpacing.md : AppSpacing.lg),
@@ -97,8 +100,9 @@ class _TxConfirmDialog extends StatelessWidget {
         Row(
           // The hint wraps to two or three lines in the narrow column; keep
           // the chip on the first of them.
-          crossAxisAlignment:
-              phone ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+          crossAxisAlignment: phone
+              ? CrossAxisAlignment.start
+              : CrossAxisAlignment.center,
           children: [
             TagChip(
               label: isLiquid ? 'LIQUID TESTNET' : 'BITCOIN TESTNET',
@@ -154,10 +158,7 @@ class _TxConfirmDialog extends StatelessWidget {
       // and a scroll view of its own.
       content: phone
           ? body
-          : SizedBox(
-              width: 520,
-              child: SingleChildScrollView(child: body),
-            ),
+          : SizedBox(width: 520, child: SingleChildScrollView(child: body)),
       actions: actions,
     );
   }

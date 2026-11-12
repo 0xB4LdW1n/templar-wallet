@@ -23,7 +23,9 @@ void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
 
   testWidgets('reads signed over total', (t) async {
-    await t.pumpWidget(host(const SignerDonut(signed: 2, total: 3, requiredCount: 2)));
+    await t.pumpWidget(
+      host(const SignerDonut(signed: 2, total: 3, requiredCount: 2)),
+    );
     await t.pumpAndSettle();
     expect(find.text('2/3'), findsOneWidget);
     expect(find.text('signed'), findsOneWidget);
@@ -31,11 +33,14 @@ void main() {
 
   testWidgets('announces the quorum to screen readers', (t) async {
     final handle = t.ensureSemantics();
-    await t.pumpWidget(host(const SignerDonut(signed: 1, total: 3, requiredCount: 2)));
+    await t.pumpWidget(
+      host(const SignerDonut(signed: 1, total: 3, requiredCount: 2)),
+    );
     await t.pumpAndSettle();
     expect(
       find.bySemanticsLabel(
-          '1 of 3 signers have signed; 2 signatures required'),
+        '1 of 3 signers have signed; 2 signatures required',
+      ),
       findsOneWidget,
     );
     handle.dispose();
@@ -43,7 +48,9 @@ void main() {
 
   testWidgets('singular quorum wording', (t) async {
     final handle = t.ensureSemantics();
-    await t.pumpWidget(host(const SignerDonut(signed: 0, total: 2, requiredCount: 1)));
+    await t.pumpWidget(
+      host(const SignerDonut(signed: 0, total: 2, requiredCount: 1)),
+    );
     await t.pumpAndSettle();
     expect(
       find.bySemanticsLabel('0 of 2 signers have signed; 1 signature required'),
@@ -60,7 +67,9 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('no signers draws nothing and does not divide by zero', (t) async {
+  testWidgets('no signers draws nothing and does not divide by zero', (
+    t,
+  ) async {
     await t.pumpWidget(host(const SignerDonut(signed: 0, total: 0)));
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
@@ -68,33 +77,45 @@ void main() {
     expect(find.text('signed'), findsNothing);
   });
 
-  testWidgets('a signature the inspection could not place is clamped', (t) async {
+  testWidgets('a signature the inspection could not place is clamped', (
+    t,
+  ) async {
     // sigsPresent can exceed the attributed slots; the ring must not overflow.
-    await t.pumpWidget(host(const SignerDonut(signed: 5, total: 2, requiredCount: 2)));
+    await t.pumpWidget(
+      host(const SignerDonut(signed: 5, total: 2, requiredCount: 2)),
+    );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(find.text('2/2'), findsOneWidget);
   });
 
   testWidgets('a quorum bigger than the ring paints anyway', (t) async {
-    await t.pumpWidget(host(const SignerDonut(signed: 0, total: 2, requiredCount: 9)));
+    await t.pumpWidget(
+      host(const SignerDonut(signed: 0, total: 2, requiredCount: 9)),
+    );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(find.text('0/2'), findsOneWidget);
   });
 
   testWidgets('single signer ring paints without a seam', (t) async {
-    await t.pumpWidget(host(const SignerDonut(signed: 1, total: 1, requiredCount: 1)));
+    await t.pumpWidget(
+      host(const SignerDonut(signed: 1, total: 1, requiredCount: 1)),
+    );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(find.text('1/1'), findsOneWidget);
   });
 
-  testWidgets('lands filled under reduced motion, without animating', (t) async {
-    await t.pumpWidget(host(
-      const SignerDonut(signed: 2, total: 3, requiredCount: 2),
-      reduceMotion: true,
-    ));
+  testWidgets('lands filled under reduced motion, without animating', (
+    t,
+  ) async {
+    await t.pumpWidget(
+      host(
+        const SignerDonut(signed: 2, total: 3, requiredCount: 2),
+        reduceMotion: true,
+      ),
+    );
     // No settle: the value must already be final on the first frame.
     await t.pump();
     expect(find.text('2/3'), findsOneWidget);
@@ -102,10 +123,12 @@ void main() {
   });
 
   testWidgets('dark theme paints', (t) async {
-    await t.pumpWidget(host(
-      const SignerDonut(signed: 3, total: 3, requiredCount: 2),
-      dark: true,
-    ));
+    await t.pumpWidget(
+      host(
+        const SignerDonut(signed: 3, total: 3, requiredCount: 2),
+        dark: true,
+      ),
+    );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(find.text('3/3'), findsOneWidget);
@@ -114,49 +137,63 @@ void main() {
   // ── SignerChart: the donut plus the legend and the quorum line ──────────
 
   testWidgets('chart legends the slots and states the quorum', (t) async {
-    await t.pumpWidget(host(
-      const SignerChart(signed: 1, total: 3, requiredCount: 2, collected: 1),
-    ));
+    await t.pumpWidget(
+      host(
+        const SignerChart(signed: 1, total: 3, requiredCount: 2, collected: 1),
+      ),
+    );
     await t.pumpAndSettle();
     expect(find.text('1/3'), findsOneWidget);
     expect(find.text('Signed (1)'), findsOneWidget);
     expect(find.text('Not signed (2)'), findsOneWidget);
     expect(
-      find.text('3 signers on this transaction · 1 of 2 required '
-          'signatures collected'),
+      find.text(
+        '3 signers on this transaction · 1 of 2 required '
+        'signatures collected',
+      ),
       findsOneWidget,
     );
   });
 
-  testWidgets('chart reports the collected count, not the filled slots',
-      (t) async {
+  testWidgets('chart reports the collected count, not the filled slots', (
+    t,
+  ) async {
     // A signature the inspection could not attribute to a named signer: the
     // ring shows the slots it can prove, the line reports what was counted.
-    await t.pumpWidget(host(
-      const SignerChart(signed: 1, total: 3, requiredCount: 2, collected: 2),
-    ));
+    await t.pumpWidget(
+      host(
+        const SignerChart(signed: 1, total: 3, requiredCount: 2, collected: 2),
+      ),
+    );
     await t.pumpAndSettle();
     expect(find.text('1/3'), findsOneWidget);
     expect(find.text('Signed (1)'), findsOneWidget);
     expect(
-      find.text('3 signers on this transaction · 2 of 2 required '
-          'signatures collected'),
+      find.text(
+        '3 signers on this transaction · 2 of 2 required '
+        'signatures collected',
+      ),
       findsOneWidget,
     );
   });
 
-  testWidgets('a caption replaces the signer wording for a slot ring',
-      (t) async {
+  testWidgets('a caption replaces the signer wording for a slot ring', (
+    t,
+  ) async {
     // The multisig hand-off sheets draw required-signature slots when the
     // PSBT names no signers — calling those "signers" would be a claim the
     // engine never made.
-    await t.pumpWidget(host(const SignerChart(
-      signed: 1,
-      total: 2,
-      requiredCount: 2,
-      collected: 1,
-      caption: '1 of 2 required signatures collected',
-    )));
+    await t.pumpWidget(
+      host(
+        const SignerChart(
+          signed: 1,
+          total: 2,
+          requiredCount: 2,
+          collected: 1,
+          caption: '1 of 2 required signatures collected',
+        ),
+      ),
+    );
     await t.pumpAndSettle();
     expect(find.text('1 of 2 required signatures collected'), findsOneWidget);
     expect(find.textContaining('signers on this transaction'), findsNothing);

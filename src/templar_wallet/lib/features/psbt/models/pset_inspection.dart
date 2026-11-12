@@ -14,13 +14,13 @@ class PsetRecipient {
   });
 
   factory PsetRecipient.fromJson(Map<String, dynamic> j) => PsetRecipient(
-        address: j['address'] as String?,
-        assetId: j['asset_id'] as String?,
-        ticker: j['ticker'] as String?,
-        amountSats: (j['amount_sats'] as num?)?.toInt(),
-        displayAmount: j['display_amount'] as String?,
-        unverified: j['unverified'] as bool? ?? false,
-      );
+    address: j['address'] as String?,
+    assetId: j['asset_id'] as String?,
+    ticker: j['ticker'] as String?,
+    amountSats: (j['amount_sats'] as num?)?.toInt(),
+    displayAmount: j['display_amount'] as String?,
+    unverified: j['unverified'] as bool? ?? false,
+  );
 
   final String? address;
   final String? assetId;
@@ -58,22 +58,22 @@ class PsetInput {
   });
 
   factory PsetInput.fromJson(Map<String, dynamic> j) => PsetInput(
-        index: (j['index'] as num?)?.toInt() ?? 0,
-        outpoint: j['outpoint'] as String? ?? '',
-        isOurs: j['is_ours'] as bool? ?? false,
-        scriptType: j['script_type'] as String? ?? 'unknown',
-        witnessScript: j['witness_script'] as String?,
-        witnessScriptAsm: j['witness_script_asm'] as String?,
-        assetId: j['asset_id'] as String?,
-        ticker: j['ticker'] as String?,
-        amountSats: (j['amount_sats'] as num?)?.toInt(),
-        displayAmount: j['display_amount'] as String?,
-        keyFingerprints:
-            (j['key_fingerprints'] as List<dynamic>? ?? const []).cast<String>(),
-        signedBy: (j['signed_by'] as List<dynamic>? ?? const []).cast<String>(),
-        threshold: (j['threshold'] as num?)?.toInt(),
-        unverified: j['unverified'] as bool? ?? false,
-      );
+    index: (j['index'] as num?)?.toInt() ?? 0,
+    outpoint: j['outpoint'] as String? ?? '',
+    isOurs: j['is_ours'] as bool? ?? false,
+    scriptType: j['script_type'] as String? ?? 'unknown',
+    witnessScript: j['witness_script'] as String?,
+    witnessScriptAsm: j['witness_script_asm'] as String?,
+    assetId: j['asset_id'] as String?,
+    ticker: j['ticker'] as String?,
+    amountSats: (j['amount_sats'] as num?)?.toInt(),
+    displayAmount: j['display_amount'] as String?,
+    keyFingerprints: (j['key_fingerprints'] as List<dynamic>? ?? const [])
+        .cast<String>(),
+    signedBy: (j['signed_by'] as List<dynamic>? ?? const []).cast<String>(),
+    threshold: (j['threshold'] as num?)?.toInt(),
+    unverified: j['unverified'] as bool? ?? false,
+  );
 
   final int index;
   final String outpoint;
@@ -122,16 +122,16 @@ class PsetOutput {
   });
 
   factory PsetOutput.fromJson(Map<String, dynamic> j) => PsetOutput(
-        index: (j['index'] as num?)?.toInt() ?? 0,
-        kind: j['kind'] as String? ?? 'external',
-        scriptType: j['script_type'] as String? ?? 'unknown',
-        address: j['address'] as String?,
-        assetId: j['asset_id'] as String?,
-        ticker: j['ticker'] as String?,
-        amountSats: (j['amount_sats'] as num?)?.toInt(),
-        displayAmount: j['display_amount'] as String?,
-        unverified: j['unverified'] as bool? ?? false,
-      );
+    index: (j['index'] as num?)?.toInt() ?? 0,
+    kind: j['kind'] as String? ?? 'external',
+    scriptType: j['script_type'] as String? ?? 'unknown',
+    address: j['address'] as String?,
+    assetId: j['asset_id'] as String?,
+    ticker: j['ticker'] as String?,
+    amountSats: (j['amount_sats'] as num?)?.toInt(),
+    displayAmount: j['display_amount'] as String?,
+    unverified: j['unverified'] as bool? ?? false,
+  );
 
   final int index;
 
@@ -155,11 +155,11 @@ class PsetOutput {
 
   /// Short label for the review screen.
   String get kindLabel => switch (kind) {
-        'own' => 'This wallet',
-        'escrow' => 'Escrow contract',
-        'fee' => 'Network fee',
-        _ => 'External',
-      };
+    'own' => 'This wallet',
+    'escrow' => 'Escrow contract',
+    'fee' => 'Network fee',
+    _ => 'External',
+  };
 }
 
 /// One asset's net effect on this wallet: what comes in (positive) or goes
@@ -174,17 +174,17 @@ class PsetNetChange {
   });
 
   factory PsetNetChange.fromJson(Map<String, dynamic> j) => PsetNetChange(
-        assetId: j['asset_id'] as String? ?? '',
-        ticker: j['ticker'] as String? ?? '',
-        amountSats: (j['amount_sats'] as num?)?.toInt() ?? 0,
-        displayAmount: j['display_amount'] as String? ?? '',
-      );
+    assetId: j['asset_id'] as String? ?? '',
+    ticker: j['ticker'] as String? ?? '',
+    amountSats: (j['amount_sats'] as num?)?.toInt() ?? 0,
+    displayAmount: j['display_amount'] as String? ?? '',
+  );
 
   final String assetId;
   final String ticker;
   final int amountSats;
 
-  /// Signed and formatted: `+9,950 tUSDt`, `-0.01000000 L-BTC`.
+  /// Signed and formatted: `+9,950 tUSDt`, `-0.01000000 LBTC`.
   final String displayAmount;
 
   bool get isIncoming => amountSats > 0;
@@ -211,31 +211,31 @@ class PsetInspection {
   });
 
   factory PsetInspection.fromJson(Map<String, dynamic> j) => PsetInspection(
-        feeSats: (j['fee_sats'] as num?)?.toInt() ?? 0,
-        feeDisplay: j['fee_display'] as String? ?? '',
-        recipients: (j['recipients'] as List<dynamic>? ?? const [])
-            .map((e) => PsetRecipient.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        sigsHave: (j['sigs_have'] as num?)?.toInt() ?? 0,
-        sigsNeeded: (j['sigs_needed'] as num?)?.toInt() ?? 1,
-        signersPresent:
-            (j['signers_present'] as List<dynamic>? ?? const []).cast<String>(),
-        signersMissing:
-            (j['signers_missing'] as List<dynamic>? ?? const []).cast<String>(),
-        canFinalize: j['can_finalize'] as bool? ?? false,
-        rawPset: j['raw_pset'] as String? ?? '',
-        network: j['network'] as String? ?? 'liquid-testnet',
-        inputs: (j['inputs'] as List<dynamic>? ?? const [])
-            .map((e) => PsetInput.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        outputs: (j['outputs'] as List<dynamic>? ?? const [])
-            .map((e) => PsetOutput.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        netChangeLines: (j['net_change_lines'] as List<dynamic>? ?? const [])
-            .map((e) => PsetNetChange.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        hasUnverifiedOutputs: j['has_unverified_outputs'] as bool? ?? false,
-      );
+    feeSats: (j['fee_sats'] as num?)?.toInt() ?? 0,
+    feeDisplay: j['fee_display'] as String? ?? '',
+    recipients: (j['recipients'] as List<dynamic>? ?? const [])
+        .map((e) => PsetRecipient.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    sigsHave: (j['sigs_have'] as num?)?.toInt() ?? 0,
+    sigsNeeded: (j['sigs_needed'] as num?)?.toInt() ?? 1,
+    signersPresent: (j['signers_present'] as List<dynamic>? ?? const [])
+        .cast<String>(),
+    signersMissing: (j['signers_missing'] as List<dynamic>? ?? const [])
+        .cast<String>(),
+    canFinalize: j['can_finalize'] as bool? ?? false,
+    rawPset: j['raw_pset'] as String? ?? '',
+    network: j['network'] as String? ?? 'liquid-testnet',
+    inputs: (j['inputs'] as List<dynamic>? ?? const [])
+        .map((e) => PsetInput.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    outputs: (j['outputs'] as List<dynamic>? ?? const [])
+        .map((e) => PsetOutput.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    netChangeLines: (j['net_change_lines'] as List<dynamic>? ?? const [])
+        .map((e) => PsetNetChange.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    hasUnverifiedOutputs: j['has_unverified_outputs'] as bool? ?? false,
+  );
 
   /// What this wallet gains or pays per asset, zeros left out. Empty when
   /// the PSET moves nothing of this wallet's (a proof of key, say).

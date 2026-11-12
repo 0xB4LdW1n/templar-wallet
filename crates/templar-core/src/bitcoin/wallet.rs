@@ -8,7 +8,8 @@ use bdk::bitcoin::blockdata::script::PushBytesBuf;
 use bdk::bitcoin::psbt::PartiallySignedTransaction;
 use bdk::bitcoin::{Address, Network, Transaction, Txid};
 use bdk::blockchain::electrum::ElectrumBlockchain;
-use bdk::blockchain::{Blockchain, ConfigurableBlockchain, ElectrumBlockchainConfig};
+use bdk::blockchain::{Blockchain, ConfigurableBlockchain, ElectrumBlockchainConfig, GetTx};
+use bdk::electrum_client::ElectrumApi;
 use bdk::keys::bip39::Mnemonic;
 use bdk::keys::{DerivableKey, ExtendedKey};
 use bdk::wallet::{AddressIndex, AddressInfo};
@@ -57,6 +58,41 @@ pub struct TxPreviewIo {
     pub amount_sats: u64,
     /// Output pays back to this wallet (change). Always `false` for inputs.
     pub is_change: bool,
+}
+
+/// What can be done with one unconfirmed Bitcoin transaction.
+///
+/// Capability discovery is offline: it only reads the synced BDK database.
+/// Building a CPFP may later fetch the parent's inputs when BDK does not know
+/// its fee (the normal case for an incoming transaction).
+#[derive(Debug, Clone)]
+pub struct FeeBumpCapabilities {
+    pub fee_sats: Option<u64>,
+    pub fee_rate: Option<f32>,
+    pub vsize: usize,
+    pub replaceable: bool,
+    pub can_rbf: bool,
+    pub can_cpfp: bool,
+    pub can_cancel: bool,
+}
+
+/// Unsigned replacement/child transaction plus the exact fee comparison the
+/// review UI must show before asking for a signature.
+#[derive(Debug, Clone)]
+pub struct FeeBumpPlan {
+    pub psbt: PartiallySignedTransaction,
+    /// `rbf` | `cpfp` | `cancel`.
+    pub method: &'static str,
+    pub old_fee_sats: u64,
+    pub old_fee_rate: f32,
+    pub old_vsize: usize,
+    /// Fee paid by the replacement or child transaction.
+    pub new_fee_sats: u64,
+    pub new_fee_rate: f32,
+    pub new_vsize_est: usize,
+    /// For CPFP this is the parent+child package rate; for RBF/cancel it is
+    /// the replacement's rate.
+    pub effective_fee_rate: f32,
 }
 
 /// Electrum server for Bitcoin testnet (default; override with
@@ -174,6 +210,49 @@ fn checked_fee_rate(fee_rate: f32) -> Result<FeeRate, TemplarError> {
         .into());
     }
     Ok(FeeRate::from_sat_per_vb(fee_rate))
+}
+
+fn require_higher_fee_rate(target: f32, current: f32) -> Result<(), TemplarError> {
+    if target <= current {
+        return Err(BitcoinError::TxBuildFailed(format!(
+            "New fee rate must be higher than the current {current:.2} sat/vB"
+        ))
+        .into());
+    }
+    Ok(())
+}
+
+fn vsize_from_target(fee_sats: u64, fee_rate: f32) -> usize {
+    ((fee_sats as f64 / fee_rate as f64).ceil() as usize).max(1)
+}
+
+/// Resolve an incoming transaction's fee from its prevouts. BDK cannot know
+/// this from a wallet-only sync because the sender's inputs are foreign. This
+/// network lookup runs only when the user opens a CPFP preview.
+fn transaction_fee_from_electrum(tx: &Transaction) -> Result<u64, TemplarError> {
+    let chain = make_electrum_blockchain()?;
+    let mut input_total = 0u64;
+    for input in &tx.input {
+        let previous = chain
+            .transaction_get(&input.previous_output.txid)
+            .map_err(|e| BitcoinError::SyncFailed(format!("Parent fee lookup failed: {e}")))?;
+        let output = previous
+            .output
+            .get(input.previous_output.vout as usize)
+            .ok_or_else(|| {
+                BitcoinError::SyncFailed(format!(
+                    "Parent input {} points outside its previous transaction",
+                    input.previous_output
+                ))
+            })?;
+        input_total = input_total
+            .checked_add(output.value)
+            .ok_or_else(|| BitcoinError::SyncFailed("Parent input amount overflow".into()))?;
+    }
+    let output_total: u64 = tx.output.iter().map(|o| o.value).sum();
+    input_total.checked_sub(output_total).ok_or_else(|| {
+        BitcoinError::SyncFailed("Parent transaction outputs exceed its inputs".into()).into()
+    })
 }
 
 fn reject_absurd_fee(
@@ -928,6 +1007,15 @@ impl WalletManager {
         Ok(tx.txid())
     }
 
+    /// Fetches an arbitrary testnet transaction directly from the configured
+    /// Electrum server. Cross-chain swaps use this to verify the counterparty's
+    /// HTLC funding output instead of trusting localhost coordinator state.
+    pub fn fetch_transaction(&self, txid: &Txid) -> Result<Option<Transaction>, TemplarError> {
+        make_electrum_blockchain()?
+            .get_tx(txid)
+            .map_err(|e| BitcoinError::SyncFailed(format!("Fetch transaction: {e}")).into())
+    }
+
     /// Lists all wallet transactions.
     ///
     /// Wrapped in `catch_unwind` to prevent RefCell panics from crashing the app.
@@ -938,6 +1026,329 @@ impl WalletManager {
                 BitcoinError::SyncFailed(format!("List transactions failed: {e}")).into()
             })
         })
+    }
+
+    /// Offline capability check for an unconfirmed Bitcoin transaction.
+    pub fn fee_bump_capabilities(
+        &self,
+        txid: Txid,
+        frozen: &BTreeSet<String>,
+    ) -> Result<FeeBumpCapabilities, TemplarError> {
+        let details = self
+            .wallet
+            .get_tx(&txid, true)
+            .map_err(|e| BitcoinError::SyncFailed(format!("Transaction lookup failed: {e}")))?
+            .ok_or_else(|| BitcoinError::TxBuildFailed("Transaction not found".into()))?;
+        let tx = details
+            .transaction
+            .as_ref()
+            .ok_or_else(|| BitcoinError::TxBuildFailed("Raw transaction unavailable".into()))?;
+        let vsize = tx.vsize();
+        let fee_rate = details
+            .fee
+            .filter(|_| vsize > 0)
+            .map(|fee| fee as f32 / vsize as f32);
+        let pending = details.confirmation_time.is_none();
+        let replaceable = tx
+            .input
+            .iter()
+            .any(|i| i.sequence.to_consensus_u32() <= 0xFFFF_FFFD);
+        // `sent > 0` means the wallet owns at least one input. An incoming
+        // transaction may signal RBF, but only its sender can replace it.
+        let owns_inputs = details.sent > 0;
+        let has_spendable_child = self
+            .wallet
+            .list_unspent()
+            .map_err(|e| BitcoinError::SyncFailed(format!("List unspent failed: {e}")))?
+            .into_iter()
+            .any(|u| u.outpoint.txid == txid && !frozen.contains(&u.outpoint.to_string()));
+
+        Ok(FeeBumpCapabilities {
+            fee_sats: details.fee,
+            fee_rate,
+            vsize,
+            replaceable,
+            can_rbf: pending && replaceable && owns_inputs && details.fee.is_some(),
+            can_cpfp: pending && has_spendable_child,
+            can_cancel: pending && replaceable && owns_inputs && details.fee.is_some(),
+        })
+    }
+
+    /// Build an ordinary BIP-125 replacement preserving recipients and
+    /// raising the fee. BDK enforces the replacement policy and will shrink
+    /// change or add an unfrozen wallet input when required.
+    pub fn create_rbf_bump(
+        &self,
+        txid: Txid,
+        target_fee_rate: f32,
+        frozen: &BTreeSet<String>,
+    ) -> Result<FeeBumpPlan, TemplarError> {
+        let target = checked_fee_rate(target_fee_rate)?;
+        let caps = self.fee_bump_capabilities(txid, frozen)?;
+        if !caps.can_rbf {
+            return Err(BitcoinError::TxBuildFailed(
+                "This transaction cannot be fee-bumped with RBF".into(),
+            )
+            .into());
+        }
+        let old_fee = caps.fee_sats.expect("can_rbf requires a known fee");
+        let old_rate = caps.fee_rate.expect("can_rbf requires a known fee rate");
+        require_higher_fee_rate(target_fee_rate, old_rate)?;
+
+        let mut builder = self
+            .wallet
+            .build_fee_bump(txid)
+            .map_err(|e| BitcoinError::TxBuildFailed(format!("RBF unavailable: {e}")))?;
+        builder.fee_rate(target);
+        if !frozen.is_empty() {
+            builder.unspendable(Self::parse_outpoints(
+                &frozen.iter().cloned().collect::<Vec<_>>(),
+            )?);
+        }
+        let (psbt, details) = builder.finish().map_err(|e| build_error(e, frozen))?;
+        refuse_frozen_inputs(&psbt, frozen)?;
+        reject_absurd_fee(&psbt, details.fee)?;
+        let new_fee = details
+            .fee
+            .ok_or_else(|| BitcoinError::TxBuildFailed("Replacement fee unavailable".into()))?;
+        let new_vsize = vsize_from_target(new_fee, target_fee_rate);
+
+        Ok(FeeBumpPlan {
+            psbt,
+            method: "rbf",
+            old_fee_sats: old_fee,
+            old_fee_rate: old_rate,
+            old_vsize: caps.vsize,
+            new_fee_sats: new_fee,
+            new_fee_rate: new_fee as f32 / new_vsize as f32,
+            new_vsize_est: new_vsize,
+            effective_fee_rate: new_fee as f32 / new_vsize as f32,
+        })
+    }
+
+    /// Build a BIP-125 cancellation: spend every original wallet input back
+    /// to one internal address. It is a race, not a deletion; whichever valid
+    /// transaction confirms first wins.
+    pub fn create_rbf_cancel(
+        &self,
+        txid: Txid,
+        target_fee_rate: f32,
+        frozen: &BTreeSet<String>,
+    ) -> Result<FeeBumpPlan, TemplarError> {
+        checked_fee_rate(target_fee_rate)?;
+        let caps = self.fee_bump_capabilities(txid, frozen)?;
+        if !caps.can_cancel {
+            return Err(BitcoinError::TxBuildFailed(
+                "This transaction cannot be cancelled with RBF".into(),
+            )
+            .into());
+        }
+        let old_fee = caps.fee_sats.expect("can_cancel requires a known fee");
+        let old_rate = caps.fee_rate.expect("can_cancel requires a known fee rate");
+        require_higher_fee_rate(target_fee_rate, old_rate)?;
+        let details = self
+            .wallet
+            .get_tx(&txid, true)
+            .map_err(|e| BitcoinError::SyncFailed(format!("Transaction lookup failed: {e}")))?
+            .ok_or_else(|| BitcoinError::TxBuildFailed("Transaction not found".into()))?;
+        let original = details
+            .transaction
+            .ok_or_else(|| BitcoinError::TxBuildFailed("Raw transaction unavailable".into()))?;
+        let inputs: Vec<_> = original.input.iter().map(|i| i.previous_output).collect();
+        for outpoint in &inputs {
+            let coin = self
+                .wallet
+                .get_utxo(*outpoint)
+                .map_err(|e| BitcoinError::TxBuildFailed(e.to_string()))?
+                .ok_or_else(|| {
+                    BitcoinError::TxBuildFailed(format!(
+                        "Cannot cancel: input {outpoint} is not controlled by this wallet"
+                    ))
+                })?;
+            if !self
+                .wallet
+                .is_mine(&coin.txout.script_pubkey)
+                .unwrap_or(false)
+            {
+                return Err(BitcoinError::TxBuildFailed(format!(
+                    "Cannot cancel: input {outpoint} is not controlled by this wallet"
+                ))
+                .into());
+            }
+        }
+        let input_names: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+        if let Some(op) = first_frozen(&input_names, frozen) {
+            return Err(BitcoinError::FrozenCoin(op).into());
+        }
+        let destination = self
+            .wallet
+            .get_internal_address(AddressIndex::LastUnused)
+            .map_err(|e| BitcoinError::TxBuildFailed(format!("Change address failed: {e}")))?
+            .script_pubkey();
+
+        // First pass learns the signed vsize BDK prices. The final absolute
+        // fee also satisfies the default 1 sat/vB incremental relay policy,
+        // even when the cancellation is smaller than the original payment.
+        let (first, first_fee) = self.build_selected_drain(
+            &inputs,
+            destination.clone(),
+            Some(target_fee_rate),
+            None,
+            frozen,
+        )?;
+        let estimate = vsize_from_target(first_fee, target_fee_rate);
+        let incremental_floor = old_fee.saturating_add(estimate as u64);
+        let requested = ((target_fee_rate as f64) * estimate as f64).ceil() as u64;
+        let final_fee = requested.max(incremental_floor);
+        let (psbt, new_fee) = if final_fee > first_fee {
+            self.build_selected_drain(&inputs, destination, None, Some(final_fee), frozen)?
+        } else {
+            (first, first_fee)
+        };
+        let actual_rate = new_fee as f32 / estimate as f32;
+
+        Ok(FeeBumpPlan {
+            psbt,
+            method: "cancel",
+            old_fee_sats: old_fee,
+            old_fee_rate: old_rate,
+            old_vsize: caps.vsize,
+            new_fee_sats: new_fee,
+            new_fee_rate: actual_rate,
+            new_vsize_est: estimate,
+            effective_fee_rate: actual_rate,
+        })
+    }
+
+    /// Build a child transaction paying enough fee for the parent+child
+    /// package to reach `target_fee_rate`.
+    pub fn create_cpfp_bump(
+        &self,
+        txid: Txid,
+        target_fee_rate: f32,
+        frozen: &BTreeSet<String>,
+    ) -> Result<FeeBumpPlan, TemplarError> {
+        checked_fee_rate(target_fee_rate)?;
+        let caps = self.fee_bump_capabilities(txid, frozen)?;
+        if !caps.can_cpfp {
+            return Err(BitcoinError::TxBuildFailed(
+                "CPFP needs an unspent output from this transaction".into(),
+            )
+            .into());
+        }
+        let details = self
+            .wallet
+            .get_tx(&txid, true)
+            .map_err(|e| BitcoinError::SyncFailed(format!("Transaction lookup failed: {e}")))?
+            .ok_or_else(|| BitcoinError::TxBuildFailed("Transaction not found".into()))?;
+        let parent = details
+            .transaction
+            .as_ref()
+            .ok_or_else(|| BitcoinError::TxBuildFailed("Raw transaction unavailable".into()))?;
+        let parent_fee = match details.fee {
+            Some(fee) => fee,
+            None => transaction_fee_from_electrum(parent)?,
+        };
+        let old_rate = parent_fee as f32 / caps.vsize as f32;
+        require_higher_fee_rate(target_fee_rate, old_rate)?;
+
+        // Largest child output gives the package the best chance of covering
+        // its fee without consuming another independent wallet coin.
+        let coin = self
+            .wallet
+            .list_unspent()
+            .map_err(|e| BitcoinError::SyncFailed(format!("List unspent failed: {e}")))?
+            .into_iter()
+            .filter(|u| u.outpoint.txid == txid && !frozen.contains(&u.outpoint.to_string()))
+            .max_by_key(|u| u.txout.value)
+            .ok_or_else(|| {
+                BitcoinError::TxBuildFailed(
+                    "CPFP needs an unfrozen, unspent output from this transaction".into(),
+                )
+            })?;
+        let destination = self
+            .wallet
+            .get_internal_address(AddressIndex::LastUnused)
+            .map_err(|e| BitcoinError::TxBuildFailed(format!("Change address failed: {e}")))?
+            .script_pubkey();
+        let inputs = [coin.outpoint];
+
+        // First pass estimates the signed child size. Second pass prices the
+        // whole package, not just the child, which is the point of CPFP.
+        let (first, first_fee) = self.build_selected_drain(
+            &inputs,
+            destination.clone(),
+            Some(target_fee_rate),
+            None,
+            frozen,
+        )?;
+        let child_vsize = vsize_from_target(first_fee, target_fee_rate);
+        let package_vsize = caps.vsize.saturating_add(child_vsize);
+        let package_target = ((target_fee_rate as f64) * package_vsize as f64).ceil() as u64;
+        let required_child_fee = package_target
+            .saturating_sub(parent_fee)
+            .max(((MIN_FEE_RATE_SAT_VB as f64) * child_vsize as f64).ceil() as u64);
+        let (psbt, child_fee) = if required_child_fee != first_fee {
+            self.build_selected_drain(&inputs, destination, None, Some(required_child_fee), frozen)?
+        } else {
+            (first, first_fee)
+        };
+        let child_rate = child_fee as f32 / child_vsize as f32;
+        let package_rate = (parent_fee + child_fee) as f32 / package_vsize as f32;
+
+        Ok(FeeBumpPlan {
+            psbt,
+            method: "cpfp",
+            old_fee_sats: parent_fee,
+            old_fee_rate: old_rate,
+            old_vsize: caps.vsize,
+            new_fee_sats: child_fee,
+            new_fee_rate: child_rate,
+            new_vsize_est: child_vsize,
+            effective_fee_rate: package_rate,
+        })
+    }
+
+    fn build_selected_drain(
+        &self,
+        inputs: &[bdk::bitcoin::OutPoint],
+        destination: bdk::bitcoin::ScriptBuf,
+        fee_rate: Option<f32>,
+        absolute_fee: Option<u64>,
+        frozen: &BTreeSet<String>,
+    ) -> Result<(PartiallySignedTransaction, u64), TemplarError> {
+        let names: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+        if let Some(op) = first_frozen(&names, frozen) {
+            return Err(BitcoinError::FrozenCoin(op).into());
+        }
+        let mut builder = self.wallet.build_tx();
+        builder
+            .add_utxos(inputs)
+            .map_err(|e| BitcoinError::TxBuildFailed(format!("UTXO selection failed: {e}")))?;
+        builder
+            .manually_selected_only()
+            .drain_to(destination)
+            .enable_rbf();
+        match (fee_rate, absolute_fee) {
+            (Some(rate), None) => {
+                builder.fee_rate(checked_fee_rate(rate)?);
+            }
+            (None, Some(fee)) => {
+                builder.fee_absolute(fee);
+            }
+            _ => {
+                return Err(
+                    BitcoinError::TxBuildFailed("Choose exactly one fee policy".into()).into(),
+                )
+            }
+        }
+        let (psbt, details) = builder.finish().map_err(|e| build_error(e, frozen))?;
+        refuse_frozen_inputs(&psbt, frozen)?;
+        reject_absurd_fee(&psbt, details.fee)?;
+        let fee = details
+            .fee
+            .ok_or_else(|| BitcoinError::TxBuildFailed("Transaction fee unavailable".into()))?;
+        Ok((psbt, fee))
     }
 
     /// Returns the current sync tip block height, or 0 if never synced.
@@ -1246,8 +1657,164 @@ mod tests {
             .collect()
     }
 
+    /// A wallet whose database contains one unconfirmed outgoing RBF payment
+    /// and its unspent change output. No network required.
+    fn pending_outgoing_wallet() -> (WalletManager, Txid, bdk::bitcoin::ScriptBuf) {
+        use bdk::database::BatchOperations;
+        use bdk::{LocalUtxo, TransactionDetails};
+
+        let (mgr, funding_txid) = funded_wallet(&[100_000]);
+        let payee = Address::from_str(PAYEE)
+            .unwrap()
+            .require_network(Network::Testnet)
+            .unwrap()
+            .script_pubkey();
+        let mut psbt = mgr
+            .create_tx_multi(
+                &[(PAYEE.into(), 40_000, false)],
+                1.0,
+                None,
+                None,
+                &BTreeSet::new(),
+            )
+            .unwrap();
+        assert!(mgr.sign(&mut psbt).unwrap());
+        let tx = psbt.extract_tx();
+        let txid = tx.txid();
+        let received: u64 = tx
+            .output
+            .iter()
+            .filter(|o| mgr.wallet.is_mine(&o.script_pubkey).unwrap())
+            .map(|o| o.value)
+            .sum();
+        let fee = 100_000 - tx.output.iter().map(|o| o.value).sum::<u64>();
+        let db_ref = mgr.wallet.database();
+        let mut db: sled::Tree = (*db_ref).clone();
+        drop(db_ref);
+        db.set_tx(&TransactionDetails {
+            transaction: Some(tx.clone()),
+            txid,
+            received,
+            sent: 100_000,
+            fee: Some(fee),
+            confirmation_time: None,
+        })
+        .unwrap();
+        db.set_utxo(&LocalUtxo {
+            outpoint: bdk::bitcoin::OutPoint::new(funding_txid, 0),
+            txout: bdk::bitcoin::TxOut {
+                value: 100_000,
+                script_pubkey: mgr
+                    .wallet
+                    .get_address(AddressIndex::Peek(0))
+                    .unwrap()
+                    .script_pubkey(),
+            },
+            keychain: KeychainKind::External,
+            is_spent: true,
+        })
+        .unwrap();
+        for (vout, output) in tx.output.iter().enumerate() {
+            if mgr.wallet.is_mine(&output.script_pubkey).unwrap() {
+                db.set_utxo(&LocalUtxo {
+                    outpoint: bdk::bitcoin::OutPoint::new(txid, vout as u32),
+                    txout: output.clone(),
+                    keychain: KeychainKind::Internal,
+                    is_spent: false,
+                })
+                .unwrap();
+            }
+        }
+        (mgr, txid, payee)
+    }
+
     /// BIP173 test vector, valid on testnet.
     const PAYEE: &str = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
+
+    #[test]
+    fn pending_outgoing_exposes_rbf_cancel_and_cpfp() {
+        let (mgr, txid, _) = pending_outgoing_wallet();
+        let caps = mgr.fee_bump_capabilities(txid, &BTreeSet::new()).unwrap();
+        assert!(caps.replaceable);
+        assert!(caps.can_rbf);
+        assert!(caps.can_cancel);
+        assert!(caps.can_cpfp);
+        assert!(caps.fee_rate.unwrap() >= 0.9);
+    }
+
+    #[test]
+    fn rbf_preserves_payment_and_increases_fee() {
+        let (mgr, txid, payee) = pending_outgoing_wallet();
+        let plan = mgr.create_rbf_bump(txid, 8.0, &BTreeSet::new()).unwrap();
+        assert_eq!(plan.method, "rbf");
+        assert!(plan.new_fee_sats > plan.old_fee_sats);
+        assert!(plan.effective_fee_rate > plan.old_fee_rate);
+        assert!(plan
+            .psbt
+            .unsigned_tx
+            .output
+            .iter()
+            .any(|o| o.script_pubkey == payee && o.value == 40_000));
+    }
+
+    #[test]
+    fn cancel_reuses_inputs_and_pays_only_the_wallet() {
+        let (mgr, txid, payee) = pending_outgoing_wallet();
+        let original = mgr.wallet.get_tx(&txid, true).unwrap().unwrap();
+        let original_inputs: BTreeSet<_> = original
+            .transaction
+            .unwrap()
+            .input
+            .into_iter()
+            .map(|i| i.previous_output)
+            .collect();
+        let plan = mgr.create_rbf_cancel(txid, 8.0, &BTreeSet::new()).unwrap();
+        let replacement_inputs: BTreeSet<_> = plan
+            .psbt
+            .unsigned_tx
+            .input
+            .iter()
+            .map(|i| i.previous_output)
+            .collect();
+        assert_eq!(replacement_inputs, original_inputs);
+        assert!(plan.new_fee_sats > plan.old_fee_sats);
+        assert!(plan
+            .psbt
+            .unsigned_tx
+            .output
+            .iter()
+            .all(|o| mgr.wallet.is_mine(&o.script_pubkey).unwrap()));
+        assert!(!plan
+            .psbt
+            .unsigned_tx
+            .output
+            .iter()
+            .any(|o| o.script_pubkey == payee));
+    }
+
+    #[test]
+    fn cpfp_spends_parent_change_and_prices_the_package() {
+        let (mgr, txid, _) = pending_outgoing_wallet();
+        let plan = mgr.create_cpfp_bump(txid, 8.0, &BTreeSet::new()).unwrap();
+        assert_eq!(plan.method, "cpfp");
+        assert!(plan
+            .psbt
+            .unsigned_tx
+            .input
+            .iter()
+            .all(|i| i.previous_output.txid == txid));
+        assert!(plan.effective_fee_rate >= 7.9, "{plan:?}");
+    }
+
+    #[test]
+    fn fee_bump_rejects_a_rate_not_above_the_parent() {
+        let (mgr, txid, _) = pending_outgoing_wallet();
+        let err = mgr
+            .create_rbf_bump(txid, 1.0, &BTreeSet::new())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("must be higher"), "{err}");
+    }
 
     #[test]
     fn automatic_selection_and_max_never_spend_a_frozen_coin() {

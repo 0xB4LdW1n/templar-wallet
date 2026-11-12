@@ -3,8 +3,10 @@
 // publish the proposal.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
@@ -32,11 +34,15 @@ import '../../shared/widgets/glass_dialog.dart';
 Future<MyOffer?> openMakeOfferFlow(BuildContext context) {
   // Root navigator on a phone: the wizard must cover the shell (header and
   // carousel), not render inside the shell's page slot.
-  return Navigator.of(context, rootNavigator: AppLayout.isPhone(context))
-      .push<MyOffer>(MaterialPageRoute(
-    fullscreenDialog: true,
-    builder: (_) => const MakeOfferFlowScreen(),
-  ));
+  return Navigator.of(
+    context,
+    rootNavigator: AppLayout.isPhone(context),
+  ).push<MyOffer>(
+    MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => const MakeOfferFlowScreen(),
+    ),
+  );
 }
 
 class MakeOfferFlowScreen extends StatefulWidget {
@@ -103,10 +109,12 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
       // self-send lands as unconfirmed and must show up here right away (LWK
       // can spend unconfirmed outputs).
       final spendable = all
-          .where((u) =>
-              u.state == UtxoState.available ||
-              u.state == UtxoState.dusty ||
-              u.state == UtxoState.unconfirmed)
+          .where(
+            (u) =>
+                u.state == UtxoState.available ||
+                u.state == UtxoState.dusty ||
+                u.state == UtxoState.unconfirmed,
+          )
           .toList();
       if (!mounted) return;
       setState(() {
@@ -130,11 +138,10 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
       final data = await _bridge.getWalletSummary(walletId);
       if (!mounted) return;
       setState(() {
-        // Liquid assets only — L-BTC first, then tokens.
+        // Liquid assets only — LBTC first, then tokens.
         _assets = [
           ...data.assets.where((a) => a.ticker == 'LBTC'),
-          ...data.assets
-              .where((a) => a.ticker != 'BTC' && a.ticker != 'LBTC'),
+          ...data.assets.where((a) => a.ticker != 'BTC' && a.ticker != 'LBTC'),
         ];
       });
     } catch (_) {
@@ -159,13 +166,13 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
     final a = _wantAsset;
     if (a == null) return 'units';
     return a.ticker == 'LBTC'
-        ? 'L-BTC'
+        ? 'LBTC'
         : AssetRegistryService.instance.displayTicker(a);
   }
 
   bool get _wantIsLbtc => _wantAsset?.ticker == 'LBTC';
 
-  /// L-BTC entered in BTC (8 decimals); tokens and raw asset ids in base units.
+  /// LBTC uses 8 decimals; tokens and raw asset ids use base units.
   int? get _wantAmountSats {
     final v = double.tryParse(_wantAmountCtrl.text.trim());
     // isFinite: tryParse accepts "NaN"/"Infinity", and .round() throws on them.
@@ -176,15 +183,15 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
   String get _wantAmountDisplay {
     final sats = _wantAmountSats ?? 0;
     return _wantIsLbtc
-        ? '${(sats / 1e8).toStringAsFixed(8)} L-BTC'
+        ? '${(sats / 1e8).toStringAsFixed(8)} LBTC'
         : '$sats $_wantTicker';
   }
 
   bool get _canContinue => switch (_step) {
-        0 => _selectedUtxo != null,
-        1 => _wantAssetIdResolved.length == 64 && _wantAmountSats != null,
-        _ => !_publishing,
-      };
+    0 => _selectedUtxo != null,
+    1 => _wantAssetIdResolved.length == 64 && _wantAmountSats != null,
+    _ => !_publishing,
+  };
 
   // ── actions ─────────────────────────────────────────────────────────────────
 
@@ -258,11 +265,16 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
       _error = null;
     });
     try {
-      final offer =
-          await _bridge.swapMake(walletId, utxo.outpoint, wantAssetId, wantSats);
+      final offer = await _bridge.swapMake(
+        walletId,
+        utxo.outpoint,
+        wantAssetId,
+        wantSats,
+      );
       if (!mounted) return;
       setState(() => _publishing = false);
-      await showAppDialog<void>(context,
+      await showAppDialog<void>(
+        context,
         barrierDismissible: false,
         builder: (_) => _OfferCreatedDialog(offer: offer),
       );
@@ -296,9 +308,9 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
       onBack: _step == 0
           ? null
           : () => setState(() {
-                _step -= 1;
-                _error = null;
-              }),
+              _step -= 1;
+              _error = null;
+            }),
       onCancel: _publishing ? null : () => Navigator.of(context).pop(),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -327,9 +339,9 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
               icon: Icons.arrow_forward,
               onPressed: _canContinue
                   ? () => setState(() {
-                        _step += 1;
-                        _error = null;
-                      })
+                      _step += 1;
+                      _error = null;
+                    })
                   : null,
             )
           else
@@ -349,7 +361,8 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
     final s = AppScheme.of(context);
     return [
       const InfoBanner(
-        message: 'LiquiDEX v0 offers the whole coin — the selected UTXO\'s '
+        message:
+            'LiquiDEX v0 offers the whole coin — the selected UTXO\'s '
             'full amount is what the taker receives. Pick exactly one coin.',
       ),
       const SizedBox(height: AppSpacing.lg),
@@ -362,23 +375,26 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
                 child: Center(child: CircularProgressIndicator()),
               )
             : _utxos.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.all(AppSpacing.lg),
-                    child: Text('No spendable Liquid coins found.',
-                        style: AppTypography.caption),
-                  )
-                // Pending stays pickable here: LWK spends unconfirmed
-                // outputs, and the exact coin just created is one.
-                : UtxoPicker(
-                    utxos: _utxos,
-                    onToggle: _toggleUtxo,
-                    allowPending: true,
-                  ),
+            ? Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Text(
+                  'No spendable Liquid coins found.',
+                  style: AppTypography.caption,
+                ),
+              )
+            // Pending stays pickable here: LWK spends unconfirmed
+            // outputs, and the exact coin just created is one.
+            : UtxoPicker(
+                utxos: _utxos,
+                onToggle: _toggleUtxo,
+                allowPending: true,
+              ),
       ),
       if (_coinCreated) ...[
         const SizedBox(height: AppSpacing.md),
         const InfoBanner(
-          message: 'Coin created — once the sync finishes it appears above; '
+          message:
+              'Coin created — once the sync finishes it appears above; '
               'pick it to offer the exact amount.',
         ),
       ],
@@ -405,7 +421,8 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
         const SizedBox(height: AppSpacing.sm),
         FormCard(
           title: 'Create exact coin',
-          subtitle: 'A self-send that splits off a coin of exactly this '
+          subtitle:
+              'A self-send that splits off a coin of exactly this '
               'amount (a small network fee applies)',
           child: Column(
             children: [
@@ -421,10 +438,13 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
                         children: [
                           AssetLogo(ticker: a.ticker, size: 18),
                           const SizedBox(width: AppSpacing.sm),
-                          Text(a.ticker == 'LBTC'
-                              ? 'L-BTC'
-                              : AssetRegistryService.instance
-                                  .displayTicker(a)),
+                          Text(
+                            a.ticker == 'LBTC'
+                                ? 'LBTC'
+                                : AssetRegistryService.instance.displayTicker(
+                                    a,
+                                  ),
+                          ),
                           const SizedBox(width: AppSpacing.sm),
                           Text(a.displayAmount, style: AppTypography.caption),
                         ],
@@ -436,12 +456,14 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
               const SizedBox(height: AppSpacing.md),
               TextField(
                 controller: _exactAmountCtrl,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 style: AppTypography.numeric,
                 decoration: InputDecoration(
                   labelText: 'Amount',
-                  hintText: _assets
+                  hintText:
+                      _assets
                               .where((a) => a.assetId == _exactAssetId)
                               .firstOrNull
                               ?.ticker ==
@@ -457,7 +479,8 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
                 child: PrimaryButton(
                   label: _preparing ? 'Creating…' : 'Create coin',
                   icon: Icons.add_circle_outline,
-                  onPressed: (_exactAssetId != null &&
+                  onPressed:
+                      (_exactAssetId != null &&
                           _exactAmountCtrl.text.trim().isNotEmpty &&
                           !_preparing)
                       ? _createExactCoin
@@ -493,9 +516,11 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
                       children: [
                         AssetLogo(ticker: a.ticker, size: 18),
                         const SizedBox(width: AppSpacing.sm),
-                        Text(a.ticker == 'LBTC'
-                            ? 'L-BTC'
-                            : AssetRegistryService.instance.displayTicker(a)),
+                        Text(
+                          a.ticker == 'LBTC'
+                              ? 'LBTC'
+                              : AssetRegistryService.instance.displayTicker(a),
+                        ),
                       ],
                     ),
                   ),
@@ -531,8 +556,9 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
             const SizedBox(height: AppSpacing.md),
             TextField(
               controller: _wantAmountCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               style: AppTypography.numeric,
               decoration: InputDecoration(
                 labelText: 'Amount',
@@ -547,7 +573,7 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
       const SizedBox(height: AppSpacing.md),
       Text(
         _wantIsLbtc
-            ? 'L-BTC amounts are entered in L-BTC (8 decimals).'
+            ? 'LBTC amounts use 8 decimals.'
             : 'Token amounts are entered in base units (satoshi-like).',
         style: AppTypography.caption.copyWith(color: s.inkSecondary),
       ),
@@ -578,14 +604,17 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
                 AssetLogo(ticker: utxo.ticker ?? 'LBTC', size: 22),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
-                  child: Text('You offer (whole coin)',
-                      style:
-                          AppTypography.body.copyWith(color: s.inkSecondary)),
+                  child: Text(
+                    'You offer (whole coin)',
+                    style: AppTypography.body.copyWith(color: s.inkSecondary),
+                  ),
                 ),
                 Text(
                   utxo.displayAmount,
-                  style: AppTypography.numericLarge
-                      .copyWith(fontSize: 18, color: AppColors.accent),
+                  style: AppTypography.numericLarge.copyWith(
+                    fontSize: 18,
+                    color: AppColors.accent,
+                  ),
                 ),
               ],
             ),
@@ -595,12 +624,15 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
                 AssetLogo(ticker: _wantAsset?.ticker ?? '?', size: 22),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
-                  child: Text('You want',
-                      style:
-                          AppTypography.body.copyWith(color: s.inkSecondary)),
+                  child: Text(
+                    'You want',
+                    style: AppTypography.body.copyWith(color: s.inkSecondary),
+                  ),
                 ),
-                Text(_wantAmountDisplay,
-                    style: AppTypography.numericSmall.copyWith(color: s.ink)),
+                Text(
+                  _wantAmountDisplay,
+                  style: AppTypography.numericSmall.copyWith(color: s.ink),
+                ),
               ],
             ),
           ],
@@ -618,7 +650,8 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
       ),
       const SizedBox(height: AppSpacing.lg),
       const InfoBanner(
-        message: 'Signing creates a standing proposal: it stays valid until '
+        message:
+            'Signing creates a standing proposal: it stays valid until '
             'you spend (or cancel) the offered coin, and anyone holding it '
             'can complete the swap at these exact terms. No fee is paid now — '
             'the taker pays the network fee.',
@@ -629,7 +662,7 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
 
 // ── Offer created dialog ──────────────────────────────────────────────────────
 
-class _OfferCreatedDialog extends StatelessWidget {
+class _OfferCreatedDialog extends StatefulWidget {
   const _OfferCreatedDialog({required this.offer});
 
   final MyOffer offer;
@@ -638,8 +671,44 @@ class _OfferCreatedDialog extends StatelessWidget {
   static const _qrMaxLen = 1200;
 
   @override
+  State<_OfferCreatedDialog> createState() => _OfferCreatedDialogState();
+}
+
+class _OfferCreatedDialogState extends State<_OfferCreatedDialog> {
+  bool _publishing = false;
+  int? _publishedId;
+  String? _error;
+
+  Future<void> _publish() async {
+    setState(() {
+      _publishing = true;
+      _error = null;
+    });
+    try {
+      final id = await walletBridge.swapPublish(widget.offer.proposalJson);
+      if (!mounted) return;
+      setState(() {
+        _publishing = false;
+        _publishedId = id;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _publishing = false;
+        _error = swapError(e);
+      });
+    }
+  }
+
+  Future<void> _openAdmin() => launchUrl(
+    Uri.parse('http://127.0.0.1:3210'),
+    mode: LaunchMode.externalApplication,
+  );
+
+  @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
+    final offer = widget.offer;
     return AppDialog(
       title: Row(
         children: [
@@ -659,20 +728,22 @@ class _OfferCreatedDialog extends StatelessWidget {
                 '${offer.offers.displayAmount} ${offer.offers.ticker} → '
                 '${offer.wants.displayAmount} ${offer.wants.ticker}',
                 textAlign: TextAlign.center,
-                style: AppTypography.numericSmall
-                    .copyWith(color: s.ink, fontWeight: FontWeight.w700),
+                style: AppTypography.numericSmall.copyWith(
+                  color: s.ink,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: AppSpacing.md),
               CodeBox(value: offer.proposalJson, label: 'Proposal (v0)'),
-              if (offer.proposalJson.length < _qrMaxLen) ...[
+              if (offer.proposalJson.length <
+                  _OfferCreatedDialog._qrMaxLen) ...[
                 const SizedBox(height: AppSpacing.md),
                 Center(
                   child: Container(
                     padding: const EdgeInsets.all(AppSpacing.sm),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius:
-                          BorderRadius.circular(AppSpacing.radiusSm),
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
                     ),
                     child: QrImageView(
                       data: offer.proposalJson,
@@ -686,19 +757,44 @@ class _OfferCreatedDialog extends StatelessWidget {
               const SizedBox(height: AppSpacing.md),
               Text(
                 'Share this proposal; it stays valid until you spend the '
-                'coin. To publish it on liquidex.it, copy the proposal and '
-                'paste it at liquidex.it/proposal.',
+                'coin. Publish it to the localhost book without sharing any '
+                'private key.',
                 style: AppTypography.caption.copyWith(color: s.inkSecondary),
               ),
+              if (_publishedId != null) ...[
+                const SizedBox(height: AppSpacing.md),
+                InfoBanner(message: 'Published as local order #$_publishedId.'),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: AppSpacing.md),
+                DangerBanner(message: _error!),
+              ],
             ],
           ),
         ),
       ),
       actions: [
-        PrimaryButton(
+        GhostButton(
           label: 'Done',
           onPressed: () => Navigator.of(context).pop(),
         ),
+        SecondaryButton(
+          label: 'Copy',
+          icon: Icons.copy,
+          onPressed: () =>
+              Clipboard.setData(ClipboardData(text: offer.proposalJson)),
+        ),
+        SecondaryButton(
+          label: 'Admin',
+          icon: Icons.admin_panel_settings_outlined,
+          onPressed: _openAdmin,
+        ),
+        if (_publishedId == null)
+          PrimaryButton(
+            label: _publishing ? 'Publishing…' : 'Publish locally',
+            icon: Icons.publish_outlined,
+            onPressed: _publishing ? null : _publish,
+          ),
       ],
     );
   }

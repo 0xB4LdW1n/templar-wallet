@@ -49,8 +49,10 @@ abstract final class AppMotion {
       reduced(context) ? Duration.zero : token;
 
   /// Same gate for raw values (e.g. AnimationController durations).
-  static Duration resolve({required bool reducedMotion, required Duration token}) =>
-      reducedMotion ? Duration.zero : token;
+  static Duration resolve({
+    required bool reducedMotion,
+    required Duration token,
+  }) => reducedMotion ? Duration.zero : token;
 }
 
 /// Route transition: the incoming page fades in quickly over the outgoing

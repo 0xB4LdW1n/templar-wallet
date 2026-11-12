@@ -125,7 +125,9 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
     if (!correct) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('One or more words are incorrect. Check your backup and try again.'),
+          content: Text(
+            'One or more words are incorrect. Check your backup and try again.',
+          ),
         ),
       );
       return;
@@ -153,9 +155,9 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _creatingWallet = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to create wallet: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to create wallet: $e')));
       }
     }
   }
@@ -176,18 +178,18 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
   }
 
   String get _stepTitle => switch (_step) {
-        1 => 'Name & seed length',
-        2 => 'Back up your seed',
-        3 => 'Verify your backup',
-        _ => 'Wallet created',
-      };
+    1 => 'Name & seed length',
+    2 => 'Back up your seed',
+    3 => 'Verify your backup',
+    _ => 'Wallet created',
+  };
 
   String get _stepSubtitle => switch (_step) {
-        1 => 'Give your wallet a name and choose its recovery-phrase length',
-        2 => 'Write these words down on paper. Keep them offline.',
-        3 => 'Enter the requested words to prove you saved them',
-        _ => '',
-      };
+    1 => 'Give your wallet a name and choose its recovery-phrase length',
+    2 => 'Write these words down on paper. Keep them offline.',
+    3 => 'Enter the requested words to prove you saved them',
+    _ => '',
+  };
 
   Widget get _stepBody {
     if (_generatingMnemonic) {
@@ -216,28 +218,29 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
     }
     return switch (_step) {
       1 => _NameAndSeedBody(
-          controller: _nameController,
-          seedLength: _seedLength,
-          onSelectLength: (v) => setState(() => _seedLength = v),
-        ),
+        controller: _nameController,
+        seedLength: _seedLength,
+        onSelectLength: (v) => setState(() => _seedLength = v),
+      ),
       2 => _BackupBody(mnemonic: _mnemonic ?? []),
       3 => _VerifyBody(
-          mnemonic: _mnemonic ?? [],
-          indexes: _challengeIndexes,
-          answers: _challengeAnswers,
-          onAnswer: (i, v) => setState(() => _challengeAnswers[i] = v),
-        ),
+        mnemonic: _mnemonic ?? [],
+        indexes: _challengeIndexes,
+        answers: _challengeAnswers,
+        onAnswer: (i, v) => setState(() => _challengeAnswers[i] = v),
+      ),
       _ => WalletCreatedView(
-          walletName: _nameController.text,
-          subtitle: 'Your wallet has been created and secured. '
-              'You can now receive and send funds.',
-          details: [
-            WalletCreatedDetail('Type', 'Software · Single-sig'),
-            WalletCreatedDetail('Coins', newWalletDraft.networksLabel),
-            WalletCreatedDetail('Network', newWalletDraft.networkLabel),
-            WalletCreatedDetail('Seed', '$_seedLength words (backed up)'),
-          ],
-        ),
+        walletName: _nameController.text,
+        subtitle:
+            'Your wallet has been created and secured. '
+            'You can now receive and send funds.',
+        details: [
+          WalletCreatedDetail('Type', 'Software · Single-sig'),
+          WalletCreatedDetail('Coins', newWalletDraft.networksLabel),
+          WalletCreatedDetail('Network', newWalletDraft.networkLabel),
+          WalletCreatedDetail('Seed', '$_seedLength words (backed up)'),
+        ],
+      ),
     };
   }
 
@@ -245,38 +248,38 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
     if (_generatingMnemonic || _creatingWallet) return const SizedBox.shrink();
     return switch (_step) {
       4 => Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            SecondaryButton(
-              label: 'Get receive address',
-              onPressed: () => context.go(AppRoutes.receive),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            PrimaryButton(
-              label: 'Open Wallet',
-              onPressed: () => context.go(AppRoutes.dashboard),
-            ),
-          ],
-        ),
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          SecondaryButton(
+            label: 'Get receive address',
+            onPressed: () => context.go(AppRoutes.receive),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          PrimaryButton(
+            label: 'Open Wallet',
+            onPressed: () => context.go(AppRoutes.dashboard),
+          ),
+        ],
+      ),
       3 => Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            GhostButton(label: 'Back', onPressed: _back),
-            const SizedBox(width: AppSpacing.md),
-            PrimaryButton(label: 'Confirm & Finish', onPressed: _verifyAndFinish),
-          ],
-        ),
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          GhostButton(label: 'Back', onPressed: _back),
+          const SizedBox(width: AppSpacing.md),
+          PrimaryButton(label: 'Confirm & Finish', onPressed: _verifyAndFinish),
+        ],
+      ),
       _ => Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            if (_step > 1) GhostButton(label: 'Back', onPressed: _back),
-            const SizedBox(width: AppSpacing.md),
-            PrimaryButton(
-              label: 'Continue',
-              onPressed: _nameController.text.trim().isEmpty ? null : _next,
-            ),
-          ],
-        ),
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (_step > 1) GhostButton(label: 'Back', onPressed: _back),
+          const SizedBox(width: AppSpacing.md),
+          PrimaryButton(
+            label: 'Continue',
+            onPressed: _nameController.text.trim().isEmpty ? null : _next,
+          ),
+        ],
+      ),
     };
   }
 }
@@ -320,7 +323,8 @@ class _NameAndSeedBody extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         SelectableOptionCard(
           title: '12 words',
-          description: '128 bits of entropy. Standard for most wallets. Easier to back up.',
+          description:
+              '128 bits of entropy. Standard for most wallets. Easier to back up.',
           isSelected: seedLength == 12,
           icon: Icons.lock_outline,
           onTap: () => onSelectLength(12),
@@ -328,7 +332,8 @@ class _NameAndSeedBody extends StatelessWidget {
         const SizedBox(height: AppSpacing.lg),
         SelectableOptionCard(
           title: '24 words',
-          description: '256 bits of entropy. Maximum security. Recommended for large holdings.',
+          description:
+              '256 bits of entropy. Maximum security. Recommended for large holdings.',
           isSelected: seedLength == 24,
           icon: Icons.security,
           badge: 'Recommended',
@@ -345,8 +350,7 @@ class _BackupBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SecureScreen(
-        child: _buildBody(context));
+    return SecureScreen(child: _buildBody(context));
   }
 
   Widget _buildBody(BuildContext context) {
@@ -369,7 +373,8 @@ class _BackupBody extends StatelessWidget {
             mainAxisSpacing: AppSpacing.sm,
           ),
           itemCount: mnemonic.length,
-          itemBuilder: (context, i) => _WordTile(index: i + 1, word: mnemonic[i]),
+          itemBuilder: (context, i) =>
+              _WordTile(index: i + 1, word: mnemonic[i]),
         ),
       ],
     );
@@ -389,16 +394,24 @@ class _WordTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceDark2 : AppColors.tableHeader,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: isDark ? AppColors.borderDark : AppColors.codeBoxBorder),
+        border: Border.all(
+          color: isDark ? AppColors.borderDark : AppColors.codeBoxBorder,
+        ),
       ),
       child: Row(
         children: [
           SizedBox(
             width: 20,
-            child: Text('$index.', style: AppTypography.caption.copyWith(color: AppColors.textMuted)),
+            child: Text(
+              '$index.',
+              style: AppTypography.caption.copyWith(color: AppColors.textMuted),
+            ),
           ),
           Expanded(
-            child: Text(word, style: AppTypography.mono.copyWith(fontWeight: FontWeight.w600)),
+            child: Text(
+              word,
+              style: AppTypography.mono.copyWith(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{LiquidError, TemplarError};
 
-/// L-BTC asset id on Liquid testnet (the policy asset).
+/// LBTC asset id on Liquid testnet (the policy asset).
 pub const TESTNET_POLICY_ASSET: &str =
     "144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49";
 
@@ -162,12 +162,12 @@ impl LiquidNetwork {
         }
     }
 
-    /// L-BTC asset id of this network.
+    /// LBTC asset id of this network.
     pub fn policy_asset(&self) -> AssetId {
         self.elements().policy_asset()
     }
 
-    /// L-BTC asset id, hex.
+    /// LBTC asset id, hex.
     pub fn policy_asset_hex(&self) -> String {
         match self {
             LiquidNetwork::LiquidTestnet => TESTNET_POLICY_ASSET.to_string(),
@@ -175,7 +175,7 @@ impl LiquidNetwork {
         }
     }
 
-    /// Whether `asset_id` (hex) is this network's L-BTC.
+    /// Whether `asset_id` (hex) is this network's LBTC.
     pub fn is_policy_asset(&self, asset_id: &str) -> bool {
         asset_id.eq_ignore_ascii_case(&self.policy_asset_hex())
     }
@@ -197,10 +197,7 @@ impl LiquidNetwork {
 
     /// Ticker of the policy asset for display.
     pub fn policy_ticker(&self) -> &'static str {
-        match self {
-            LiquidNetwork::LiquidTestnet => "tL-BTC",
-            LiquidNetwork::LiquidRegtest { .. } => "rL-BTC",
-        }
+        "LBTC"
     }
 
     /// The Jade firmware's name for this network.

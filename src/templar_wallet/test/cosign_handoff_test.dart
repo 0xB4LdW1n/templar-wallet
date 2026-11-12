@@ -35,8 +35,9 @@ class _QuorumBridge implements WalletBridge {
   int inspections = 0;
   int combines = 0;
 
-  static List<bool> _signedIn(String blob) =>
-      [for (final k in ['A', 'B', 'C']) blob.contains('~sig$k')];
+  static List<bool> _signedIn(String blob) => [
+    for (final k in ['A', 'B', 'C']) blob.contains('~sig$k'),
+  ];
 
   @override
   Future<PsbtInspection> inspectPsbt(String psbtBase64) async {
@@ -82,15 +83,25 @@ class _QuorumBridge implements WalletBridge {
         if (p.contains('~sig$k')) marks.add(k);
       }
     }
-    return base + [for (final k in ['A', 'B', 'C']) if (marks.contains(k)) '~sig$k'].join();
+    return base +
+        [
+          for (final k in ['A', 'B', 'C'])
+            if (marks.contains(k)) '~sig$k',
+        ].join();
   }
 
   @override
   Future<PsetInspection> inspectPset(String walletId, String psetBase64) async {
     inspections++;
     final signed = _signedIn(psetBase64);
-    final present = [for (var i = 0; i < 3; i++) if (signed[i]) _fps[i]];
-    final missing = [for (var i = 0; i < 3; i++) if (!signed[i]) _fps[i]];
+    final present = [
+      for (var i = 0; i < 3; i++)
+        if (signed[i]) _fps[i],
+    ];
+    final missing = [
+      for (var i = 0; i < 3; i++)
+        if (!signed[i]) _fps[i],
+    ];
     return PsetInspection(
       feeSats: 250,
       feeDisplay: '250 sats',
@@ -109,31 +120,33 @@ class _QuorumBridge implements WalletBridge {
       combinePsbts(psetsBase64);
 
   @override
-  Future<List<String>> urPsbtEncode(String psbtBase64,
-          {int maxFragmentLen = 100}) async =>
-      const ['ur:crypto-psbt/part-1'];
+  Future<List<String>> urPsbtEncode(
+    String psbtBase64, {
+    int maxFragmentLen = 100,
+  }) async => const ['ur:crypto-psbt/part-1'];
 
   @override
-  Future<List<String>> urPsetEncode(String psetBase64,
-          {int maxFragmentLen = 100}) async =>
-      const ['ur:bytes/part-1'];
+  Future<List<String>> urPsetEncode(
+    String psetBase64, {
+    int maxFragmentLen = 100,
+  }) async => const ['ur:bytes/part-1'];
 
   /// The wallet behind the sheet: three keys, the first one local.
   @override
   Future<WalletInfo> getWalletInfo(String walletId) async => WalletInfo(
-        id: walletId,
-        name: 'Treasury',
-        network: 'testnet',
-        masterFingerprint: _fps[0],
-        derivationPath: "m/48'/1'/0'/2'",
-        scriptType: 'wsh',
-        xpub: '',
-        receiveDescriptor: '',
-        changeDescriptor: '',
-        cosignerKeys: [for (final fp in _fps) "[$fp/48'/1'/0'/2']tpubFAKE$fp"],
-        requiredSigs: 2,
-        localFingerprints: [_fps[0]],
-      );
+    id: walletId,
+    name: 'Treasury',
+    network: 'testnet',
+    masterFingerprint: _fps[0],
+    derivationPath: "m/48'/1'/0'/2'",
+    scriptType: 'wsh',
+    xpub: '',
+    receiveDescriptor: '',
+    changeDescriptor: '',
+    cosignerKeys: [for (final fp in _fps) "[$fp/48'/1'/0'/2']tpubFAKE$fp"],
+    requiredSigs: 2,
+    localFingerprints: [_fps[0]],
+  );
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -158,15 +171,16 @@ const _psbt = 'cHNidP8BAH0partial~sigA';
 /// Animations are off: the donut's sweep would otherwise never settle, and
 /// under reduced motion it lands on the count it is being asserted for.
 Widget _host(Widget sheet) => MaterialApp(
-      home: MediaQuery(
-        data: const MediaQueryData(disableAnimations: true),
-        child: ChangeNotifierProvider<AppState>(
-          create: (_) => AppState()
+  home: MediaQuery(
+    data: const MediaQueryData(disableAnimations: true),
+    child: ChangeNotifierProvider<AppState>(
+      create: (_) =>
+          AppState()
             ..setActiveWallet('w1', name: 'Treasury', type: 'Multisig 2-of-3'),
-          child: Scaffold(body: Center(child: sheet)),
-        ),
-      ),
-    );
+      child: Scaffold(body: Center(child: sheet)),
+    ),
+  ),
+);
 
 Future<void> _pump(WidgetTester t, Widget sheet) async {
   t.view.physicalSize = const Size(1280, 2600);
@@ -201,16 +215,17 @@ void main() {
 
   group('PSBT hand-off', () {
     Widget sheet(_QuorumBridge bridge) => PsbtHandoffSheet(
-          unsignedPsbt: _psbt,
-          bridge: bridge,
-          title: 'Co-signatures needed',
-          quorumHave: 1,
-          quorumNeeded: 2,
-          onBroadcast: (_) {},
-        );
+      unsignedPsbt: _psbt,
+      bridge: bridge,
+      title: 'Co-signatures needed',
+      quorumHave: 1,
+      quorumNeeded: 2,
+      onBroadcast: (_) {},
+    );
 
-    testWidgets('charts the quorum the exported copy carries, by signer',
-        (t) async {
+    testWidgets('charts the quorum the exported copy carries, by signer', (
+      t,
+    ) async {
       await _pump(t, sheet(_QuorumBridge()));
 
       expect(find.byType(SignerDonut), findsOneWidget);
@@ -226,23 +241,29 @@ void main() {
       expect(find.text('Waiting'), findsNWidgets(2));
     });
 
-    testWidgets('the rows wear the names and colours the wallet gave its keys',
-        (t) async {
-      await CosignerLabelStore.instance.saveOne(
-        'w1',
-        const CosignerLabel(
-            id: 'bb000002', name: 'Anna’s phone', colorValue: 0xFF1D4ED8),
-      );
-      await _pump(t, sheet(_QuorumBridge()));
+    testWidgets(
+      'the rows wear the names and colours the wallet gave its keys',
+      (t) async {
+        await CosignerLabelStore.instance.saveOne(
+          'w1',
+          const CosignerLabel(
+            id: 'bb000002',
+            name: 'Anna’s phone',
+            colorValue: 0xFF1D4ED8,
+          ),
+        );
+        await _pump(t, sheet(_QuorumBridge()));
 
-      expect(find.text('Anna’s phone'), findsOneWidget);
-      expect(find.text('Key 2'), findsNothing);
-      final donut = t.widget<SignerDonut>(find.byType(SignerDonut));
-      expect(donut.slots![1].color, const Color(0xFF1D4ED8));
-    });
+        expect(find.text('Anna’s phone'), findsOneWidget);
+        expect(find.text('Key 2'), findsNothing);
+        final donut = t.widget<SignerDonut>(find.byType(SignerDonut));
+        expect(donut.slots![1].color, const Color(0xFF1D4ED8));
+      },
+    );
 
-    testWidgets('Copy, Save and Paste share one row; the box opens on Paste',
-        (t) async {
+    testWidgets('Copy, Save and Paste share one row; the box opens on Paste', (
+      t,
+    ) async {
       await _pump(t, sheet(_QuorumBridge()));
 
       expect(find.text('Copy PSBT'), findsOneWidget);
@@ -259,8 +280,9 @@ void main() {
       expect(find.text('Close paste box'), findsOneWidget);
     });
 
-    testWidgets('a pasted signature moves the chart and lands on its signer',
-        (t) async {
+    testWidgets('a pasted signature moves the chart and lands on its signer', (
+      t,
+    ) async {
       await _pump(t, sheet(_QuorumBridge()));
       expect(find.text('1/3'), findsOneWidget);
 
@@ -278,8 +300,9 @@ void main() {
       expect(find.byType(TextField), findsNothing);
     });
 
-    testWidgets('a returning copy is folded into the copy handed out',
-        (t) async {
+    testWidgets('a returning copy is folded into the copy handed out', (
+      t,
+    ) async {
       // A signed the original and handed it out; B signed A's copy. The
       // copy going out must now carry both, and it must be one copy.
       final bridge = _QuorumBridge();
@@ -292,8 +315,9 @@ void main() {
       expect(_artifactOnScreen(t), 'cHNidP8BAH0partial~sigA~sigB');
     });
 
-    testWidgets('signatures collected in parallel are merged, not swapped',
-        (t) async {
+    testWidgets('signatures collected in parallel are merged, not swapped', (
+      t,
+    ) async {
       // B and C each signed the ORIGINAL (no A in their copies). Taking C's
       // copy after B's must not throw B's signature away.
       final bridge = _QuorumBridge();
@@ -315,8 +339,9 @@ void main() {
       expect(_artifactOnScreen(t), 'cHNidP8BAH0partial~sigB~sigC');
     });
 
-    testWidgets('the copy going out pasted back is refused with the reason',
-        (t) async {
+    testWidgets('the copy going out pasted back is refused with the reason', (
+      t,
+    ) async {
       // The confusing case: the coordinator copies its own PSBT, pastes it
       // into the same sheet, and nothing visibly happens. Now it says why.
       final bridge = _QuorumBridge();
@@ -335,13 +360,16 @@ void main() {
       await _pump(t, sheet(_QuorumBridge()));
       // A's copy under another name: same one signature.
       await _paste(t, 'cHNidP8BAH0partial-again~sigA');
-      expect(find.textContaining('No new signature in that copy'),
-          findsOneWidget);
+      expect(
+        find.textContaining('No new signature in that copy'),
+        findsOneWidget,
+      );
       expect(find.text('1/3'), findsOneWidget);
     });
 
-    testWidgets('an unreadable paste says so and leaves the chart alone',
-        (t) async {
+    testWidgets('an unreadable paste says so and leaves the chart alone', (
+      t,
+    ) async {
       await _pump(t, sheet(_RejectingBridge()));
 
       await _paste(t, 'not-a-psbt');
@@ -354,19 +382,20 @@ void main() {
 
     testWidgets('broadcast waits for the quorum', (t) async {
       await _pump(t, sheet(_QuorumBridge()));
-      final before = t.widget<ElevatedButton>(find.widgetWithText(
-          ElevatedButton, 'Review & Broadcast'));
+      final before = t.widget<ElevatedButton>(
+        find.widgetWithText(ElevatedButton, 'Review & Broadcast'),
+      );
       expect(before.onPressed, isNull);
 
       await _paste(t, '$_psbt~sigB');
 
-      final after = t.widget<ElevatedButton>(find.widgetWithText(
-          ElevatedButton, 'Review & Broadcast'));
+      final after = t.widget<ElevatedButton>(
+        find.widgetWithText(ElevatedButton, 'Review & Broadcast'),
+      );
       expect(after.onPressed, isNotNull);
     });
 
-    testWidgets('a hardware key still to sign offers the USB route',
-        (t) async {
+    testWidgets('a hardware key still to sign offers the USB route', (t) async {
       await CosignerLabelStore.instance.saveOne(
         'w1',
         const CosignerLabel(id: 'cc000003', name: 'Ledger', hardware: true),
@@ -387,8 +416,7 @@ void main() {
   });
 
   group('PSET hand-off', () {
-    testWidgets('charts the quorum and folds a pasted signature in',
-        (t) async {
+    testWidgets('charts the quorum and folds a pasted signature in', (t) async {
       final bridge = _QuorumBridge();
       await _pump(
         t,

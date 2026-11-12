@@ -23,10 +23,6 @@ import '../features/vault/lock_action.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 
-/// LiquiDEX swaps are backed by the real v0 engine: live order-book browse,
-/// offline+deep verify, and make/take signing on Liquid testnet.
-const bool kSwapFeatureEnabled = true;
-
 // ── Theme-adaptive sidebar color palette (resolved from AppScheme) ────────────
 
 class _SC {
@@ -94,9 +90,7 @@ class _AppShellState extends State<AppShell> {
           ),
           // No VerticalDivider — border is on the AnimatedContainer itself.
           Expanded(
-            child: RepaintBoundary(
-              child: _BadgedContent(child: widget.child),
-            ),
+            child: RepaintBoundary(child: _BadgedContent(child: widget.child)),
           ),
         ],
       ),
@@ -224,6 +218,9 @@ class _MobileShellState extends State<MobileShell> {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final dark = s.isDark;
+    final optionalLiquidTools = context.select<AppState, (bool, bool)>(
+      (st) => (st.liquidDexEnabled, st.pegEnabled),
+    );
     return AnnotatedRegion<SystemUiOverlayStyle>(
       // Transparent bars, icons following the theme — edge-to-edge itself
       // is switched on in main.dart.
@@ -250,13 +247,11 @@ class _MobileShellState extends State<MobileShell> {
           backgroundColor: s.canvas,
           body: Column(
             children: [
-              _MobileHeader(
-                currentPath: widget.currentPath,
-                onBack: _goBack,
-              ),
+              _MobileHeader(currentPath: widget.currentPath, onBack: _goBack),
               // The Liquid hub: Assets, LiquiDEX and Peg share one carousel
               // slot and are told apart by this strip.
-              if (isLiquidHubRoute(widget.currentPath))
+              if (isLiquidHubRoute(widget.currentPath) &&
+                  (optionalLiquidTools.$1 || optionalLiquidTools.$2))
                 _LiquidHubTabs(currentPath: widget.currentPath),
               Expanded(
                 // The header took the status-bar inset; the page must not
@@ -281,7 +276,7 @@ class _MobileShellState extends State<MobileShell> {
           // Column: the keyboard then covers the bar and the page above it
           // resizes, instead of the bar riding up on top of the keyboard.
           bottomNavigationBar: Selector<AppState, (bool, bool)>(
-            selector: (_, st) => (st.activeWalletLiquid, st.loansInMenu),
+            selector: (_, st) => (st.activeWalletLiquid, st.loansEnabled),
             builder: (context, flags, _) {
               final (liquid, loans) = flags;
               return CarouselNav(
@@ -303,8 +298,11 @@ class _MobileShellState extends State<MobileShell> {
 /// live on the Dashboard hero (where the balance they act on is), Wallet
 /// Info sits inside Settings, and LiquiDEX and Peg share the Liquid slot as
 /// tabs. The Liquid slot is gated — a Bitcoin-only wallet has nothing to put
-/// behind it; Loans is opt-in (`AppState.loansInMenu`) and Liquid-only.
-List<CarouselNavItem> mobileNavItems({required bool liquid, bool loans = false}) {
+/// behind it; Loans is opt-in (`AppState.loansEnabled`) and Liquid-only.
+List<CarouselNavItem> mobileNavItems({
+  required bool liquid,
+  bool loans = false,
+}) {
   return [
     const CarouselNavItem(
       id: 'dashboard',
@@ -377,6 +375,7 @@ bool _isSettingsSection(String path) =>
 /// The carousel item a path belongs to. A sub-page keeps its parent's slot
 /// centred, so the bar always says where the user came from.
 String mobileNavRouteFor(String path) {
+  if (path == AppRoutes.loanDetail) return AppRoutes.loans;
   if (path == AppRoutes.send ||
       path == AppRoutes.receive ||
       path == AppRoutes.receiveAddresses) {
@@ -394,6 +393,7 @@ String mobileNavRouteFor(String path) {
 /// Where the header's arrow and the system back lead from [path]; null on a
 /// carousel page, where back means "to the Dashboard" (the shell's default).
 String? mobileParentRouteFor(String path) {
+  if (path == AppRoutes.loanDetail) return AppRoutes.loans;
   if (path == AppRoutes.send || path == AppRoutes.receive) {
     return AppRoutes.dashboard;
   }
@@ -408,6 +408,7 @@ String? mobileParentRouteFor(String path) {
 /// The header title of a sub-page; null on a carousel page, where the
 /// header shows the wallet instead.
 String? mobileSubPageTitle(String path) => switch (path) {
+  AppRoutes.loanDetail => 'Loan detail',
   AppRoutes.send => 'Send',
   AppRoutes.receive => 'Receive',
   AppRoutes.receiveAddresses => 'All addresses',
@@ -416,6 +417,7 @@ String? mobileSubPageTitle(String path) => switch (path) {
   AppRoutes.settingsProtocol => 'Templar Protocol',
   AppRoutes.settingsSecurity => 'Vault & backup',
   AppRoutes.settingsAppearance => 'Theme & units',
+  AppRoutes.settingsAdvanced => 'Advanced',
   AppRoutes.settingsAbout => 'About',
   AppRoutes.issueAsset => 'Issue asset',
   AppRoutes.reissueAsset => 'Reissue',
@@ -438,9 +440,10 @@ class _LiquidHubTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final bitcoin = context.select<AppState, bool>(
-      (st) => st.activeWalletBitcoin,
+    final flags = context.select<AppState, (bool, bool, bool)>(
+      (st) => (st.activeWalletBitcoin, st.liquidDexEnabled, st.pegEnabled),
     );
+    final (bitcoin, liquidDex, peg) = flags;
     final tint = s.liquid;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -467,23 +470,24 @@ class _LiquidHubTabs extends StatelessWidget {
               icon: Icons.water_drop_outlined,
               color: tint,
             ),
-            if (kSwapFeatureEnabled)
+            if (liquidDex)
               SegOption(
                 value: AppRoutes.swap,
                 label: 'LiquiDEX',
                 icon: Icons.swap_horiz,
                 color: tint,
               ),
-            SegOption(
-              value: AppRoutes.peg,
-              label: 'Peg',
-              icon: Icons.swap_vert_outlined,
-              color: tint,
-              enabled: bitcoin,
-              tooltip: bitcoin
-                  ? null
-                  : 'Peg needs a Bitcoin side — this wallet is Liquid-only.',
-            ),
+            if (peg)
+              SegOption(
+                value: AppRoutes.peg,
+                label: 'Peg',
+                icon: Icons.swap_vert_outlined,
+                color: tint,
+                enabled: bitcoin,
+                tooltip: bitcoin
+                    ? null
+                    : 'Peg needs a Bitcoin side — this wallet is Liquid-only.',
+              ),
           ],
         ),
       ),
@@ -603,10 +607,10 @@ String? _walletSubtitle(
   final chains = bitcoin && liquid
       ? 'Bitcoin + Liquid'
       : liquid
-          ? 'Liquid'
-          : bitcoin
-              ? 'Bitcoin'
-              : null;
+      ? 'Liquid'
+      : bitcoin
+      ? 'Bitcoin'
+      : null;
   final parts = <String>[?type, ?chains];
   return parts.isEmpty ? null : parts.join(' · ');
 }
@@ -976,8 +980,7 @@ class _Sidebar extends StatelessWidget {
   bool _isActive(String route) =>
       currentPath == route ||
       (route == AppRoutes.settings && _isSettingsSection(currentPath)) ||
-      (route == AppRoutes.receive &&
-          currentPath == AppRoutes.receiveAddresses);
+      (route == AppRoutes.receive && currentPath == AppRoutes.receiveAddresses);
 
   @override
   Widget build(BuildContext context) {
@@ -1009,7 +1012,7 @@ class _Sidebar extends StatelessWidget {
               // what the wallet is for in the protocol, and a site's loan
               // state is read here first. Opt-in: Settings › Templar Protocol
               // (or the connect screen's checkbox) puts it here.
-              if (showLiquid && appState.loansInMenu)
+              if (showLiquid && appState.loansEnabled)
                 _item(
                   AppRoutes.loans,
                   'Loans',
@@ -1044,7 +1047,7 @@ class _Sidebar extends StatelessWidget {
                   Icons.water_outlined,
                   Icons.water,
                 ),
-                if (kSwapFeatureEnabled)
+                if (appState.liquidDexEnabled)
                   // Named for the protocol it actually speaks. "Swap" is
                   // reserved for the future Boltz-style Bitcoin <> Liquid <>
                   // Lightning section, which is a different thing entirely.
@@ -1054,7 +1057,7 @@ class _Sidebar extends StatelessWidget {
                     Icons.swap_horiz,
                     Icons.swap_horiz,
                   ),
-                if (showPeg)
+                if (showPeg && appState.pegEnabled)
                   _item(
                     AppRoutes.peg,
                     'Peg',
@@ -1098,12 +1101,8 @@ class _Sidebar extends StatelessWidget {
     return _NavGroup.wallet;
   }
 
-  Widget _section(String label, {required bool active}) => _SidebarSection(
-    label: label,
-    expanded: expanded,
-    active: active,
-    sc: sc,
-  );
+  Widget _section(String label, {required bool active}) =>
+      _SidebarSection(label: label, expanded: expanded, active: active, sc: sc);
 
   Widget _item(
     String route,
@@ -1211,7 +1210,6 @@ class _SidebarHeader extends StatelessWidget {
       },
     );
   }
-
 }
 
 class _CollapseButton extends StatelessWidget {
@@ -1328,7 +1326,6 @@ class _WalletRow extends StatelessWidget {
       ),
     );
   }
-
 }
 
 // ── Section label ─────────────────────────────────────────────────────────────
@@ -1407,9 +1404,7 @@ class _SidebarSection extends StatelessWidget {
           Expanded(
             child: Container(
               height: 1,
-              color: active
-                  ? s.accent.withValues(alpha: 0.35)
-                  : sc.divider,
+              color: active ? s.accent.withValues(alpha: 0.35) : sc.divider,
             ),
           ),
         ],
@@ -1466,8 +1461,8 @@ class _SidebarItemState extends State<_SidebarItem> {
     final iconColor = active
         ? s.accent
         : _hover
-            ? s.ink
-            : widget.sc.text;
+        ? s.ink
+        : widget.sc.text;
     final textColor = lit ? s.ink : widget.sc.text;
 
     final item = Padding(
@@ -1509,8 +1504,7 @@ class _SidebarItemState extends State<_SidebarItem> {
                       duration: motion,
                       style: AppTypography.navItem.copyWith(
                         color: textColor,
-                        fontWeight:
-                            active ? FontWeight.w600 : FontWeight.w500,
+                        fontWeight: active ? FontWeight.w600 : FontWeight.w500,
                       ),
                       child: Text(
                         widget.label,
@@ -1615,20 +1609,19 @@ void scheduleAutoSync(BuildContext context, WalletBridge bridge) {
   SyncState state,
   String? detail, {
   bool compact = false,
-}) =>
-    switch (state) {
-      SyncState.synced => (AppColors.success, 'Synced'),
-      SyncState.syncing => (AppColors.warning, 'Syncing…'),
-      SyncState.warning => (
-          AppColors.warning,
-          compact ? 'Partial' : (detail ?? 'Partial sync'),
-        ),
-      SyncState.error => (
-          AppColors.danger,
-          compact ? 'Sync error' : (detail ?? 'Sync Error'),
-        ),
-      SyncState.idle => (AppColors.textMuted, 'Idle'),
-    };
+}) => switch (state) {
+  SyncState.synced => (AppColors.success, 'Synced'),
+  SyncState.syncing => (AppColors.warning, 'Syncing…'),
+  SyncState.warning => (
+    AppColors.warning,
+    compact ? 'Partial' : (detail ?? 'Partial sync'),
+  ),
+  SyncState.error => (
+    AppColors.danger,
+    compact ? 'Sync error' : (detail ?? 'Sync Error'),
+  ),
+  SyncState.idle => (AppColors.textMuted, 'Idle'),
+};
 
 // ── Footer ────────────────────────────────────────────────────────────────────
 
@@ -1681,8 +1674,10 @@ class _SidebarFooterState extends State<_SidebarFooter> {
       builder: (context, data, _) {
         final (syncState, syncDetail, themeMode) = data;
         final isSyncing = syncState == SyncState.syncing;
-        final (dotColor, statusLabel) =
-            syncStatusPresentation(syncState, syncDetail);
+        final (dotColor, statusLabel) = syncStatusPresentation(
+          syncState,
+          syncDetail,
+        );
 
         final sc = widget.sc;
 
@@ -1841,8 +1836,11 @@ class _SidebarFooterState extends State<_SidebarFooter> {
                         onTap: _lock,
                         sc: sc,
                         expand: true,
-                        child: Icon(Icons.lock_outline,
-                            size: 17, color: sc.text),
+                        child: Icon(
+                          Icons.lock_outline,
+                          size: 17,
+                          color: sc.text,
+                        ),
                       ),
                     ),
                   ],
@@ -1891,8 +1889,7 @@ class _FooterButtonState extends State<_FooterButton> {
     return _SidebarTooltip(
       message: widget.tooltip,
       child: MouseRegion(
-        cursor:
-            enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
         onEnter: (_) => setState(() => _hover = true),
         onExit: (_) => setState(() => _hover = false),
         child: GestureDetector(

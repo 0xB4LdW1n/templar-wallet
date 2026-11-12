@@ -55,7 +55,8 @@ class _ExpanderCardState extends State<ExpanderCard> {
       decoration: BoxDecoration(
         color: s.surfaceGlass,
         borderRadius: BorderRadius.circular(
-            phone ? AppSpacing.radiusLg : AppSpacing.radiusMd),
+          phone ? AppSpacing.radiusLg : AppSpacing.radiusMd,
+        ),
         border: Border.all(color: s.edge),
         boxShadow: s.panelShadow,
       ),
@@ -77,16 +78,23 @@ class _ExpanderCardState extends State<ExpanderCard> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(widget.title,
-                                style: AppTypography.sectionTitleOf(context)
-                                    .copyWith(color: s.ink)),
+                            Text(
+                              widget.title,
+                              style: AppTypography.sectionTitleOf(
+                                context,
+                              ).copyWith(color: s.ink),
+                            ),
                             if (sub != null)
                               Padding(
-                                padding:
-                                    const EdgeInsets.only(top: AppSpacing.xs),
-                                child: Text(sub,
-                                    style: AppTypography.caption
-                                        .copyWith(color: s.inkSecondary)),
+                                padding: const EdgeInsets.only(
+                                  top: AppSpacing.xs,
+                                ),
+                                child: Text(
+                                  sub,
+                                  style: AppTypography.caption.copyWith(
+                                    color: s.inkSecondary,
+                                  ),
+                                ),
                               ),
                           ],
                         ),
@@ -100,8 +108,11 @@ class _ExpanderCardState extends State<ExpanderCard> {
                         turns: _open ? 0.5 : 0,
                         duration: reduced ? Duration.zero : AppMotion.standard,
                         curve: AppMotion.settle,
-                        child: Icon(Icons.expand_more_rounded,
-                            size: 22, color: s.inkFaint),
+                        child: Icon(
+                          Icons.expand_more_rounded,
+                          size: 22,
+                          color: s.inkFaint,
+                        ),
                       ),
                     ],
                   ),

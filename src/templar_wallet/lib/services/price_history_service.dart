@@ -94,7 +94,11 @@ class PriceHistoryService extends ChangeNotifier {
     return f.whenComplete(() => _inFlight.remove(key));
   }
 
-  Future<List<PricePoint>?> _fetch(String currency, int days, String key) async {
+  Future<List<PricePoint>?> _fetch(
+    String currency,
+    int days,
+    String key,
+  ) async {
     try {
       final uri = Uri.parse(
         '$_baseUrl?vs_currency=${currency.toLowerCase()}&days=${_daysParam(days)}',

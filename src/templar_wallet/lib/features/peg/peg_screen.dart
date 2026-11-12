@@ -37,7 +37,7 @@ class _PegScreenState extends State<PegScreen> {
   final _bridge = walletBridge;
 
   // ── New-peg form ──
-  String _direction = 'in'; // 'in' = BTC → L-BTC, 'out' = L-BTC → BTC
+  String _direction = 'in'; // 'in' = BTC → LBTC, 'out' = LBTC → BTC
   final _amountCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
   PegQuote? _quote;
@@ -68,20 +68,21 @@ class _PegScreenState extends State<PegScreen> {
     ('completed', 'Completed'),
   ];
 
-  String get _walletId =>
-      context.read<AppState>().activeWalletId ?? 'wallet-1';
+  String get _walletId => context.read<AppState>().activeWalletId ?? 'wallet-1';
 
   bool get _isPegIn => _direction == 'in';
-  String get _fromTicker => _isPegIn ? 'BTC' : 'L-BTC';
-  String get _toTicker => _isPegIn ? 'L-BTC' : 'BTC';
+  String get _fromTicker => _isPegIn ? 'BTC' : 'LBTC';
+  String get _toTicker => _isPegIn ? 'LBTC' : 'BTC';
 
   @override
   void initState() {
     super.initState();
     _loadOrders();
     _prefillAddress();
-    _pollTimer =
-        Timer.periodic(const Duration(seconds: 5), (_) => _pollActive());
+    _pollTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _pollActive(),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _appState = context.read<AppState>();
@@ -142,8 +143,7 @@ class _PegScreenState extends State<PegScreen> {
   void _onAmountChanged() {
     _quoteDebounce?.cancel();
     setState(() {}); // refresh button/quote-panel enablement immediately
-    _quoteDebounce =
-        Timer(const Duration(milliseconds: 400), _fetchQuote);
+    _quoteDebounce = Timer(const Duration(milliseconds: 400), _fetchQuote);
   }
 
   Future<void> _fetchQuote() async {
@@ -271,8 +271,12 @@ class _PegScreenState extends State<PegScreen> {
       _startError = null;
     });
     try {
-      final order =
-          await _bridge.pegStart(_walletId, _direction, sats, address);
+      final order = await _bridge.pegStart(
+        _walletId,
+        _direction,
+        sats,
+        address,
+      );
       if (!mounted) return;
       setState(() {
         _starting = false;
@@ -306,16 +310,18 @@ class _PegScreenState extends State<PegScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _cancelling.remove(order.orderId));
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(_msg(e))));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_msg(e))));
     }
   }
 
   Future<void> _openExplorer(String txid, {required bool liquid}) async {
     final app = context.read<AppState>();
     final base = liquid ? app.liquidExplorerUrl : app.btcExplorerUrl;
-    final trimmed =
-        base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    final trimmed = base.endsWith('/')
+        ? base.substring(0, base.length - 1)
+        : base;
     final uri = Uri.parse('$trimmed/tx/$txid');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -338,7 +344,8 @@ class _PegScreenState extends State<PegScreen> {
           subtitle: 'Move between Bitcoin and Liquid Bitcoin',
         ),
         const WarningBanner(
-          message: 'Simulated provider — no real funds move. '
+          message:
+              'Simulated provider — no real funds move. '
               'A real peg provider arrives in a later update.',
         ),
         const SizedBox(height: AppSpacing.xl),
@@ -369,7 +376,8 @@ class _PegScreenState extends State<PegScreen> {
     // The quote must match the current amount — editing the field after a
     // quote arrived disables Start until the debounced re-quote lands.
     final sats = _amountSats;
-    final canStart = !_starting &&
+    final canStart =
+        !_starting &&
         sats != null &&
         _quote != null &&
         _quote!.amountSats == sats &&
@@ -399,8 +407,10 @@ class _PegScreenState extends State<PegScreen> {
                   ),
                 ),
               ),
-              suffixIconConstraints:
-                  const BoxConstraints(minWidth: 0, minHeight: 0),
+              suffixIconConstraints: const BoxConstraints(
+                minWidth: 0,
+                minHeight: 0,
+              ),
             ),
             onChanged: (_) => _onAmountChanged(),
           ),
@@ -420,10 +430,10 @@ class _PegScreenState extends State<PegScreen> {
           const SizedBox(height: AppSpacing.xs),
           Text(
             _isPegIn
-                ? 'Where the L-BTC is delivered — pre-filled with this '
-                    'wallet\'s Liquid address.'
+                ? 'Where the LBTC is delivered — pre-filled with this '
+                      'wallet\'s Liquid address.'
                 : 'Where the BTC is delivered — pre-filled with this '
-                    'wallet\'s Bitcoin address.',
+                      'wallet\'s Bitcoin address.',
             style: AppTypography.caption.copyWith(color: s.inkFaint),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -442,8 +452,10 @@ class _PegScreenState extends State<PegScreen> {
                 children: [
                   IconButton(
                     tooltip: 'Use this wallet\'s address',
-                    icon: const Icon(Icons.account_balance_wallet_outlined,
-                        size: 18),
+                    icon: const Icon(
+                      Icons.account_balance_wallet_outlined,
+                      size: 18,
+                    ),
                     onPressed: _starting ? null : _prefillAddress,
                   ),
                   ScanIconButton(
@@ -480,12 +492,16 @@ class _PegScreenState extends State<PegScreen> {
     if (AppLayout.isPhone(context)) {
       return Text(
         text.toUpperCase(),
-        style: AppTypography.navSection
-            .copyWith(color: s.inkFaint, letterSpacing: 1.3),
+        style: AppTypography.navSection.copyWith(
+          color: s.inkFaint,
+          letterSpacing: 1.3,
+        ),
       );
     }
-    return Text(text,
-        style: AppTypography.label.copyWith(color: s.inkSecondary));
+    return Text(
+      text,
+      style: AppTypography.label.copyWith(color: s.inkSecondary),
+    );
   }
 
   Widget _directionToggle(AppScheme s) {
@@ -493,14 +509,14 @@ class _PegScreenState extends State<PegScreen> {
       // The shared track: 54 dp segments, a ripple, ellipsising labels and the
       // same selected treatment every segmented control in the app uses — the
       // bespoke version below lands at ~46 dp and duplicates it line for line.
-      // The 'BTC → L-BTC' sub-line is dropped here because the amount field's
+      // The 'BTC → LBTC' sub-line is dropped here because the amount field's
       // suffix and the quote panel already print both tickers.
       return SegmentedSwitch<String>(
         options: [
           SegOption(
             value: 'in',
             label: 'Peg-in',
-            color: s.liquid, // peg-in delivers L-BTC
+            color: s.liquid, // peg-in delivers LBTC
             enabled: !_starting,
             tooltip: 'Starting a peg — wait for it to finish.',
           ),
@@ -526,9 +542,9 @@ class _PegScreenState extends State<PegScreen> {
       ),
       child: Row(
         children: [
-          _segment(s, 'in', 'Peg-in', 'BTC → L-BTC'),
+          _segment(s, 'in', 'Peg-in', 'BTC → LBTC'),
           const SizedBox(width: 3),
-          _segment(s, 'out', 'Peg-out', 'L-BTC → BTC'),
+          _segment(s, 'out', 'Peg-out', 'LBTC → BTC'),
         ],
       ),
     );
@@ -587,8 +603,10 @@ class _PegScreenState extends State<PegScreen> {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: AppSpacing.md),
-          Text('Fetching quote…',
-              style: AppTypography.caption.copyWith(color: s.inkSecondary)),
+          Text(
+            'Fetching quote…',
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
+          ),
         ],
       );
     } else if (_quoteError != null) {
@@ -633,8 +651,10 @@ class _PegScreenState extends State<PegScreen> {
               ),
               Text(
                 '${_fmtBtc(q.receiveSats)} $_toTicker',
-                style: AppTypography.numericLarge
-                    .copyWith(fontSize: 18, color: AppColors.accent),
+                style: AppTypography.numericLarge.copyWith(
+                  fontSize: 18,
+                  color: AppColors.accent,
+                ),
               ),
             ],
           ),
@@ -711,7 +731,10 @@ class _PegScreenState extends State<PegScreen> {
             ),
             const SizedBox(height: AppSpacing.md),
             GhostButton(
-                label: 'Retry', icon: Icons.refresh, onPressed: _loadOrders),
+              label: 'Retry',
+              icon: Icons.refresh,
+              onPressed: _loadOrders,
+            ),
           ],
         ),
       );
@@ -734,14 +757,15 @@ class _PegScreenState extends State<PegScreen> {
   /// it is the only place it is needed.
   Widget _orderTile(AppScheme s, PegOrder o) {
     final expanded = _expanded.contains(o.orderId);
-    final fromTicker = o.isPegIn ? 'BTC' : 'L-BTC';
-    final toTicker = o.isPegIn ? 'L-BTC' : 'BTC';
+    final fromTicker = o.isPegIn ? 'BTC' : 'LBTC';
+    final toTicker = o.isPegIn ? 'LBTC' : 'BTC';
     return Column(
       children: [
         Semantics(
           button: true,
           // Same contract as ListRow: the row's name, then what it is doing.
-          label: '${o.isPegIn ? 'Peg-in' : 'Peg-out'}, '
+          label:
+              '${o.isPegIn ? 'Peg-in' : 'Peg-out'}, '
               '${_fmtBtc(o.depositExpectedSats)} $fromTicker to '
               '${_fmtBtc(o.payoutExpectedSats)} $toTicker',
           hint: '${_statusParts(o).$1}, ${_fmtTime(o.createdAt)}',
@@ -776,7 +800,9 @@ class _PegScreenState extends State<PegScreen> {
                             '${_fmtBtc(o.depositExpectedSats)} $fromTicker → '
                             '${_fmtBtc(o.payoutExpectedSats)} $toTicker',
                             style: AppTypography.numericSmall.copyWith(
-                                color: s.ink, fontWeight: FontWeight.w600),
+                              color: s.ink,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                           const SizedBox(height: AppSpacing.sm - 2),
                           Row(
@@ -789,7 +815,9 @@ class _PegScreenState extends State<PegScreen> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: AppTypography.caption.copyWith(
-                                      fontSize: 12, color: s.inkFaint),
+                                    fontSize: 12,
+                                    color: s.inkFaint,
+                                  ),
                                 ),
                               ),
                             ],
@@ -819,8 +847,8 @@ class _PegScreenState extends State<PegScreen> {
   /// to live inside it is gone rather than unreachable.
   Widget _orderRow(AppScheme s, PegOrder o, bool zebra) {
     final expanded = _expanded.contains(o.orderId);
-    final fromTicker = o.isPegIn ? 'BTC' : 'L-BTC';
-    final toTicker = o.isPegIn ? 'L-BTC' : 'BTC';
+    final fromTicker = o.isPegIn ? 'BTC' : 'LBTC';
+    final toTicker = o.isPegIn ? 'LBTC' : 'BTC';
     return Column(
       children: [
         HoverRow(
@@ -830,7 +858,9 @@ class _PegScreenState extends State<PegScreen> {
           }),
           child: Container(
             padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md,
+            ),
             decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: s.edge)),
             ),
@@ -849,14 +879,17 @@ class _PegScreenState extends State<PegScreen> {
                         '${_fmtBtc(o.depositExpectedSats)} $fromTicker → '
                         '${_fmtBtc(o.payoutExpectedSats)} $toTicker',
                         style: AppTypography.numericSmall.copyWith(
-                            color: s.ink, fontWeight: FontWeight.w600),
+                          color: s.ink,
+                          fontWeight: FontWeight.w600,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '${o.orderId} · ${_fmtTime(o.createdAt)}',
-                        style:
-                            AppTypography.caption.copyWith(color: s.inkFaint),
+                        style: AppTypography.caption.copyWith(
+                          color: s.inkFaint,
+                        ),
                       ),
                     ],
                   ),
@@ -898,8 +931,8 @@ class _PegScreenState extends State<PegScreen> {
   }
 
   Widget _orderDetail(AppScheme s, PegOrder o) {
-    final depositTicker = o.isPegIn ? 'BTC' : 'L-BTC';
-    final payoutTicker = o.isPegIn ? 'L-BTC' : 'BTC';
+    final depositTicker = o.isPegIn ? 'BTC' : 'LBTC';
+    final payoutTicker = o.isPegIn ? 'LBTC' : 'BTC';
     // Peg-in deposits on Bitcoin and pays out on Liquid; peg-out the reverse.
     final depositIsLiquid = !o.isPegIn;
     final payoutIsLiquid = o.isPegIn;
@@ -922,7 +955,8 @@ class _PegScreenState extends State<PegScreen> {
           const SizedBox(height: AppSpacing.lg),
           if (o.awaitingDeposit) ...[
             InfoBanner(
-              message: 'Send ${_fmtBtc(o.depositExpectedSats)} $depositTicker '
+              message:
+                  'Send ${_fmtBtc(o.depositExpectedSats)} $depositTicker '
                   'to the deposit address below to continue. This provider is '
                   'simulated — the deposit is auto-detected, no real funds '
                   'move.',
@@ -1008,8 +1042,12 @@ class _PegScreenState extends State<PegScreen> {
     );
   }
 
-  Widget _txRow(AppScheme s, String label, String txid,
-      {required bool liquid}) {
+  Widget _txRow(
+    AppScheme s,
+    String label,
+    String txid, {
+    required bool liquid,
+  }) {
     final explorer = IconButton(
       tooltip: 'View in explorer',
       icon: const Icon(Icons.open_in_new, size: 14),
@@ -1029,8 +1067,10 @@ class _PegScreenState extends State<PegScreen> {
           children: [
             Text(
               label.toUpperCase(),
-              style: AppTypography.navSection
-                  .copyWith(color: s.inkFaint, fontSize: 10),
+              style: AppTypography.navSection.copyWith(
+                color: s.inkFaint,
+                fontSize: 10,
+              ),
             ),
             Row(
               children: [
@@ -1050,8 +1090,10 @@ class _PegScreenState extends State<PegScreen> {
             width: 86,
             child: Text(
               label.toUpperCase(),
-              style: AppTypography.navSection
-                  .copyWith(color: s.inkFaint, fontSize: 10),
+              style: AppTypography.navSection.copyWith(
+                color: s.inkFaint,
+                fontSize: 10,
+              ),
             ),
           ),
           Expanded(child: HexText(txid, truncate: true)),
@@ -1075,13 +1117,17 @@ class _PegScreenState extends State<PegScreen> {
           const SizedBox(width: AppSpacing.sm),
           Text(
             'Order cancelled',
-            style: AppTypography.bodySmall
-                .copyWith(color: s.danger, fontWeight: FontWeight.w600),
+            style: AppTypography.bodySmall.copyWith(
+              color: s.danger,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const Spacer(),
           if (at != null)
-            Text(_fmtTime(at),
-                style: AppTypography.caption.copyWith(color: s.inkFaint)),
+            Text(
+              _fmtTime(at),
+              style: AppTypography.caption.copyWith(color: s.inkFaint),
+            ),
         ],
       );
     }
@@ -1129,13 +1175,17 @@ class _PegScreenState extends State<PegScreen> {
               Expanded(
                 child: Text(
                   _statusFlow[current].$2,
-                  style: AppTypography.bodySmall
-                      .copyWith(color: s.ink, fontWeight: FontWeight.w600),
+                  style: AppTypography.bodySmall.copyWith(
+                    color: s.ink,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               if (at != null)
-                Text(_fmtTime(at),
-                    style: AppTypography.caption.copyWith(color: s.inkFaint)),
+                Text(
+                  _fmtTime(at),
+                  style: AppTypography.caption.copyWith(color: s.inkFaint),
+                ),
             ],
           ),
         ],
@@ -1156,9 +1206,7 @@ class _PegScreenState extends State<PegScreen> {
                         height: 2,
                         color: i == 0
                             ? Colors.transparent
-                            : (done(i) || active(i)
-                                ? s.success
-                                : s.edgeStrong),
+                            : (done(i) || active(i) ? s.success : s.edgeStrong),
                       ),
                     ),
                     _stepDot(s, o, i, done: done(i), active: active(i)),
@@ -1168,8 +1216,8 @@ class _PegScreenState extends State<PegScreen> {
                         color: i == _statusFlow.length - 1
                             ? Colors.transparent
                             : (done(i + 1) || active(i + 1)
-                                ? s.success
-                                : s.edgeStrong),
+                                  ? s.success
+                                  : s.edgeStrong),
                       ),
                     ),
                   ],
@@ -1182,8 +1230,7 @@ class _PegScreenState extends State<PegScreen> {
                   style: AppTypography.caption.copyWith(
                     fontSize: 10,
                     color: done(i) || active(i) ? s.ink : s.inkFaint,
-                    fontWeight:
-                        active(i) ? FontWeight.w700 : FontWeight.w400,
+                    fontWeight: active(i) ? FontWeight.w700 : FontWeight.w400,
                   ),
                 ),
               ],
@@ -1193,8 +1240,13 @@ class _PegScreenState extends State<PegScreen> {
     );
   }
 
-  Widget _stepDot(AppScheme s, PegOrder o, int i,
-      {required bool done, required bool active}) {
+  Widget _stepDot(
+    AppScheme s,
+    PegOrder o,
+    int i, {
+    required bool done,
+    required bool active,
+  }) {
     final key = _statusFlow[i].$1;
     final at = o.statusHistory
         .where((e) => e.status == key)
@@ -1205,30 +1257,26 @@ class _PegScreenState extends State<PegScreen> {
       height: 18,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: done
-            ? s.success
-            : (active ? s.accentSoft : Colors.transparent),
+        color: done ? s.success : (active ? s.accentSoft : Colors.transparent),
         border: Border.all(
-          color: done
-              ? s.success
-              : (active ? AppColors.accent : s.edgeStrong),
+          color: done ? s.success : (active ? AppColors.accent : s.edgeStrong),
           width: active ? 2 : 1,
         ),
       ),
       child: done
           ? const Icon(Icons.check, size: 12, color: Colors.white)
           : (active
-              ? Center(
-                  child: Container(
-                    width: 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.accent,
+                ? Center(
+                    child: Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.accent,
+                      ),
                     ),
-                  ),
-                )
-              : null),
+                  )
+                : null),
     );
     if (at == null) return dot;
     return Tooltip(message: _fmtTime(at), child: dot);

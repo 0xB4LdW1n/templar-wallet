@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-/// L-BTC asset ID on Liquid testnet.
+/// LBTC asset ID on Liquid testnet.
 pub const LBTC_ASSET_ID: &str = "144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49";
 /// L-USDT asset ID on Liquid testnet.
 pub const LUSDT_ASSET_ID: &str = "b612eb46313a2cd6ebabd8b7a8eed5696e29898b87a43bff41c94f51acef9d73";
@@ -92,14 +92,14 @@ pub struct AssetRegistry {
 }
 
 impl AssetRegistry {
-    /// Creates a registry pre-loaded with L-BTC and L-USDT (testnet).
+    /// Creates a registry pre-loaded with LBTC and L-USDT (testnet).
     pub fn with_defaults() -> Self {
         let mut assets = HashMap::new();
         assets.insert(
             LBTC_ASSET_ID.to_string(),
             AssetInfo {
                 asset_id: LBTC_ASSET_ID.to_string(),
-                ticker: "L-BTC".to_string(),
+                ticker: "LBTC".to_string(),
                 name: "Liquid Bitcoin".to_string(),
                 precision: 8,
             },
@@ -155,7 +155,7 @@ impl AssetRegistry {
     ///
     /// Priority:
     /// 1. Local metadata (from this wallet's issuances)
-    /// 2. Known assets (L-BTC, L-USDT, and any registered)
+    /// 2. Known assets (LBTC, L-USDT, and any registered)
     /// 3. Fallback: ticker = first 8 hex chars, precision = 8
     pub fn resolve(&self, asset_id: &str) -> AssetInfo {
         // 1 — Local metadata has highest priority
@@ -364,7 +364,7 @@ mod tests {
         let reg = AssetRegistry::with_defaults();
         assert!(reg.get(LBTC_ASSET_ID).is_some());
         assert!(reg.get(LUSDT_ASSET_ID).is_some());
-        assert_eq!(reg.ticker(LBTC_ASSET_ID), "L-BTC");
+        assert_eq!(reg.ticker(LBTC_ASSET_ID), "LBTC");
         assert_eq!(reg.ticker(LUSDT_ASSET_ID), "L-USDT");
     }
 
@@ -402,7 +402,7 @@ mod tests {
     fn resolve_known_returns_registered_info() {
         let reg = AssetRegistry::with_defaults();
         let info = reg.resolve(LBTC_ASSET_ID);
-        assert_eq!(info.ticker, "L-BTC");
+        assert_eq!(info.ticker, "LBTC");
         assert_eq!(info.precision, 8);
         assert_eq!(info.asset_id, LBTC_ASSET_ID);
     }
@@ -443,7 +443,7 @@ mod tests {
     #[test]
     fn local_metadata_has_priority_over_known_assets() {
         let mut reg = AssetRegistry::with_defaults();
-        // Override L-BTC ticker with a custom local metadata entry
+        // Override LBTC ticker with a custom local metadata entry
         reg.add_local_metadata(AssetMetadata {
             asset_id: LBTC_ASSET_ID.to_string(),
             name: "Custom BTC".into(),

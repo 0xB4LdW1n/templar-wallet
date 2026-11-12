@@ -15,11 +15,7 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 
 class DevicePermissionCard extends StatefulWidget {
-  const DevicePermissionCard({
-    required this.onFixed,
-    this.detail,
-    super.key,
-  });
+  const DevicePermissionCard({required this.onFixed, this.detail, super.key});
 
   /// Called after the rules were installed, so the host can rescan.
   final VoidCallback onFixed;
@@ -72,12 +68,17 @@ class _DevicePermissionCardState extends State<DevicePermissionCard> {
         children: [
           Row(
             children: [
-              const Icon(Icons.usb_off_rounded,
-                  color: AppColors.warning, size: 22),
+              const Icon(
+                Icons.usb_off_rounded,
+                color: AppColors.warning,
+                size: 22,
+              ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: Text('Device permissions needed',
-                    style: AppTypography.sectionTitle),
+                child: Text(
+                  'Device permissions needed',
+                  style: AppTypography.sectionTitle,
+                ),
               ),
             ],
           ),
@@ -88,8 +89,9 @@ class _DevicePermissionCardState extends State<DevicePermissionCard> {
             'from the HWI project and can install them for you — you will be '
             'asked for your password once.',
             style: AppTypography.bodySmall.copyWith(
-              color:
-                  isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondary,
             ),
           ),
           if (widget.detail != null && widget.detail!.isNotEmpty) ...[

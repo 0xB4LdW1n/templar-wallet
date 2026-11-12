@@ -144,11 +144,11 @@ pub enum LiquidError {
     FrozenCoin(String),
 
     /// LWK 0.9 picks the inputs itself whenever a payment moves an asset
-    /// other than L-BTC, so there a frozen coin cannot be left out — only
+    /// other than LBTC, so there a frozen coin cannot be left out — only
     /// refused.
     #[error(
         "This transaction would spend frozen coin {0}. A Liquid transaction that moves \
-         an asset other than L-BTC cannot leave coins out yet: unfreeze it on the \
+         an asset other than LBTC cannot leave coins out yet: unfreeze it on the \
          UTXOs screen to send this."
     )]
     FrozenCoinUnavoidable(String),

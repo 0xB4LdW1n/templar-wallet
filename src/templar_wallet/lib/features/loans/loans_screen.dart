@@ -22,7 +22,6 @@ import '../../shared/relative_time.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/cards.dart';
-import '../../shared/widgets/expander.dart';
 import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/list_rows.dart';
 import '../../shared/widgets/page_header.dart';
@@ -34,7 +33,7 @@ import '../../theme/app_typography.dart';
 import '../protocol/models/protocol_link.dart';
 import '../protocol/models/protocol_portfolio.dart';
 import '../protocol/models/protocol_records.dart';
-import 'loan_card.dart';
+import 'loan_overview_card.dart';
 
 class LoansScreen extends StatefulWidget {
   const LoansScreen({super.key, this.service, this.store});
@@ -96,15 +95,19 @@ class _LoansScreenState extends State<LoansScreen> {
         : await _store.sitesForWallet(walletId);
     if (!mounted) return;
     // The site with a token first; a pre-v1.1 one only when it is all there is.
-    final preferred = sites.where((s) => s.hasPortfolio).firstOrNull ??
-        sites.firstOrNull;
+    final preferred =
+        sites.where((s) => s.hasPortfolio).firstOrNull ?? sites.firstOrNull;
     setState(() {
       _sites = sites;
-      _siteKey = sites.any((s) => s.key == _siteKey) ? _siteKey : preferred?.key;
+      _siteKey = sites.any((s) => s.key == _siteKey)
+          ? _siteKey
+          : preferred?.key;
       _sitesLoaded = true;
     });
     final site = _site;
-    if (site != null && site.hasPortfolio && _service.snapshot(site.key) == null) {
+    if (site != null &&
+        site.hasPortfolio &&
+        _service.snapshot(site.key) == null) {
       _refresh();
     }
   }
@@ -113,9 +116,9 @@ class _LoansScreenState extends State<LoansScreen> {
     var site = _site;
     if (site == null) return;
     // The record may have changed under us (a reconnect stored a token).
-    final fresh = (await _store.sitesForWallet(site.walletId))
-        .where((s) => s.key == site!.key)
-        .firstOrNull;
+    final fresh = (await _store.sitesForWallet(
+      site.walletId,
+    )).where((s) => s.key == site!.key).firstOrNull;
     if (fresh != null) site = fresh;
     if (!mounted) return;
     if (!site.hasPortfolio) {
@@ -137,6 +140,21 @@ class _LoansScreenState extends State<LoansScreen> {
     ProtocolLinkService.instance.inject(request.link);
   }
 
+  void _details(ProtocolLoan loan) {
+    final site = _site;
+    if (site == null) return;
+    context.go(AppRoutes.loanDetailLocation(site.key, loan.id));
+  }
+
+  void _act(ProtocolLoan loan) {
+    final pending = loan.pendingRequest;
+    if (pending != null && !pending.isExpired()) {
+      _sign(pending);
+      return;
+    }
+    _open(loan);
+  }
+
   /// «Open on Templar Protocol» (§8): asks the site for a one-time link that
   /// lands the browser on the loan — or on the site's front page — already
   /// inside this wallet's session, and hands that link to the system
@@ -155,13 +173,21 @@ class _LoansScreenState extends State<LoansScreen> {
       _openError = null;
     });
     try {
-      final link = await _service.openLink(site, to: loan == null ? '/' : '/loans/${loan.id}');
+      final link = await _service.openLink(
+        site,
+        to: loan == null ? '/' : '/loans/${loan.id}',
+      );
       if (!mounted) return;
-      final launched = await launchUrl(link, mode: LaunchMode.externalApplication);
+      final launched = await launchUrl(
+        link,
+        mode: LaunchMode.externalApplication,
+      );
       if (!launched && mounted) {
-        setState(() => _openError =
-            'The browser did not open. The link is single use and expires in '
-            'two minutes — press the button again for a fresh one.');
+        setState(
+          () => _openError =
+              'The browser did not open. The link is single use and expires in '
+              'two minutes — press the button again for a fresh one.',
+        );
       }
     } on ProtocolPortfolioError catch (e) {
       if (!mounted) return;
@@ -196,7 +222,8 @@ class _LoansScreenState extends State<LoansScreen> {
     final snap = site == null ? null : _service.snapshot(site.key);
     final portfolio = snap?.portfolio;
     final walletName = st.activeWalletName ?? site?.walletName ?? '';
-    final network = portfolio?.network ?? site?.network ?? st.liquidNetwork?.network ?? '';
+    final network =
+        portfolio?.network ?? site?.network ?? st.liquidNetwork?.network ?? '';
     final subtitle = site == null
         ? 'Templar Protocol'
         : [
@@ -270,13 +297,19 @@ class _LoansScreenState extends State<LoansScreen> {
             onChanged: (k) {
               setState(() => _siteKey = k);
               final s = _site;
-              if (s != null && s.hasPortfolio && _service.snapshot(s.key) == null) {
+              if (s != null &&
+                  s.hasPortfolio &&
+                  _service.snapshot(s.key) == null) {
                 _refresh();
               }
             },
             options: [
               for (final s in _sites)
-                SegOption(value: s.key, label: s.site, icon: Icons.link_rounded),
+                SegOption(
+                  value: s.key,
+                  label: s.site,
+                  icon: Icons.link_rounded,
+                ),
             ],
           ),
           SizedBox(height: phone ? AppSpacing.md : AppSpacing.lg),
@@ -287,7 +320,12 @@ class _LoansScreenState extends State<LoansScreen> {
     return Scaffold(
       body: PageBackground.flat(
         child: ListView(
-          padding: EdgeInsets.fromLTRB(pad, phone ? AppSpacing.lg : pad, pad, pad + AppSpacing.xl),
+          padding: EdgeInsets.fromLTRB(
+            pad,
+            phone ? AppSpacing.lg : pad,
+            pad,
+            pad + AppSpacing.xl,
+          ),
           children: [
             header,
             ..._body(site: site, snap: snap, phone: phone),
@@ -319,8 +357,8 @@ class _LoansScreenState extends State<LoansScreen> {
           body: _walletId == null
               ? 'Open a wallet first.'
               : 'A Templar Protocol site learns about this wallet when you click '
-                  '"Connect Templar Wallet" there. Once connected, its loans show '
-                  'up here.',
+                    '"Connect Templar Wallet" there. Once connected, its loans show '
+                    'up here.',
           action: SecondaryButton(
             label: 'Templar Protocol settings',
             icon: Icons.tune_rounded,
@@ -338,12 +376,13 @@ class _LoansScreenState extends State<LoansScreen> {
           key: const Key('loans-reconnect'),
           icon: Icons.sync_problem_rounded,
           title: 'Reconnect to see your loans',
-          body: error?.kind == ProtocolPortfolioErrorKind.needsReconnect &&
+          body:
+              error?.kind == ProtocolPortfolioErrorKind.needsReconnect &&
                   error != null
               ? error.message
               : '${site.site} was connected before this wallet could show '
-                  'loans, or has since revoked its access. Connect it again '
-                  'from the site: the loans you already have come back with it.',
+                    'loans, or has since revoked its access. Connect it again '
+                    'from the site: the loans you already have come back with it.',
           action: PrimaryButton(
             key: const Key('loans-open-site'),
             label: 'Open ${site.site}',
@@ -384,8 +423,9 @@ class _LoansScreenState extends State<LoansScreen> {
       ];
     }
 
-    final open = portfolio.openLoans;
-    final closed = portfolio.closedLoans;
+    final actionRequired = portfolio.actionRequiredLoans();
+    final active = portfolio.activeLoans();
+    final completed = portfolio.closedLoans;
     final offers = portfolio.offers;
     final s = AppScheme.of(context);
     final gap = SizedBox(height: phone ? AppSpacing.md : AppSpacing.lg);
@@ -394,77 +434,85 @@ class _LoansScreenState extends State<LoansScreen> {
       if (error != null) ...[
         WarningBanner(
           title: 'Showing the last answer',
-          message: '${error.message} Below is what ${site.site} said '
+          message:
+              '${error.message} Below is what ${site.site} said '
               '${snap?.fetchedAt != null ? relativeTimeShort(snap!.fetchedAt!) : 'earlier'}.',
         ),
         gap,
       ],
       _SummaryStrip(portfolio: portfolio, phone: phone),
       gap,
-      ListSectionLabel(
-        label: open.isEmpty
-            ? 'Active loans'
-            : 'Active loans · ${open.length}'
-                '${portfolio.pendingCount > 0 ? ' · ${portfolio.pendingCount} to sign' : ''}',
-      ),
-      if (open.isEmpty)
+      ListSectionLabel(label: 'Action required · ${actionRequired.length}'),
+      if (actionRequired.isEmpty)
         _Empty(
-          key: const Key('loans-empty'),
-          icon: Icons.handshake_outlined,
-          title: 'No loans yet',
-          body: 'Open the site to find one. Offers you take or that are taken '
-              'from you show up here, with every step that needs your '
-              'signature.',
-          action: SecondaryButton(
-            key: const Key('loans-open-site'),
-            label: 'Open ${site.site}',
-            icon: Icons.open_in_new,
-            onPressed: () => _open(null),
-            isFullWidth: phone,
-          ),
+          key: const Key('loans-no-action'),
+          icon: Icons.check_circle_outline_rounded,
+          title: 'Nothing needs you now',
+          body:
+              'Pending signatures, installments, claims and covenant renewals appear here.',
         )
       else
-        for (var i = 0; i < open.length; i++) ...[
+        for (var i = 0; i < actionRequired.length; i++) ...[
           if (i > 0) gap,
-          LoanCard(
-            loan: open[i],
-            tipHeight: portfolio.tipHeight,
-            busy: _opening == open[i].id,
-            onSign: _sign,
-            onOpen: () => _open(open[i]),
+          LoanOverviewCard(
+            loan: actionRequired[i],
+            updatedAt: snap?.fetchedAt ?? portfolio.asOf,
+            stale: error != null,
+            updating: snap?.loading ?? false,
+            primaryEmphasis: i == 0,
+            busy: _opening == actionRequired[i].id,
+            onPrimary: () => _act(actionRequired[i]),
+            onOpen: () => _details(actionRequired[i]),
+          ),
+        ],
+      SizedBox(height: phone ? AppSpacing.xl : AppSpacing.xxl),
+      ListSectionLabel(label: 'Active · ${active.length}'),
+      if (active.isEmpty)
+        _Empty(
+          key: const Key('loans-no-active'),
+          icon: Icons.hourglass_empty_rounded,
+          title: 'No waiting loans',
+          body:
+              'Loans waiting for a deadline, confirmation or another party appear here.',
+        )
+      else
+        for (var i = 0; i < active.length; i++) ...[
+          if (i > 0) gap,
+          LoanOverviewCard(
+            loan: active[i],
+            updatedAt: snap?.fetchedAt ?? portfolio.asOf,
+            stale: error != null,
+            updating: snap?.loading ?? false,
+            onPrimary: () => _details(active[i]),
+            onOpen: () => _details(active[i]),
+          ),
+        ],
+      SizedBox(height: phone ? AppSpacing.xl : AppSpacing.xxl),
+      ListSectionLabel(label: 'Completed · ${completed.length}'),
+      if (completed.isEmpty)
+        _Empty(
+          key: const Key('loans-no-completed'),
+          icon: Icons.inventory_2_outlined,
+          title: 'No completed loans',
+          body:
+              'Repaid, defaulted and liquidated loans remain available as history.',
+        )
+      else
+        for (var i = 0; i < completed.length; i++) ...[
+          if (i > 0) gap,
+          LoanOverviewCard(
+            loan: completed[i],
+            updatedAt: snap?.fetchedAt ?? portfolio.asOf,
+            stale: error != null,
+            updating: snap?.loading ?? false,
+            onPrimary: () => _details(completed[i]),
+            onOpen: () => _details(completed[i]),
           ),
         ],
       if (offers.isNotEmpty) ...[
         SizedBox(height: phone ? AppSpacing.xl : AppSpacing.xxl),
         ListSectionLabel(label: 'Your offers · ${offers.length}'),
-        ListCard(
-          children: [
-            for (final o in offers) _OfferRow(offer: o),
-          ],
-        ),
-      ],
-      if (closed.isNotEmpty) ...[
-        SizedBox(height: phone ? AppSpacing.xl : AppSpacing.xxl),
-        ExpanderCard(
-          key: const Key('loans-closed'),
-          title: 'Closed loans',
-          subtitle: 'Repaid, defaulted or liquidated — kept for the record.',
-          trailing: TagChip(label: '${closed.length}', color: s.inkSecondary),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var i = 0; i < closed.length; i++) ...[
-                if (i > 0) gap,
-                LoanCard(
-                  loan: closed[i],
-                  tipHeight: portfolio.tipHeight,
-                  busy: _opening == closed[i].id,
-                  onOpen: () => _open(closed[i]),
-                ),
-              ],
-            ],
-          ),
-        ),
+        ListCard(children: [for (final o in offers) _OfferRow(offer: o)]),
       ],
       SizedBox(height: phone ? AppSpacing.lg : AppSpacing.xl),
       Text(
@@ -546,17 +594,21 @@ class _SummaryStrip extends StatelessWidget {
     if (phone) {
       return Column(
         children: [
-          Row(children: [
-            Expanded(child: tiles[0]),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(child: tiles[1]),
-          ]),
+          Row(
+            children: [
+              Expanded(child: tiles[0]),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: tiles[1]),
+            ],
+          ),
           const SizedBox(height: AppSpacing.sm),
-          Row(children: [
-            Expanded(child: tiles[2]),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(child: tiles[3]),
-          ]),
+          Row(
+            children: [
+              Expanded(child: tiles[2]),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: tiles[3]),
+            ],
+          ),
         ],
       );
     }
@@ -595,7 +647,9 @@ class _StatTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: s.panel,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: emphasis ? s.accent.withValues(alpha: 0.6) : s.edge),
+        border: Border.all(
+          color: emphasis ? s.accent.withValues(alpha: 0.6) : s.edge,
+        ),
       ),
       child: Row(
         children: [
@@ -609,25 +663,36 @@ class _StatTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   textBaseline: TextBaseline.alphabetic,
                   children: [
-                    Text(value,
-                        style: AppTypography.numericLarge.copyWith(
-                          color: emphasis ? s.accent : s.ink,
-                          fontWeight: FontWeight.w700,
-                        )),
+                    Text(
+                      value,
+                      style: AppTypography.numericLarge.copyWith(
+                        color: emphasis ? s.accent : s.ink,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     const SizedBox(width: AppSpacing.xs),
                     Flexible(
-                      child: Text(label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.caption.copyWith(color: s.inkSecondary)),
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.caption.copyWith(
+                          color: s.inkSecondary,
+                        ),
+                      ),
                     ),
                   ],
                 ),
                 if (detail != null)
-                  Text(detail!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.caption.copyWith(color: s.inkFaint, fontSize: 11.5)),
+                  Text(
+                    detail!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkFaint,
+                      fontSize: 11.5,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -668,14 +733,22 @@ class _PhoneHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('LOANS',
-                    style: AppTypography.navSection
-                        .copyWith(color: s.inkFaint, letterSpacing: 1.3)),
+                Text(
+                  'LOANS',
+                  style: AppTypography.navSection.copyWith(
+                    color: s.inkFaint,
+                    letterSpacing: 1.3,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(subtitle,
-                    style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis),
+                Text(
+                  subtitle,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: s.inkSecondary,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ],
             ),
           ),
@@ -692,8 +765,10 @@ class _PhoneHeader extends StatelessWidget {
               onPressed: loading ? null : onRefresh,
               icon: loading
                   ? const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : Icon(Icons.refresh_rounded, color: s.inkSecondary),
             ),
             IconButton(
@@ -702,8 +777,10 @@ class _PhoneHeader extends StatelessWidget {
               onPressed: onOpen,
               icon: opening
                   ? const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : Icon(Icons.open_in_new, color: s.inkSecondary),
             ),
           ],
@@ -729,15 +806,24 @@ class _OfferRow extends StatelessWidget {
     };
     final terms = [
       if (o.rateBps != null) protocolBpsLabel(o.rateBps!),
-      if (o.durationBlocks != null) '${protocolGroupDigits('${o.durationBlocks}')} blocks',
+      if (o.durationBlocks != null)
+        '${protocolGroupDigits('${o.durationBlocks}')} blocks',
       if (o.collateral != null) 'against ${o.collateral!.display}',
     ].join(' · ');
     return ListRow(
-      icon: o.side == 'lend' ? Icons.call_made_rounded : Icons.call_received_rounded,
+      icon: o.side == 'lend'
+          ? Icons.call_made_rounded
+          : Icons.call_received_rounded,
       tint: s.liquid,
-      title: '$side${o.principal != null ? ' ${o.principal!.display}' : ''} · #${o.id}',
-      subtitle: [if (o.state.isNotEmpty) o.state, if (terms.isNotEmpty) terms].join(' · '),
-      trailing: o.state.isNotEmpty ? TagChip(label: o.state, color: s.inkSecondary) : null,
+      title:
+          '$side${o.principal != null ? ' ${o.principal!.display}' : ''} · #${o.id}',
+      subtitle: [
+        if (o.state.isNotEmpty) o.state,
+        if (terms.isNotEmpty) terms,
+      ].join(' · '),
+      trailing: o.state.isNotEmpty
+          ? TagChip(label: o.state, color: s.inkSecondary)
+          : null,
       chevron: o.url != null,
       onTap: o.url == null
           ? null
@@ -768,15 +854,19 @@ class _Empty extends StatelessWidget {
         children: [
           ListIconTile(icon: icon, tint: s.inkSecondary, size: 56),
           const SizedBox(height: AppSpacing.md),
-          Text(title,
-              style: AppTypography.sectionTitleOf(context).copyWith(color: s.ink),
-              textAlign: TextAlign.center),
+          Text(
+            title,
+            style: AppTypography.sectionTitleOf(context).copyWith(color: s.ink),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: AppSpacing.xs),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),
-            child: Text(body,
-                style: AppTypography.caption.copyWith(color: s.inkSecondary),
-                textAlign: TextAlign.center),
+            child: Text(
+              body,
+              style: AppTypography.caption.copyWith(color: s.inkSecondary),
+              textAlign: TextAlign.center,
+            ),
           ),
           if (action != null) ...[
             const SizedBox(height: AppSpacing.lg),

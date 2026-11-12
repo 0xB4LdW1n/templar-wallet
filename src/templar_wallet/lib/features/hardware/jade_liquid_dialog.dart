@@ -119,13 +119,18 @@ class _JadeLiquidDialogState extends State<_JadeLiquidDialog> {
             else if (found)
               Row(
                 children: [
-                  const Icon(Icons.check_circle_outline,
-                      size: 16, color: AppColors.success),
+                  const Icon(
+                    Icons.check_circle_outline,
+                    size: 16,
+                    color: AppColors.success,
+                  ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
-                    child: Text('Found on ${ports.first}',
-                        style: AppTypography.monoSmall,
-                        overflow: TextOverflow.ellipsis),
+                    child: Text(
+                      'Found on ${ports.first}',
+                      style: AppTypography.monoSmall,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               )
@@ -158,8 +163,10 @@ class _JadeLiquidDialogState extends State<_JadeLiquidDialog> {
               const SizedBox(height: AppSpacing.lg),
               const LinearProgressIndicator(),
               const SizedBox(height: AppSpacing.sm),
-              Text('Unlock the Jade and confirm on its screen…',
-                  style: AppTypography.caption),
+              Text(
+                'Unlock the Jade and confirm on its screen…',
+                style: AppTypography.caption,
+              ),
             ],
             if (_error != null) ...[
               const SizedBox(height: AppSpacing.lg),

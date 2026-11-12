@@ -68,19 +68,23 @@ class _BiometricUnlockTileState extends State<BiometricUnlockTile> {
     await BiometricUnlockService.instance.setConfirmEnabled(on);
     if (!mounted) return;
     setState(() => _confirm = on);
-    _snack(on
-        ? '${BiometricUnlockService.sensorName} now confirms signing and '
-            'reveals too.'
-        : 'Confirmations ask for the passphrase again.');
+    _snack(
+      on
+          ? '${BiometricUnlockService.sensorName} now confirms signing and '
+                'reveals too.'
+          : 'Confirmations ask for the passphrase again.',
+    );
   }
 
   void _snack(String text, {bool danger = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(text),
-      backgroundColor: danger ? AppColors.danger : null,
-      duration: const Duration(seconds: 3),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: danger ? AppColors.danger : null,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   Future<void> _toggle(bool on) async {
@@ -134,14 +138,15 @@ class _BiometricUnlockTileState extends State<BiometricUnlockTile> {
       if (raw.contains('enrolled') || raw.contains('none_enrolled')) {
         msg = mac
             ? 'No fingerprint is enrolled in Touch ID. Add one in System '
-                'Settings › Touch ID & Password, then try again.'
+                  'Settings › Touch ID & Password, then try again.'
             : 'No fingerprint is enrolled on this device. Add one in Android '
-                'Settings › Security, then try again.';
+                  'Settings › Security, then try again.';
       } else if (raw.contains('screen lock') ||
           raw.contains('secure lock') ||
           raw.contains('keystore') ||
           raw.contains('keygenerator')) {
-        msg = 'Set a screen lock and a fingerprint in Android Settings › '
+        msg =
+            'Set a screen lock and a fingerprint in Android Settings › '
             'Security first, then try again.';
       } else if (e is StateError) {
         msg = e.message;
@@ -150,9 +155,9 @@ class _BiometricUnlockTileState extends State<BiometricUnlockTile> {
       } else {
         msg = mac
             ? 'Could not enable Touch ID unlock. Check that Touch ID is set '
-                'up in System Settings.'
+                  'up in System Settings.'
             : 'Could not enable biometric unlock. Check that a screen lock '
-                'and a fingerprint are set on this device.';
+                  'and a fingerprint are set on this device.';
       }
       _snack(msg, danger: true);
     }
@@ -212,22 +217,24 @@ class _BiometricUnlockTileState extends State<BiometricUnlockTile> {
           children: [
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text(Platform.isMacOS
-                  ? 'Unlock with Touch ID'
-                  : 'Unlock with fingerprint'),
+              title: Text(
+                Platform.isMacOS
+                    ? 'Unlock with Touch ID'
+                    : 'Unlock with fingerprint',
+              ),
               subtitle: Text(
                 usable
                     ? Platform.isMacOS
-                        ? 'Touch ID opens the vault at launch and after '
-                            '“Lock now”.'
-                        : '${BiometricUnlockService.sensorName} opens the '
-                            'vault. The passphrase is still asked to reveal '
-                            'the seed and to sign.'
+                          ? 'Touch ID opens the vault at launch and after '
+                                '“Lock now”.'
+                          : '${BiometricUnlockService.sensorName} opens the '
+                                'vault. The passphrase is still asked to reveal '
+                                'the seed and to sign.'
                     : Platform.isMacOS
-                        ? 'No fingerprint is enrolled in Touch ID. Add one in '
-                            'System Settings › Touch ID & Password first.'
-                        : 'No fingerprint is enrolled on this device. Add one '
-                            'in the system settings first.',
+                    ? 'No fingerprint is enrolled in Touch ID. Add one in '
+                          'System Settings › Touch ID & Password first.'
+                    : 'No fingerprint is enrolled on this device. Add one '
+                          'in the system settings first.',
                 style: AppTypography.caption,
               ),
               value: _enabled,

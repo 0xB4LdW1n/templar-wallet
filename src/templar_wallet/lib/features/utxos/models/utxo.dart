@@ -43,11 +43,14 @@ class Utxo {
   /// spent by the engine until it is unfrozen.
   bool get isFrozen => state == UtxoState.frozen;
 
-  /// Denominated in satoshis of the chain's own coin (BTC or L-BTC), where
+  /// Denominated in satoshis of the chain's own coin (BTC or LBTC), where
   /// the fixed dust and whale amounts mean something. A token's "546" is
   /// not dust and its "1.00000000" is not a whale.
   bool get isBtcLike =>
-      ticker == null || ticker == 'BTC' || ticker == 'L-BTC' || ticker == 'LBTC';
+      ticker == null ||
+      ticker == 'BTC' ||
+      ticker == 'LBTC' ||
+      ticker == 'L-BTC';
 
   String get shortOutpoint {
     final parts = outpoint.split(':');
@@ -75,17 +78,16 @@ class Utxo {
     String? label,
     UtxoState? state,
     bool clearLabel = false,
-  }) =>
-      Utxo(
-        outpoint: outpoint,
-        amount: amount,
-        displayAmount: displayAmount,
-        confirmations: confirmations,
-        state: state ?? this.state,
-        label: clearLabel ? null : (label ?? this.label),
-        address: address,
-        ticker: ticker,
-        assetId: assetId,
-        isSelected: isSelected ?? this.isSelected,
-      );
+  }) => Utxo(
+    outpoint: outpoint,
+    amount: amount,
+    displayAmount: displayAmount,
+    confirmations: confirmations,
+    state: state ?? this.state,
+    label: clearLabel ? null : (label ?? this.label),
+    address: address,
+    ticker: ticker,
+    assetId: assetId,
+    isSelected: isSelected ?? this.isSelected,
+  );
 }

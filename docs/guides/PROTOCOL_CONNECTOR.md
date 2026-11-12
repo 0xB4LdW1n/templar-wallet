@@ -12,7 +12,7 @@ the wallet side of it.
 | Liquid network | Settings › Templar Protocol (and Network & Sync) | `testnet` (public) or `regtest` (a local `elementsd`, what the Templar Protocol runs for development). The wallet refuses any request whose `network` differs — and offers the switch on the spot (see *When the networks disagree*). |
 | `templar://connect` | opened from the site's "Connect Templar Wallet" link | Fetches the request, checks version / nonce / origin / transport / expiry, lets the user pick a Liquid wallet (a software seed, or a Jade), shows the watch-only CT descriptor, the loan key (`[fp/2121h/1h/0h]tpub…` from a seed, `[fp/87h/1h/0h]tpub…` from a Jade) and a receive address, and POSTs them after the app password. When the site sent a `challenge` (v1.1) a software wallet also signs the **proof of key** (below) and sends it as `proof`; the answer's `portfolio` object is kept for the Loans page. |
 | `templar://sign` | opened from a loan page | Fetches the request, shows the site's summary **next to** the wallet's own reading of the PSET (`inspect_pset`: which inputs ask for our key, which outputs are ours / an escrow / external, fee, network), requires the checkbox + app password, signs with `sign_pset` (or `sign_pset_hw` on a Jade) and POSTs the signed PSET. Never broadcasts, never stores the PSET. |
-| `templar://sign` with `action: "proof"` | opened from the site's check page (a 0.1.0-style reconnect, «Ritrova», «Un altro wallet») | The strict review of contract §9.5: the engine rebuilds the check PSET from the request's `challenge` and this wallet's loan key (`protocol_is_check_pset`) and the screen **refuses anything else** — a real-looking prevout, a coin worth anything, another challenge, another key, an extra output, a non-zero fee, another chain's L-BTC — naming the reason. It shows the challenge line verbatim, the site origin, the expiry and «This signature never moves funds»; the wallet's own reading (not my coin, 0, OP_RETURN, fee 0) sits underneath. Then it signs through the ordinary route. |
+| `templar://sign` with `action: "proof"` | opened from the site's check page (a 0.1.0-style reconnect, «Ritrova», «Un altro wallet») | The strict review of contract §9.5: the engine rebuilds the check PSET from the request's `challenge` and this wallet's loan key (`protocol_is_check_pset`) and the screen **refuses anything else** — a real-looking prevout, a coin worth anything, another challenge, another key, an extra output, a non-zero fee, another chain's LBTC — naming the reason. It shows the challenge line verbatim, the site origin, the expiry and «This signature never moves funds»; the wallet's own reading (not my coin, 0, OP_RETURN, fee 0) sits underneath. Then it signs through the ordinary route. |
 
 | Loans (`/loans`) | beside the Dashboard; a carousel tab on a phone; the Liquid panel's row on the desktop dashboard | The wallet's loans as the connected site reports them (`GET /connector/portfolio`, §7, with the bearer token the connect answer handed back): one card per loan — reference, role, state, the site's «what happens now», the term as a bar with «≈ N d/h left» and the due estimate, owed / principal / collateral / interest / Templar fee — then the wallet's own offers and the closed loans under an expander. **Sign now** feeds the loan's `templar://sign` link to the app's own link handler (no browser round-trip); **Open on Templar Protocol** asks `POST /connector/open` (bearer token, `{"to": "/loans/<id>"}`, or `/` from the header) for a one-time link and opens it in the system browser, which lands already inside the wallet's session (§8) — the token never goes in a URL, the link is single use and dies in two minutes, a link to another host is refused; **Refresh** asks again. Pulled on open, on Refresh and after every signature answered for that site. `401` drops the token and the page says «Reconnect to see your loans»; `429` and a network failure keep the last answer on screen with the reason. Nothing is persisted but the token. |
 
@@ -49,7 +49,7 @@ loans, from a new browser — by a signature on the **check PSET** of contract
 pk        = K/0/0
 fake_txid = sha256("templar-proof" ‖ challenge)
 input 0   prevout (fake_txid, 0), sequence 0xffffffff, SIGHASH_ALL,
-          witness_utxo = explicit 0 L-BTC to P2WPKH(pk), bip32_derivation [fp/…/0/0]
+          witness_utxo = explicit 0 LBTC to P2WPKH(pk), bip32_derivation [fp/…/0/0]
 output 0  OP_RETURN(challenge), explicit 0, policy asset
 output 1  fee, explicit 0
 locktime 0, PSET v2
@@ -111,7 +111,7 @@ chosen anew: the engine closed whatever was open.
 ### `policy_asset`
 
 On regtest the connect and sign JSON may carry an optional `policy_asset`: the
-L-BTC asset id of the site's chain, 64 hex characters, lower case.
+LBTC asset id of the site's chain, 64 hex characters, lower case.
 
 ```json
 {

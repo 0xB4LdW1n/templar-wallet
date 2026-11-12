@@ -12,32 +12,30 @@ ProtocolConnectedSite _site({
   String walletId = 'w1',
   String name = 'Templar Protocol demo',
   DateTime? at,
-}) =>
-    ProtocolConnectedSite(
-      site: name,
-      origin: origin,
-      network: 'liquid-regtest',
-      walletId: walletId,
-      walletName: 'Alice',
-      connectedAt: at ?? DateTime.utc(2026, 9, 17, 10),
-      escrowFingerprint: '73c5da0a',
-      receiveAddress: 'el1qq0000',
-    );
+}) => ProtocolConnectedSite(
+  site: name,
+  origin: origin,
+  network: 'liquid-regtest',
+  walletId: walletId,
+  walletName: 'Alice',
+  connectedAt: at ?? DateTime.utc(2026, 9, 17, 10),
+  escrowFingerprint: '73c5da0a',
+  receiveAddress: 'el1qq0000',
+);
 
 ProtocolSignRecord _sign({
   String loanRef = 'SQ-42',
   ProtocolSignOutcome outcome = ProtocolSignOutcome.signed,
   DateTime? at,
-}) =>
-    ProtocolSignRecord(
-      site: 'Templar Protocol demo',
-      origin: 'https://protocol.example',
-      walletName: 'Alice',
-      at: at ?? DateTime.utc(2026, 9, 17, 11),
-      outcome: outcome,
-      loanRef: loanRef,
-      action: 'origination',
-    );
+}) => ProtocolSignRecord(
+  site: 'Templar Protocol demo',
+  origin: 'https://protocol.example',
+  walletName: 'Alice',
+  at: at ?? DateTime.utc(2026, 9, 17, 11),
+  outcome: outcome,
+  loanRef: loanRef,
+  action: 'origination',
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -64,18 +62,22 @@ void main() {
       expect(sites.single.connectedAt, DateTime.utc(2026, 9, 17, 10));
     });
 
-    test('the same site and wallet is one record, with the newer date',
-        () async {
-      await store.recordConnect(_site());
-      await store.recordConnect(_site(at: DateTime.utc(2026, 9, 18, 9)));
-      expect(await store.sites(), hasLength(1));
-      expect((await store.sites()).single.connectedAt,
-          DateTime.utc(2026, 9, 18, 9));
+    test(
+      'the same site and wallet is one record, with the newer date',
+      () async {
+        await store.recordConnect(_site());
+        await store.recordConnect(_site(at: DateTime.utc(2026, 9, 18, 9)));
+        expect(await store.sites(), hasLength(1));
+        expect(
+          (await store.sites()).single.connectedAt,
+          DateTime.utc(2026, 9, 18, 9),
+        );
 
-      // Another wallet on the same site is a different relationship.
-      await store.recordConnect(_site(walletId: 'w2'));
-      expect(await store.sites(), hasLength(2));
-    });
+        // Another wallet on the same site is a different relationship.
+        await store.recordConnect(_site(walletId: 'w2'));
+        expect(await store.sites(), hasLength(2));
+      },
+    );
 
     test('forget removes one record and leaves the rest', () async {
       await store.recordConnect(_site());
@@ -88,21 +90,23 @@ void main() {
       expect(left.single.origin, 'https://other.example');
     });
 
-    test('deleting a wallet takes its sites and its preference with it',
-        () async {
-      await store.recordConnect(_site(walletId: 'w1'));
-      await store.recordConnect(_site(walletId: 'w2'));
-      await store.setPreferredWalletId('w1');
+    test(
+      'deleting a wallet takes its sites and its preference with it',
+      () async {
+        await store.recordConnect(_site(walletId: 'w1'));
+        await store.recordConnect(_site(walletId: 'w2'));
+        await store.setPreferredWalletId('w1');
 
-      await store.forgetWallet('w1');
-      expect((await store.sites()).single.walletId, 'w2');
-      expect(await store.preferredWalletId(), isNull);
+        await store.forgetWallet('w1');
+        expect((await store.sites()).single.walletId, 'w2');
+        expect(await store.preferredWalletId(), isNull);
 
-      // A preference for a wallet that stayed is left alone.
-      await store.setPreferredWalletId('w2');
-      await store.forgetWallet('w3');
-      expect(await store.preferredWalletId(), 'w2');
-    });
+        // A preference for a wallet that stayed is left alone.
+        await store.setPreferredWalletId('w2');
+        await store.forgetWallet('w3');
+        expect(await store.preferredWalletId(), 'w2');
+      },
+    );
   });
 
   group('signing history', () {
@@ -121,8 +125,10 @@ void main() {
         await store.recordSign(_sign(outcome: o));
       }
       store.resetCacheForTest();
-      expect((await store.history()).map((r) => r.outcome).toSet(),
-          ProtocolSignOutcome.values.toSet());
+      expect(
+        (await store.history()).map((r) => r.outcome).toSet(),
+        ProtocolSignOutcome.values.toSet(),
+      );
     });
 
     test('only the last 50 are kept', () async {
@@ -162,12 +168,17 @@ void main() {
       await store.recordConnect(_site());
       await store.recordSign(_sign());
       final prefs = await SharedPreferences.getInstance();
-      final blob = '${prefs.getString('protocol_sites_v1')}'
+      final blob =
+          '${prefs.getString('protocol_sites_v1')}'
           '${prefs.getString('protocol_history_v1')}';
       // The connect record says *that* a descriptor was shared; neither the
       // descriptor nor a key, an amount or a PSET is written down.
       for (final forbidden in ['pset', 'ct(', 'tpub', 'xpub', 'amount']) {
-        expect(blob.toLowerCase(), isNot(contains(forbidden)), reason: forbidden);
+        expect(
+          blob.toLowerCase(),
+          isNot(contains(forbidden)),
+          reason: forbidden,
+        );
       }
     });
 
@@ -181,13 +192,21 @@ void main() {
       expect(await store.history(), isEmpty);
     });
 
-    test('an escrow fingerprint is read from a keyorigin key, never guessed',
-        () {
-      expect(protocolKeyFingerprint("[73c5da0a/2121h/1h/0h]tpubDX"), '73c5da0a');
-      expect(protocolKeyFingerprint("[73C5DA0A/2121'/1'/0']tpubDX"), '73c5da0a');
-      expect(protocolKeyFingerprint('tpubDXnokeyorigin'), '');
-      expect(protocolKeyFingerprint('[nothex/2121h]tpubDX'), '');
-      expect(protocolKeyFingerprint(null), '');
-    });
+    test(
+      'an escrow fingerprint is read from a keyorigin key, never guessed',
+      () {
+        expect(
+          protocolKeyFingerprint("[73c5da0a/2121h/1h/0h]tpubDX"),
+          '73c5da0a',
+        );
+        expect(
+          protocolKeyFingerprint("[73C5DA0A/2121'/1'/0']tpubDX"),
+          '73c5da0a',
+        );
+        expect(protocolKeyFingerprint('tpubDXnokeyorigin'), '');
+        expect(protocolKeyFingerprint('[nothex/2121h]tpubDX'), '');
+        expect(protocolKeyFingerprint(null), '');
+      },
+    );
   });
 }

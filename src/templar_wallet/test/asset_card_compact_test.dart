@@ -10,15 +10,15 @@ import 'package:templar_wallet/features/dashboard/models/dashboard_data.dart';
 import 'package:templar_wallet/shared/widgets/asset_card.dart';
 
 Widget host(Widget child, {double width = 379}) => MaterialApp(
-      home: ChangeNotifierProvider<AppState>(
-        create: (_) => AppState(),
-        child: Scaffold(
-          body: Center(
-            child: SizedBox(width: width, child: child),
-          ),
-        ),
+  home: ChangeNotifierProvider<AppState>(
+    create: (_) => AppState(),
+    child: Scaffold(
+      body: Center(
+        child: SizedBox(width: width, child: child),
       ),
-    );
+    ),
+  ),
+);
 
 const _asset = AssetBalance(
   assetId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -33,12 +33,16 @@ void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
 
   testWidgets('compact row fits a phone column with a long amount', (t) async {
-    await t.pumpWidget(host(GroupedAssetCard(
-      group: const AssetGroup(main: _asset),
-      isHidden: false,
-      compact: true,
-      onTap: () {},
-    )));
+    await t.pumpWidget(
+      host(
+        GroupedAssetCard(
+          group: const AssetGroup(main: _asset),
+          isHidden: false,
+          compact: true,
+          onTap: () {},
+        ),
+      ),
+    );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(find.textContaining('PEGx USDt'), findsOneWidget);
@@ -49,28 +53,32 @@ void main() {
   });
 
   testWidgets('compact row survives a 320-dp column', (t) async {
-    await t.pumpWidget(host(
-      GroupedAssetCard(
-        group: const AssetGroup(main: _asset, reissuanceToken: _asset),
-        isHidden: true,
-        compact: true,
-        onTap: null,
+    await t.pumpWidget(
+      host(
+        GroupedAssetCard(
+          group: const AssetGroup(main: _asset, reissuanceToken: _asset),
+          isHidden: true,
+          compact: true,
+          onTap: null,
+        ),
+        width: 320,
       ),
-      width: 320,
-    ));
+    );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
   });
 
   testWidgets('grid tile is unchanged by the flag default', (t) async {
-    await t.pumpWidget(host(
-      const GroupedAssetCard(
-        group: AssetGroup(main: _asset),
-        isHidden: false,
-        onTap: null,
+    await t.pumpWidget(
+      host(
+        const GroupedAssetCard(
+          group: AssetGroup(main: _asset),
+          isHidden: false,
+          onTap: null,
+        ),
+        width: 190,
       ),
-      width: 190,
-    ));
+    );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(find.text('3 UTXOs'), findsOneWidget);

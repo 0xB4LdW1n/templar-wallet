@@ -45,13 +45,13 @@ pub use crate::liquid::chain::LIQUID_ELECTRUM_URL;
 pub struct LiquidBalance {
     /// Map of asset_id → amount in satoshis.
     pub assets: HashMap<String, u64>,
-    /// L-BTC asset id (hex) of the network this balance was read on. Empty
+    /// LBTC asset id (hex) of the network this balance was read on. Empty
     /// on a value built by hand, which then means Liquid testnet.
     pub policy_asset: String,
 }
 
 impl LiquidBalance {
-    /// The L-BTC asset id this balance counts as "L-BTC".
+    /// The LBTC asset id this balance counts as "LBTC".
     pub fn policy_asset_id(&self) -> &str {
         if self.policy_asset.is_empty() {
             crate::liquid::assets::LBTC_ASSET_ID
@@ -60,7 +60,7 @@ impl LiquidBalance {
         }
     }
 
-    /// Returns the L-BTC balance in satoshis (the policy asset of the
+    /// Returns the LBTC balance in satoshis (the policy asset of the
     /// network the wallet was read on).
     pub fn lbtc(&self) -> u64 {
         *self.assets.get(self.policy_asset_id()).unwrap_or(&0)
@@ -268,6 +268,53 @@ pub fn refuse_frozen_inputs(
 }
 
 impl LiquidWalletManager {
+    fn is_ruggedbytes_control_pset(pset: &Pset) -> bool {
+        pset.global.proprietary.iter().any(|(key, value)| {
+            let subtype: u8 = key.subtype;
+            key.prefix == b"templar-lend"
+                && subtype == 1
+                && key.key == b"ruggedbytes-control-v1"
+                && value.as_slice() == [1]
+        })
+    }
+
+    /// LWK's generic balance reader requires every wallet-owned input/output
+    /// to be confidential. RuggedBytes authority tokens are deliberately
+    /// explicit so the covenant output template remains below Elements'
+    /// 520-byte push limit. On a marked protocol PSET, hide only those
+    /// one-unit derivations from the balance pass. The original PSET remains
+    /// untouched for the script view and signer.
+    fn pset_for_balance_details(pset: &Pset) -> Pset {
+        let mut view = pset.clone();
+        if !Self::is_ruggedbytes_control_pset(pset) {
+            return view;
+        }
+        for input in view.inputs_mut() {
+            let explicit_unit = input.witness_utxo.as_ref().is_some_and(|utxo| {
+                utxo.asset.explicit() == input.asset
+                    && utxo.value.explicit() == Some(1)
+                    && input.amount == Some(1)
+            });
+            if explicit_unit {
+                input.bip32_derivation.clear();
+                input.tap_key_origins.clear();
+                input.tap_internal_key = None;
+            }
+        }
+        for output in view.outputs_mut() {
+            if output.asset.is_some()
+                && output.amount == Some(1)
+                && output.asset_comm.is_none()
+                && output.amount_comm.is_none()
+            {
+                output.bip32_derivation.clear();
+                output.tap_key_origins.clear();
+                output.tap_internal_key = None;
+            }
+        }
+        view
+    }
+
     fn make_wollet(
         network: ElementsNetwork,
         descriptor: WolletDescriptor,
@@ -473,12 +520,12 @@ impl LiquidWalletManager {
         self.wollet.network()
     }
 
-    /// L-BTC asset id of this wallet's network.
+    /// LBTC asset id of this wallet's network.
     pub fn policy_asset(&self) -> AssetId {
         self.wollet.policy_asset()
     }
 
-    /// L-BTC asset id of this wallet's network, hex.
+    /// LBTC asset id of this wallet's network, hex.
     pub fn policy_asset_hex(&self) -> String {
         self.wollet.policy_asset().to_string()
     }
@@ -531,7 +578,7 @@ impl LiquidWalletManager {
     ///
     /// Returns `(address, derivation_index, lbtc_received_sats)` per distinct
     /// address, sorted by derivation index. `lbtc_received_sats` counts only
-    /// L-BTC — an address that only ever received tokens reports 0.
+    /// LBTC — an address that only ever received tokens reports 0.
     pub fn list_received_external_addresses(
         &self,
     ) -> Result<Vec<(String, u32, u64)>, TemplarError> {
@@ -608,16 +655,16 @@ impl LiquidWalletManager {
     }
 
     /// Builds an unsigned PSET paying multiple recipients, each with its own
-    /// asset — one Liquid transaction can move L-BTC and tokens together.
+    /// asset — one Liquid transaction can move LBTC and tokens together.
     /// Recipients are `(address, amount, asset_id)` triples.
     ///
-    /// `drain_lbtc_to` implements "send MAX L-BTC": every L-BTC input is
+    /// `drain_lbtc_to` implements "send MAX LBTC": every LBTC input is
     /// selected and whatever is left after the fixed recipients and the fee
     /// lands at that address (LWK `drain_lbtc_wallet` + `drain_lbtc_to`).
     ///
-    /// `frozen` coins are left out when the payment moves only L-BTC. When
+    /// `frozen` coins are left out when the payment moves only LBTC. When
     /// it moves another asset, LWK 0.9 picks every input itself (and takes
-    /// all L-BTC coins for the fee), so a PSET that would spend a frozen
+    /// all LBTC coins for the fee), so a PSET that would spend a frozen
     /// coin is refused instead.
     pub fn create_tx_multi(
         &self,
@@ -663,7 +710,7 @@ impl LiquidWalletManager {
         Ok(pset)
     }
 
-    /// The wallet's L-BTC coins minus the frozen ones, for LWK's manual
+    /// The wallet's LBTC coins minus the frozen ones, for LWK's manual
     /// selection — `None` when nothing is frozen, so the builder keeps its
     /// own selection untouched.
     fn lbtc_coins_excluding(
@@ -701,15 +748,33 @@ impl LiquidWalletManager {
     ) -> Result<PsetDetails, TemplarError> {
         let network = self.network()?;
         self.check_pset_network(pset, &network)?;
+        let balance_pset = Self::pset_for_balance_details(pset);
         let details = self
             .wollet
-            .get_details(pset)
+            .get_details(&balance_pset)
             .map_err(|e| LiquidError::PsetInspectionFailed(e.to_string()))?;
         crate::liquid::pset::refuse_non_testnet_paths(pset, &self.our_fingerprints())?;
         let mut details = PsetDetails::from_lwk(details);
         details.network = network.name().to_string();
         details.inputs = self.describe_inputs(pset);
         details.outputs = self.describe_outputs(pset)?;
+        if Self::is_ruggedbytes_control_pset(pset) {
+            let control_outputs: BTreeSet<u32> = pset
+                .outputs()
+                .iter()
+                .enumerate()
+                .filter(|(_, output)| {
+                    output.asset.is_some()
+                        && output.amount == Some(1)
+                        && output.asset_comm.is_none()
+                        && output.amount_comm.is_none()
+                })
+                .map(|(index, _)| index as u32)
+                .collect();
+            details
+                .recipients
+                .retain(|recipient| !control_outputs.contains(&recipient.vout));
+        }
         // LWK copied every foreign output's explicit fields unchecked; a
         // recipient row must not repeat a number the output view refused.
         for r in &mut details.recipients {
@@ -726,7 +791,7 @@ impl LiquidWalletManager {
         Ok(details)
     }
 
-    /// Refuses a PSET that carries another network's L-BTC — explicitly on
+    /// Refuses a PSET that carries another network's LBTC — explicitly on
     /// an input, a prevout or an output, or as the fee asset. Assets the
     /// wallet cannot place (tokens, blinded fields) are not judged.
     fn check_pset_network(
@@ -757,23 +822,23 @@ impl LiquidWalletManager {
         for output in pset.outputs() {
             explicit.extend(output.asset);
         }
-        // A known L-BTC of another network anywhere: name it.
+        // A known LBTC of another network anywhere: name it.
         for asset in &explicit {
             if let Some((_, name)) = foreign.iter().find(|(id, _)| id == asset) {
                 return Err(LiquidError::NetworkMismatch(format!(
-                    "this PSET carries {name} L-BTC, but the wallet is on {network}"
+                    "this PSET carries {name} LBTC, but the wallet is on {network}"
                 ))
                 .into());
             }
         }
-        // The fee must be paid in this network's L-BTC — a fee in an unknown
+        // The fee must be paid in this network's LBTC — a fee in an unknown
         // asset means a chain this wallet does not know at all.
         for output in pset.outputs() {
             if output.script_pubkey.is_empty() {
                 if let Some(fee_asset) = output.asset {
                     if fee_asset != ours {
                         return Err(LiquidError::NetworkMismatch(format!(
-                            "the fee is paid in {fee_asset}, not this network's L-BTC — \
+                            "the fee is paid in {fee_asset}, not this network's LBTC — \
                              this PSET was built for another network (wallet is on {network})"
                         ))
                         .into());
@@ -1116,7 +1181,7 @@ impl LiquidWalletManager {
 
         self.sync()?;
 
-        // An issuance pays only its L-BTC fee, so the frozen coins can be
+        // An issuance pays only its LBTC fee, so the frozen coins can be
         // left out exactly.
         let mut builder = self
             .wollet
@@ -1242,7 +1307,7 @@ impl LiquidWalletManager {
             .parse()
             .map_err(|e| LiquidError::ReissuanceFailed(format!("Invalid asset_id: {e}")))?;
 
-        // The L-BTC fee coins can be chosen; the reissuance token coin is
+        // The LBTC fee coins can be chosen; the reissuance token coin is
         // LWK's pick, so a frozen token is refused rather than left out.
         let mut builder = self
             .wollet
@@ -1309,7 +1374,7 @@ impl LiquidWalletManager {
             .parse()
             .map_err(|e| LiquidError::BurnFailed(format!("Invalid asset_id: {e}")))?;
 
-        // Burning L-BTC can leave frozen coins out; burning any other asset
+        // Burning LBTC can leave frozen coins out; burning any other asset
         // lets LWK pick that asset's coins itself, so a frozen one is refused.
         let lbtc = asset == self.wollet.policy_asset();
         let mut builder = self

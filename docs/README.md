@@ -9,6 +9,7 @@ Reference material only — nothing here is compiled or shipped except
 | [`INSTALLAZIONE.md`](INSTALLAZIONE.md) | The same, in Italian |
 | [`guides/`](guides) | Runbooks: hardware wallets, Jade, Liquid multisig, the Templar Protocol connector |
 | [`guides/TUI.md`](guides/TUI.md) | Install and operate the `templar` terminal client |
+| [`guides/LOCAL_ORDERBOOK.md`](guides/LOCAL_ORDERBOOK.md) | Run the localhost LiquiDEX book, admin dashboard, assets, and SQLite DB |
 | [`build/`](build) | Platform build notes (Linux, Windows), builds on a helper PC, the release runbook |
 | [`fixtures/`](fixtures) | Request fixtures for testing the Templar Protocol connector without a site |
 | [`ANDROID_PORT.md`](ANDROID_PORT.md) | How the Android port was done and what it decided |
@@ -24,6 +25,7 @@ Reference material only — nothing here is compiled or shipped except
 - **Testing with a Jade / Ledger** → `guides/HARDWARE_TESTING.md`,
   `guides/JADE_TESTING.md`.
 - **Installing and using the terminal client** → [`guides/TUI.md`](guides/TUI.md).
+- **Running the local LiquiDEX market** → [`guides/LOCAL_ORDERBOOK.md`](guides/LOCAL_ORDERBOOK.md).
 - **Liquid multisig setup and signing** → `guides/LIQUID_MULTISIG.md`.
 - **Templar Protocol connector** (`templar://` links, escrow key, regtest,
   fixtures) → `guides/PROTOCOL_CONNECTOR.md`.

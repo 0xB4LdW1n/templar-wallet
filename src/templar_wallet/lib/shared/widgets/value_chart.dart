@@ -87,8 +87,10 @@ class _ValueChartState extends State<ValueChart>
   static const double _bottomPad = 8;
   static const double _sidePad = 5;
 
-  late final AnimationController _sweep =
-      AnimationController(vsync: this, duration: AppMotion.standard);
+  late final AnimationController _sweep = AnimationController(
+    vsync: this,
+    duration: AppMotion.standard,
+  );
 
   List<ChartPoint> _sampled = const [];
   int? _cursor;
@@ -289,11 +291,15 @@ class _ValueChartState extends State<ValueChart>
     final valueStyle = touch
         ? AppTypography.numeric.copyWith(color: s.ink, fontSize: 14)
         : AppTypography.numericSmall.copyWith(color: s.ink);
-    final stampStyle = AppTypography.caption
-        .copyWith(color: s.inkFaint, fontSize: touch ? 12 : 11, height: 1.2);
+    final stampStyle = AppTypography.caption.copyWith(
+      color: s.inkFaint,
+      fontSize: touch ? 12 : 11,
+      height: 1.2,
+    );
 
     return Semantics(
-      label: 'Value chart, ${_sampled.length} points, latest '
+      label:
+          'Value chart, ${_sampled.length} points, latest '
           '${widget.formatValue(_sampled.last.value)}',
       child: SizedBox(
         height: widget.height,
@@ -326,8 +332,18 @@ class _ValueChartState extends State<ValueChart>
                 // where the drag ended.
                 onHorizontalDragStart: (d) => _dragCursor(d.localPosition),
                 onHorizontalDragUpdate: (d) => _dragCursor(d.localPosition),
-                child: _paint(geom, w, h, line, s, active, cursor, valueStyle,
-                    stampStyle, farSideChip: true),
+                child: _paint(
+                  geom,
+                  w,
+                  h,
+                  line,
+                  s,
+                  active,
+                  cursor,
+                  valueStyle,
+                  stampStyle,
+                  farSideChip: true,
+                ),
               );
             } else {
               gestures = MouseRegion(
@@ -344,8 +360,17 @@ class _ValueChartState extends State<ValueChart>
                   onLongPressMoveUpdate: (d) => _moveCursor(d.localPosition),
                   onLongPressEnd: (_) => _clearCursor(),
                   onLongPressCancel: _clearCursor,
-                  child: _paint(geom, w, h, line, s, active, cursor, valueStyle,
-                      stampStyle),
+                  child: _paint(
+                    geom,
+                    w,
+                    h,
+                    line,
+                    s,
+                    active,
+                    cursor,
+                    valueStyle,
+                    stampStyle,
+                  ),
                 ),
               );
             }
@@ -387,8 +412,9 @@ class _ValueChartState extends State<ValueChart>
             chipFill: s.surfaceSolid,
             chipEdge: s.edge,
             cursor: active ? cursor : null,
-            cursorValue:
-                active ? widget.formatValue(_sampled[cursor!].value) : null,
+            cursorValue: active
+                ? widget.formatValue(_sampled[cursor!].value)
+                : null,
             cursorStamp: active
                 ? _formatStamp(_sampled[cursor!].time, _spanIsShort)
                 : null,

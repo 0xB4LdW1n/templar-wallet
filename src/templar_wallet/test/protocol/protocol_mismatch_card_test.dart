@@ -16,14 +16,14 @@ const _otherAsset =
     'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
 
 LiquidNetworkInfo _info({bool envLocked = false}) => LiquidNetworkInfo(
-      network: 'liquid-testnet',
-      shortName: 'testnet',
-      policyAsset: '',
-      backend: 'electrum',
-      backendDescription: 'electrum ssl://host:50002',
-      envLocked: envLocked,
-      regtestDefaultPolicyAsset: _stockAsset,
-    );
+  network: 'liquid-testnet',
+  shortName: 'testnet',
+  policyAsset: '',
+  backend: 'electrum',
+  backendDescription: 'electrum ssl://host:50002',
+  envLocked: envLocked,
+  regtestDefaultPolicyAsset: _stockAsset,
+);
 
 void main() {
   setUpAll(() {
@@ -41,77 +41,91 @@ void main() {
     void Function(String?)? onSwitch,
     VoidCallback? onOpenSettings,
   }) async {
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.dark(),
-      home: Scaffold(
-        body: SingleChildScrollView(
-          child: SizedBox(
-            width: 700,
-            child: ProtocolNetworkMismatchCard(
-              mismatch: mismatch,
-              info: info ?? _info(),
-              onSwitch: onSwitch ?? (_) {},
-              onOpenSettings: onOpenSettings ?? () {},
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: SizedBox(
+              width: 700,
+              child: ProtocolNetworkMismatchCard(
+                mismatch: mismatch,
+                info: info ?? _info(),
+                onSwitch: onSwitch ?? (_) {},
+                onOpenSettings: onOpenSettings ?? () {},
+              ),
             ),
           ),
         ),
       ),
-    ));
+    );
   }
 
-  testWidgets('a switchable mismatch leads with the switch and the site\'s asset id',
-      (tester) async {
-    String? used;
-    var settings = 0;
-    await pump(
-      tester,
-      const ProtocolNetworkMismatch(
-        kind: ProtocolMismatchKind.network,
-        siteNetwork: 'liquid-regtest',
-        walletNetwork: 'liquid-testnet',
-        sitePolicyAsset: _otherAsset,
-      ),
-      onSwitch: (a) => used = a,
-      onOpenSettings: () => settings++,
-    );
+  testWidgets(
+    'a switchable mismatch leads with the switch and the site\'s asset id',
+    (tester) async {
+      String? used;
+      var settings = 0;
+      await pump(
+        tester,
+        const ProtocolNetworkMismatch(
+          kind: ProtocolMismatchKind.network,
+          siteNetwork: 'liquid-regtest',
+          walletNetwork: 'liquid-testnet',
+          sitePolicyAsset: _otherAsset,
+        ),
+        onSwitch: (a) => used = a,
+        onOpenSettings: () => settings++,
+      );
 
-    // Both sides named, in the user's words.
-    expect(
-        find.text('This site runs on Liquid regtest. This wallet is on '
-            'Liquid testnet.'),
-        findsOneWidget);
-    expect(find.text('Switch this wallet to Liquid regtest'), findsOneWidget);
-    expect(settingsButton, findsOneWidget);
+      // Both sides named, in the user's words.
+      expect(
+        find.text(
+          'This site runs on Liquid regtest. This wallet is on '
+          'Liquid testnet.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Switch this wallet to Liquid regtest'), findsOneWidget);
+      expect(settingsButton, findsOneWidget);
 
-    // The asset id the site sent is prefilled, and is what the switch uses.
-    expect(
-        tester.widget<TextField>(assetField).controller!.text, _otherAsset);
-    await tester.tap(switchButton);
-    await tester.pump();
-    expect(used, _otherAsset);
+      // The asset id the site sent is prefilled, and is what the switch uses.
+      expect(
+        tester.widget<TextField>(assetField).controller!.text,
+        _otherAsset,
+      );
+      await tester.tap(switchButton);
+      await tester.pump();
+      expect(used, _otherAsset);
 
-    await tester.tap(settingsButton);
-    await tester.pump();
-    expect(settings, 1);
-  });
+      await tester.tap(settingsButton);
+      await tester.pump();
+      expect(settings, 1);
+    },
+  );
 
-  testWidgets('with no asset id from the site the stock regtest one is offered',
-      (tester) async {
-    String? used;
-    await pump(
-      tester,
-      const ProtocolNetworkMismatch(
-        kind: ProtocolMismatchKind.network,
-        siteNetwork: 'liquid-regtest',
-        walletNetwork: 'liquid-testnet',
-      ),
-      onSwitch: (a) => used = a,
-    );
-    expect(tester.widget<TextField>(assetField).controller!.text, _stockAsset);
-    await tester.tap(switchButton);
-    await tester.pump();
-    expect(used, _stockAsset);
-  });
+  testWidgets(
+    'with no asset id from the site the stock regtest one is offered',
+    (tester) async {
+      String? used;
+      await pump(
+        tester,
+        const ProtocolNetworkMismatch(
+          kind: ProtocolMismatchKind.network,
+          siteNetwork: 'liquid-regtest',
+          walletNetwork: 'liquid-testnet',
+        ),
+        onSwitch: (a) => used = a,
+      );
+      expect(
+        tester.widget<TextField>(assetField).controller!.text,
+        _stockAsset,
+      );
+      await tester.tap(switchButton);
+      await tester.pump();
+      expect(used, _stockAsset);
+    },
+  );
 
   testWidgets('switching to testnet asks for no asset id', (tester) async {
     var calls = 0;
@@ -157,8 +171,9 @@ void main() {
     expect(used, _otherAsset);
   });
 
-  testWidgets('an env-locked network explains itself and offers no switch',
-      (tester) async {
+  testWidgets('an env-locked network explains itself and offers no switch', (
+    tester,
+  ) async {
     var settings = 0;
     await pump(
       tester,
@@ -182,8 +197,9 @@ void main() {
     expect(settings, 1);
   });
 
-  testWidgets('a network Templar does not run offers only Settings',
-      (tester) async {
+  testWidgets('a network Templar does not run offers only Settings', (
+    tester,
+  ) async {
     await pump(
       tester,
       const ProtocolNetworkMismatch(
@@ -201,27 +217,29 @@ void main() {
 
   testWidgets('while switching, nothing can be tapped twice', (tester) async {
     var calls = 0;
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.dark(),
-      home: Scaffold(
-        body: SingleChildScrollView(
-          child: SizedBox(
-            width: 700,
-            child: ProtocolNetworkMismatchCard(
-              mismatch: const ProtocolNetworkMismatch(
-                kind: ProtocolMismatchKind.network,
-                siteNetwork: 'liquid-regtest',
-                walletNetwork: 'liquid-testnet',
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: SizedBox(
+              width: 700,
+              child: ProtocolNetworkMismatchCard(
+                mismatch: const ProtocolNetworkMismatch(
+                  kind: ProtocolMismatchKind.network,
+                  siteNetwork: 'liquid-regtest',
+                  walletNetwork: 'liquid-testnet',
+                ),
+                info: _info(),
+                busy: true,
+                onSwitch: (_) => calls++,
+                onOpenSettings: () => calls++,
               ),
-              info: _info(),
-              busy: true,
-              onSwitch: (_) => calls++,
-              onOpenSettings: () => calls++,
             ),
           ),
         ),
       ),
-    ));
+    );
     await tester.tap(switchButton);
     await tester.tap(settingsButton);
     await tester.pump();

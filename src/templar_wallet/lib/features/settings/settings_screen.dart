@@ -50,6 +50,7 @@ enum SettingsSection {
     Icons.palette_outlined,
     AppRoutes.settingsAppearance,
   ),
+  advanced('Advanced', Icons.tune_rounded, AppRoutes.settingsAdvanced),
   about('About', Icons.info_outline, AppRoutes.settingsAbout);
 
   const SettingsSection(this.label, this.icon, this.route);
@@ -108,7 +109,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     }
     return Scaffold(
-      backgroundColor: isDark ? AppColors.backgroundDark : AppColors.backgroundLight,
+      backgroundColor: isDark
+          ? AppColors.backgroundDark
+          : AppColors.backgroundLight,
       body: Row(
         children: [
           // Subsection menu
@@ -152,11 +155,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onTap: () => setState(() => _section = s),
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
           decoration: BoxDecoration(
             color: isActive
-                ? AppColors.accent.withValues(
-                    alpha: isDark ? 0.16 : 0.12)
+                ? AppColors.accent.withValues(alpha: isDark ? 0.16 : 0.12)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
           ),
@@ -164,10 +169,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               Icon(s.icon, size: 16, color: isActive ? AppColors.accent : null),
               const SizedBox(width: AppSpacing.sm),
-              Text(s.label, style: AppTypography.navItem.copyWith(
-                color: isActive ? AppColors.accent : null,
-                fontWeight: isActive ? FontWeight.w600 : null,
-              )),
+              Expanded(
+                child: Text(
+                  s.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.navItem.copyWith(
+                    color: isActive ? AppColors.accent : null,
+                    fontWeight: isActive ? FontWeight.w600 : null,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -176,12 +188,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _contentOf(SettingsSection section) => switch (section) {
-        SettingsSection.network => _NetworkSection(),
-        SettingsSection.protocol => const ProtocolSection(),
-        SettingsSection.security => _SecuritySection(),
-        SettingsSection.appearance => _AppearanceSection(),
-        SettingsSection.about => _AboutSection(),
-      };
+    SettingsSection.network => _NetworkSection(),
+    SettingsSection.protocol => const ProtocolSection(),
+    SettingsSection.security => _SecuritySection(),
+    SettingsSection.appearance => _AppearanceSection(),
+    SettingsSection.advanced => const _AdvancedSection(),
+    SettingsSection.about => _AboutSection(),
+  };
 }
 
 // ── Phone: the settings list ──────────────────────────────────────────────────
@@ -251,8 +264,7 @@ class _SettingsHomeState extends State<_SettingsHome> {
     try {
       final a = await BiometricUnlockService.instance.availability();
       if (mounted) {
-        setState(() =>
-            _hasBiometrics = a != BiometricAvailability.unavailable);
+        setState(() => _hasBiometrics = a != BiometricAvailability.unavailable);
       }
     } catch (_) {
       // No sensor answer, no row.
@@ -282,7 +294,7 @@ class _SettingsHomeState extends State<_SettingsHome> {
         children: [
           const PageHeader(
             title: 'Settings',
-            subtitle: 'Security, appearance, network',
+            subtitle: 'Wallet controls and optional tools',
           ),
           const ListSectionLabel(label: 'Wallet'),
           ListCard(
@@ -329,7 +341,8 @@ class _SettingsHomeState extends State<_SettingsHome> {
                 icon: Icons.palette_rounded,
                 tint: s.bitcoin,
                 title: 'Theme & units',
-                subtitle: '$theme · ${st.fiatCurrency} · '
+                subtitle:
+                    '$theme · ${st.fiatCurrency} · '
                     '${st.useSats ? 'sats' : 'BTC'}',
                 chevron: true,
                 onTap: () => context.go(SettingsSection.appearance.route),
@@ -377,6 +390,20 @@ class _SettingsHomeState extends State<_SettingsHome> {
                   onChanged: st.setAutoSync,
                   semanticLabel: 'Auto-sync on startup',
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          const ListSectionLabel(label: 'Advanced'),
+          ListCard(
+            children: [
+              ListRow(
+                icon: Icons.tune_rounded,
+                tint: s.inkSecondary,
+                title: 'Optional features',
+                subtitle: _advancedSummary(st),
+                chevron: true,
+                onTap: () => context.go(SettingsSection.advanced.route),
               ),
             ],
           ),
@@ -429,6 +456,87 @@ class _SettingsNote extends StatelessWidget {
   }
 }
 
+String _advancedSummary(AppState state) {
+  final enabled = <String>[
+    if (state.liquidDexEnabled) 'LiquiDEX',
+    if (state.pegEnabled) 'Peg',
+    if (state.loansEnabled) 'Loans',
+  ];
+  return enabled.isEmpty
+      ? 'All optional features are off'
+      : enabled.join(' · ');
+}
+
+/// Optional product surfaces live behind one explicit gate. Switching one on
+/// only makes its routes visible; every signing and broadcast confirmation is
+/// still performed by the feature itself.
+class _AdvancedSection extends StatelessWidget {
+  const _AdvancedSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final state = context.watch<AppState>();
+    final phone = AppLayout.isPhone(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!phone)
+          const PageHeader(
+            title: 'Advanced',
+            subtitle: 'Optional wallet features',
+          ),
+        const ListSectionLabel(label: 'Features'),
+        ListCard(
+          children: [
+            ListRow(
+              key: const Key('advanced-liquiddex'),
+              icon: Icons.swap_horiz_rounded,
+              tint: s.liquid,
+              title: 'LiquiDEX',
+              subtitle: 'Atomic swaps between Liquid assets',
+              trailing: ListSwitch(
+                value: state.liquidDexEnabled,
+                onChanged: state.setLiquidDexEnabled,
+                semanticLabel: 'Show LiquiDEX',
+              ),
+            ),
+            ListRow(
+              key: const Key('advanced-peg'),
+              icon: Icons.swap_vert_rounded,
+              tint: s.bitcoin,
+              title: 'Peg',
+              subtitle: 'Move value between Bitcoin and Liquid',
+              trailing: ListSwitch(
+                value: state.pegEnabled,
+                onChanged: state.setPegEnabled,
+                semanticLabel: 'Show Peg',
+              ),
+            ),
+            ListRow(
+              key: const Key('advanced-loans'),
+              icon: Icons.handshake_outlined,
+              tint: s.liquid,
+              title: 'Loans',
+              subtitle: 'Templar Protocol positions and requests',
+              trailing: ListSwitch(
+                value: state.loansEnabled,
+                onChanged: state.setLoansEnabled,
+                semanticLabel: 'Show Loans',
+              ),
+            ),
+          ],
+        ),
+        const _SettingsNote(
+          text:
+              'Off by default. Enabling a feature reveals its screens only; '
+              'it does not share keys, sign, broadcast, or move funds.',
+        ),
+      ],
+    );
+  }
+}
+
 // ── Danger zone ───────────────────────────────────────────────────────────────
 //
 // Last thing on the page, and the only red surface in Settings. Deleting a
@@ -461,8 +569,11 @@ class _DangerZone extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.warning_amber_rounded,
-                  color: AppColors.danger, size: 20),
+              const Icon(
+                Icons.warning_amber_rounded,
+                color: AppColors.danger,
+                size: 20,
+              ),
               const SizedBox(width: AppSpacing.sm),
               Text(
                 'DANGER ZONE',
@@ -561,8 +672,7 @@ class _DeleteWalletDialogState extends State<_DeleteWalletDialog> {
 
   bool get _waiting => _remaining > 0;
 
-  bool get _phraseOk =>
-      _ctrl.text.trim().toLowerCase() == _phrase;
+  bool get _phraseOk => _ctrl.text.trim().toLowerCase() == _phrase;
 
   @override
   Widget build(BuildContext context) {
@@ -576,7 +686,9 @@ class _DeleteWalletDialogState extends State<_DeleteWalletDialog> {
           Expanded(
             child: Text(
               'Delete "${widget.walletName}"?',
-              style: AppTypography.sectionTitle.copyWith(color: AppColors.danger),
+              style: AppTypography.sectionTitle.copyWith(
+                color: AppColors.danger,
+              ),
             ),
           ),
         ],
@@ -594,7 +706,8 @@ class _DeleteWalletDialogState extends State<_DeleteWalletDialog> {
                 color: AppColors.danger.withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
                 border: Border.all(
-                    color: AppColors.danger.withValues(alpha: 0.45)),
+                  color: AppColors.danger.withValues(alpha: 0.45),
+                ),
               ),
               child: Text(
                 'This deletes the only copy of this wallet on this '
@@ -628,8 +741,9 @@ class _DeleteWalletDialogState extends State<_DeleteWalletDialog> {
                     child: Text(
                       'Read the warning. You can confirm in $_remaining second'
                       '${_remaining == 1 ? '' : 's'}.',
-                      style:
-                          AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+                      style: AppTypography.bodySmall.copyWith(
+                        color: s.inkSecondary,
+                      ),
                     ),
                   ),
                 ],
@@ -654,15 +768,20 @@ class _DeleteWalletDialogState extends State<_DeleteWalletDialog> {
                   // fights the 14-radius fill the theme paints underneath.
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(
-                        phone ? AppSpacing.radiusLg : AppSpacing.radiusSm),
+                      phone ? AppSpacing.radiusLg : AppSpacing.radiusSm,
+                    ),
                     borderSide: BorderSide(
-                        color: AppColors.danger.withValues(alpha: 0.45)),
+                      color: AppColors.danger.withValues(alpha: 0.45),
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(
-                        phone ? AppSpacing.radiusLg : AppSpacing.radiusSm),
+                      phone ? AppSpacing.radiusLg : AppSpacing.radiusSm,
+                    ),
                     borderSide: BorderSide(
-                        color: AppColors.danger, width: phone ? 1.5 : 2),
+                      color: AppColors.danger,
+                      width: phone ? 1.5 : 2,
+                    ),
                   ),
                 ),
                 onChanged: (_) => setState(() {}),
@@ -702,8 +821,9 @@ class _DeleteWalletDialogState extends State<_DeleteWalletDialog> {
                     : null,
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.danger,
-                  disabledBackgroundColor:
-                      AppColors.danger.withValues(alpha: 0.25),
+                  disabledBackgroundColor: AppColors.danger.withValues(
+                    alpha: 0.25,
+                  ),
                   foregroundColor: Colors.white,
                 ),
                 child: const Text('Delete wallet'),
@@ -762,7 +882,10 @@ class _PasswordDialogState extends State<_PasswordDialog> {
               ),
             ]
           : [
-              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
               FilledButton(onPressed: _submit, child: const Text('Set')),
             ],
       child: Column(
@@ -771,9 +894,12 @@ class _PasswordDialogState extends State<_PasswordDialog> {
         children: [
           // caption hard-codes a light-mode ink; on the phone's dark panel it
           // is barely there, so the phone arm takes the scheme's own.
-          Text('Leave blank to remove the password.',
-              style: AppTypography.caption
-                  .copyWith(color: phone ? s.inkSecondary : null)),
+          Text(
+            'Leave blank to remove the password.',
+            style: AppTypography.caption.copyWith(
+              color: phone ? s.inkSecondary : null,
+            ),
+          ),
           const SizedBox(height: AppSpacing.md),
           GlassPasswordField(controller: _ctrl, label: 'New password'),
           const SizedBox(height: AppSpacing.md),
@@ -821,7 +947,10 @@ class _NetworkSectionState extends State<_NetworkSection> {
     state.setBtcExplorerUrl(_btcExplorer.text.trim());
     state.setLiquidExplorerUrl(_liquidExplorer.text.trim());
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Explorer URLs saved'), duration: Duration(seconds: 2)),
+      const SnackBar(
+        content: Text('Explorer URLs saved'),
+        duration: Duration(seconds: 2),
+      ),
     );
   }
 
@@ -860,19 +989,22 @@ class _NetworkSectionState extends State<_NetworkSection> {
         Consumer<AppState>(
           builder: (context, state, _) => FormCard(
             title: 'Nodes',
-            subtitle: 'Bitcoin is fixed in this build. Liquid follows the network '
+            subtitle:
+                'Bitcoin is fixed in this build. Liquid follows the network '
                 'above; override the endpoints with TEMPLAR_LIQUID_ELECTRUM_URL '
                 'or TEMPLAR_ELEMENTS_RPC_URL.',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 CopyRow(
-                    label: 'Bitcoin Electrum',
-                    value: 'ssl://electrum.blockstream.info:60002'),
+                  label: 'Bitcoin Electrum',
+                  value: 'ssl://electrum.blockstream.info:60002',
+                ),
                 const Divider(height: 1),
                 CopyRow(
                   label: 'Liquid chain',
-                  value: state.liquidNetwork?.backendDescription ??
+                  value:
+                      state.liquidNetwork?.backendDescription ??
                       'electrum ssl://elements-testnet.blockstream.info:50002',
                 ),
               ],
@@ -885,9 +1017,12 @@ class _NetworkSectionState extends State<_NetworkSection> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Used for "View on Explorer" links in transaction history.',
-                  style: AppTypography.caption
-                      .copyWith(color: phone ? s.inkSecondary : null)),
+              Text(
+                'Used for "View on Explorer" links in transaction history.',
+                style: AppTypography.caption.copyWith(
+                  color: phone ? s.inkSecondary : null,
+                ),
+              ),
               const SizedBox(height: AppSpacing.lg),
               TextField(
                 controller: _btcExplorer,
@@ -926,7 +1061,8 @@ class _NetworkSectionState extends State<_NetworkSection> {
         const SizedBox(height: AppSpacing.lg),
         FormCard(
           title: 'Templar Protocol',
-          subtitle: 'Templar Protocol sites hand loan requests to this wallet through '
+          subtitle:
+              'Templar Protocol sites hand loan requests to this wallet through '
               'templar:// links, on the Liquid network set above. The paste box, '
               'the connected sites and what was signed live in their own '
               'section.',
@@ -938,7 +1074,9 @@ class _NetworkSectionState extends State<_NetworkSection> {
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
-        const InfoBanner(message: 'Tor support is coming soon and is not yet implemented.'),
+        const InfoBanner(
+          message: 'Tor support is coming soon and is not yet implemented.',
+        ),
       ],
     );
   }
@@ -982,8 +1120,9 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
         _info = info;
         _error = null;
         _choice = info.shortName;
-        _policyAsset.text =
-            info.isRegtest ? info.policyAsset : info.regtestDefaultPolicyAsset;
+        _policyAsset.text = info.isRegtest
+            ? info.policyAsset
+            : info.regtestDefaultPolicyAsset;
       });
     } catch (e) {
       if (mounted) setState(() => _error = liquidNetworkErrorText(e));
@@ -996,7 +1135,8 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
     if (info == null) return false;
     if (_choice != info.shortName) return true;
     return _choice == 'regtest' &&
-        _policyAsset.text.trim().toLowerCase() != info.policyAsset.toLowerCase();
+        _policyAsset.text.trim().toLowerCase() !=
+            info.policyAsset.toLowerCase();
   }
 
   Future<void> _apply() async {
@@ -1043,7 +1183,8 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
     final locked = info?.envLocked ?? false;
     return FormCard(
       title: 'Liquid network',
-      subtitle: 'Testnet is the public Liquid test network. Regtest is a local '
+      subtitle:
+          'Testnet is the public Liquid test network. Regtest is a local '
           'elementsd (what the Templar Protocol runs locally): instant blocks, free coins.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1066,20 +1207,30 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
           if (info != null) ...[
             Text(
               'Now: ${info.shortName} · ${info.backendDescription}',
-              style: AppTypography.caption
-                  .copyWith(color: phone ? s.inkSecondary : null),
+              style: AppTypography.caption.copyWith(
+                color: phone ? s.inkSecondary : null,
+              ),
             ),
             const SizedBox(height: AppSpacing.md),
             if (locked)
               const InfoBanner(
-                message: 'Fixed by TEMPLAR_LIQUID_NETWORK for this session. '
+                message:
+                    'Fixed by TEMPLAR_LIQUID_NETWORK for this session. '
                     'Unset the variable to change it here.',
               )
             else ...[
               SegmentedSwitch<String>(
                 options: const [
-                  SegOption(value: 'testnet', label: 'Testnet', icon: Icons.public),
-                  SegOption(value: 'regtest', label: 'Regtest', icon: Icons.dns_outlined),
+                  SegOption(
+                    value: 'testnet',
+                    label: 'Testnet',
+                    icon: Icons.public,
+                  ),
+                  SegOption(
+                    value: 'regtest',
+                    label: 'Regtest',
+                    icon: Icons.dns_outlined,
+                  ),
                 ],
                 selected: _choice,
                 onChanged: _busy ? (_) {} : (v) => setState(() => _choice = v),
@@ -1096,21 +1247,22 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
                   onChanged: (_) => setState(() {}),
                   style: AppTypography.mono,
                   decoration: InputDecoration(
-                    labelText: 'Regtest L-BTC asset id',
+                    labelText: 'Regtest LBTC asset id',
                     hintText: info.regtestDefaultPolicyAsset,
-                    helperText: 'Policy asset of your node. The stock liquidregtest id '
+                    helperText:
+                        'Policy asset of your node. The stock liquidregtest id '
                         'is prefilled; elements-cli dumpassetlabels prints yours.',
                     // 64 hex characters in mono on a 347 dp line need every
                     // pixel; the desktop's 16 px tag glyph stays there.
-                    prefixIcon:
-                        phone ? null : const Icon(Icons.tag, size: 16),
+                    prefixIcon: phone ? null : const Icon(Icons.tag, size: 16),
                   ),
                 ),
               ],
               if (_dirty) ...[
                 const SizedBox(height: AppSpacing.lg),
                 const WarningBanner(
-                  message: 'Switching closes the open wallet. Reopen it and sync — '
+                  message:
+                      'Switching closes the open wallet. Reopen it and sync — '
                       'until then no Liquid balance is shown for the new network.',
                 ),
               ],
@@ -1173,8 +1325,10 @@ class _SecuritySectionState extends State<_SecuritySection> {
       if (mounted) setState(() => _dataDir = dir);
     } catch (e) {
       if (mounted) {
-        setState(() => _dataDirError =
-            'Could not read the data directory from the wallet engine: $e');
+        setState(
+          () => _dataDirError =
+              'Could not read the data directory from the wallet engine: $e',
+        );
       }
     }
   }
@@ -1194,7 +1348,8 @@ class _SecuritySectionState extends State<_SecuritySection> {
     if (walletId == null) return;
     final name = appState.activeWalletName ?? 'this wallet';
 
-    final confirmed = await showAppDialog<bool>(context,
+    final confirmed = await showAppDialog<bool>(
+      context,
       barrierDismissible: false,
       builder: (_) => _DeleteWalletDialog(walletName: name),
     );
@@ -1242,14 +1397,17 @@ class _SecuritySectionState extends State<_SecuritySection> {
   }
 
   Future<void> _setupVault() async {
-    final done = await showAppDialog<bool>(context,
+    final done = await showAppDialog<bool>(
+      context,
       builder: (_) => const VaultSetupSheet(),
     );
     if (done != true || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Wallet storage is now encrypted'),
-      duration: Duration(seconds: 2),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Wallet storage is now encrypted'),
+        duration: Duration(seconds: 2),
+      ),
+    );
     await _loadVault();
   }
 
@@ -1259,9 +1417,12 @@ class _SecuritySectionState extends State<_SecuritySection> {
   }
 
   void _pushUnlock() {
-    pushVaultUnlock(context, onUnlocked: () {
-      if (mounted) _loadVault();
-    });
+    pushVaultUnlock(
+      context,
+      onUnlocked: () {
+        if (mounted) _loadVault();
+      },
+    );
   }
 
   Widget get _vaultCard {
@@ -1325,8 +1486,8 @@ class _SecuritySectionState extends State<_SecuritySection> {
       final tint = vault == null
           ? s.inkFaint
           : vault.initialized
-              ? s.success
-              : s.warning;
+          ? s.success
+          : s.warning;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1368,19 +1529,24 @@ class _SecuritySectionState extends State<_SecuritySection> {
   Future<void> _setPassword() async {
     final walletId = context.read<AppState>().activeWalletId;
     if (walletId == null || _custom == null) return;
-    final result = await showAppDialog<String>(context,
+    final result = await showAppDialog<String>(
+      context,
       builder: (_) => const _PasswordDialog(),
     );
     if (result == null || !mounted) return;
-    final hash = result.isEmpty ? null : WalletCustomizationStore.hashPassword(result);
+    final hash = result.isEmpty
+        ? null
+        : WalletCustomizationStore.hashPassword(result);
     final updated = _custom!.copyWith(passwordHash: hash);
     await WalletCustomizationStore.instance.save(updated);
     if (mounted) {
       setState(() => _custom = updated);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(hash == null ? 'Password removed' : 'Password set'),
-        duration: const Duration(seconds: 2),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(hash == null ? 'Password removed' : 'Password set'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -1429,7 +1595,9 @@ class _SecuritySectionState extends State<_SecuritySection> {
           const SectionCard(
             title: 'Wallet password',
             child: InfoBanner(
-                message: 'No wallet open. Open a wallet from the wallet picker first.'),
+              message:
+                  'No wallet open. Open a wallet from the wallet picker first.',
+            ),
           )
         // A state and one way into it — the phone's list grammar, with the
         // button's own glyph on the row and its sentence under the group.
@@ -1442,12 +1610,14 @@ class _SecuritySectionState extends State<_SecuritySection> {
                 children: [
                   ListRow(
                     icon: Icons.lock_outline,
-                    tint: _custom!.passwordHash != null ? s.success : s.inkFaint,
+                    tint: _custom!.passwordHash != null
+                        ? s.success
+                        : s.inkFaint,
                     title: 'Password',
-                    subtitle:
-                        _custom!.passwordHash != null ? 'Set' : 'Not set',
-                    subtitleColor:
-                        _custom!.passwordHash != null ? s.success : null,
+                    subtitle: _custom!.passwordHash != null ? 'Set' : 'Not set',
+                    subtitleColor: _custom!.passwordHash != null
+                        ? s.success
+                        : null,
                     chevron: true,
                     onTap: _setPassword,
                   ),
@@ -1503,20 +1673,26 @@ class _SecuritySectionState extends State<_SecuritySection> {
                 Text('Wallet data directory', style: AppTypography.label),
                 const SizedBox(height: AppSpacing.xs),
                 if (_dataDirError != null)
-                  Text(_dataDirError!,
-                      style: AppTypography.caption
-                          .copyWith(color: AppColors.danger))
+                  Text(
+                    _dataDirError!,
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.danger,
+                    ),
+                  )
                 else
-                  SelectableText(_dataDir.isEmpty ? '…' : _dataDir,
-                      style: AppTypography.mono),
+                  SelectableText(
+                    _dataDir.isEmpty ? '…' : _dataDir,
+                    style: AppTypography.mono,
+                  ),
               ],
               // No file manager handles a file:// directory on Android.
               if (!Platform.isAndroid) ...[
                 const SizedBox(height: AppSpacing.md),
                 SecondaryButton(
-                    label: 'Open directory',
-                    icon: Icons.folder_open_outlined,
-                    onPressed: _dataDir.isEmpty ? null : _openDir),
+                  label: 'Open directory',
+                  icon: Icons.folder_open_outlined,
+                  onPressed: _dataDir.isEmpty ? null : _openDir,
+                ),
               ],
             ],
           ),
@@ -1607,7 +1783,8 @@ class _AppearanceSectionState extends State<_AppearanceSection> {
     if (mounted) {
       setState(() {
         _custom = c;
-        _nameCtrl.text = c.nameOverride ?? context.read<AppState>().activeWalletName ?? '';
+        _nameCtrl.text =
+            c.nameOverride ?? context.read<AppState>().activeWalletName ?? '';
       });
     }
   }
@@ -1617,18 +1794,38 @@ class _AppearanceSectionState extends State<_AppearanceSection> {
     if (walletId == null || _custom == null) return;
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) return;
-    setState(() { _saving = true; _saveError = null; });
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
     try {
       await _bridge.renameWallet(walletId, name);
       final updated = _custom!.copyWith(nameOverride: name);
       await WalletCustomizationStore.instance.save(updated);
       if (mounted) {
-        context.read<AppState>().setActiveWallet(walletId, name: name, type: context.read<AppState>().activeWalletType);
-        setState(() { _custom = updated; _saving = false; });
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name saved'), duration: Duration(seconds: 2)));
+        context.read<AppState>().setActiveWallet(
+          walletId,
+          name: name,
+          type: context.read<AppState>().activeWalletType,
+        );
+        setState(() {
+          _custom = updated;
+          _saving = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Name saved'),
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e) {
-      if (mounted) setState(() { _saving = false; _saveError = e.toString(); });
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _saveError = e.toString();
+        });
+      }
     }
   }
 
@@ -1650,145 +1847,170 @@ class _AppearanceSectionState extends State<_AppearanceSection> {
   /// kind of setting: local, cosmetic, and changeable at any time. The keys
   /// themselves are on Wallet info, where they cannot be edited by accident.
   Widget get _cosignerLabelsCard => FormCard(
-        title: 'Cosigner labels',
-        subtitle: _requiredSigs == null
-            ? 'Name each key of this shared wallet.'
-            : 'Name each key of this $_requiredSigs-of-${_cosigners.length} '
-                'wallet. Names are kept on this device only.',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final entry in _cosigners)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                child: InkWell(
-                  onTap: () => _editCosigner(entry),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: AppSpacing.sm, horizontal: AppSpacing.sm),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: (entry.label.color ?? AppColors.accent)
-                                .withValues(alpha: 0.14),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                                color: entry.label.color ?? AppColors.accent),
-                          ),
-                          child: Icon(entry.label.icon,
-                              size: 16,
-                              color: entry.label.color ?? AppColors.accent),
+    title: 'Cosigner labels',
+    subtitle: _requiredSigs == null
+        ? 'Name each key of this shared wallet.'
+        : 'Name each key of this $_requiredSigs-of-${_cosigners.length} '
+              'wallet. Names are kept on this device only.',
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final entry in _cosigners)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: InkWell(
+              onTap: () => _editCosigner(entry),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppSpacing.sm,
+                  horizontal: AppSpacing.sm,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: (entry.label.color ?? AppColors.accent)
+                            .withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: entry.label.color ?? AppColors.accent,
                         ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(entry.name,
-                                  style: AppTypography.body.copyWith(
-                                      fontWeight: FontWeight.w600)),
-                              Text(
-                                entry.isLocal
-                                    ? '${entry.fingerprint} · this device'
-                                    : entry.fingerprint,
-                                style: AppTypography.caption,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(Icons.edit_outlined, size: 16),
-                      ],
+                      ),
+                      child: Icon(
+                        entry.label.icon,
+                        size: 16,
+                        color: entry.label.color ?? AppColors.accent,
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            entry.name,
+                            style: AppTypography.body.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            entry.isLocal
+                                ? '${entry.fingerprint} · this device'
+                                : entry.fingerprint,
+                            style: AppTypography.caption,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.edit_outlined, size: 16),
+                  ],
                 ),
               ),
-          ],
-        ),
-      );
+            ),
+          ),
+      ],
+    ),
+  );
 
   Widget get _walletCustomizationCard => FormCard(
-        title: 'Customize active wallet',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Name
-            Text('Display name', style: AppTypography.label),
-            const SizedBox(height: AppSpacing.sm),
-            // Phone: a 54 dp Save slab beside the field leaves the name about
-            // 190 dp of a 347 dp line, so the two stack instead and each
-            // takes the whole width.
-            if (AppLayout.isPhone(context)) ...[
-              TextField(
-                controller: _nameCtrl,
-                decoration: const InputDecoration(hintText: 'Wallet name'),
+    title: 'Customize active wallet',
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Name
+        Text('Display name', style: AppTypography.label),
+        const SizedBox(height: AppSpacing.sm),
+        // Phone: a 54 dp Save slab beside the field leaves the name about
+        // 190 dp of a 347 dp line, so the two stack instead and each
+        // takes the whole width.
+        if (AppLayout.isPhone(context)) ...[
+          TextField(
+            controller: _nameCtrl,
+            decoration: const InputDecoration(hintText: 'Wallet name'),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          PrimaryButton(
+            label: _saving ? 'Saving…' : 'Save',
+            icon: Icons.save_outlined,
+            onPressed: _saving ? null : _saveName,
+            isFullWidth: true,
+          ),
+        ] else
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _nameCtrl,
+                  decoration: const InputDecoration(hintText: 'Wallet name'),
+                ),
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(width: AppSpacing.sm),
               PrimaryButton(
                 label: _saving ? 'Saving…' : 'Save',
                 icon: Icons.save_outlined,
                 onPressed: _saving ? null : _saveName,
-                isFullWidth: true,
               ),
-            ] else
-              Row(
-                children: [
-                  Expanded(child: TextField(controller: _nameCtrl, decoration: const InputDecoration(hintText: 'Wallet name'))),
-                  const SizedBox(width: AppSpacing.sm),
-                  PrimaryButton(
-                    label: _saving ? 'Saving…' : 'Save',
-                    icon: Icons.save_outlined,
-                    onPressed: _saving ? null : _saveName,
-                  ),
-                ],
-              ),
-            if (_saveError != null) ...[
-              const SizedBox(height: AppSpacing.sm),
-              Text(_saveError!, style: AppTypography.caption.copyWith(color: AppColors.danger)),
             ],
-            const Divider(height: AppSpacing.xxl),
+          ),
+        if (_saveError != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            _saveError!,
+            style: AppTypography.caption.copyWith(color: AppColors.danger),
+          ),
+        ],
+        const Divider(height: AppSpacing.xxl),
 
-            // Accent color — this IS the wallet's identity on the home
-            // gallery and in the sidebar, so it gets a line explaining that.
-            Text('Accent color', style: AppTypography.label),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'Tints this wallet everywhere: its mark on the home gallery, '
-              'the sidebar, and every accent inside it.',
-              style: AppTypography.caption,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: WalletCustomizationStore.palette.map((color) {
-                final selected = _custom!.accentColor == color.toARGB32();
-                return InkWell(
-                  onTap: () => _saveColor(color),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    width: AppLayout.isPhone(context) ? 44 : 36,
-                    height: AppLayout.isPhone(context) ? 44 : 36,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: selected ? Colors.white : Colors.transparent,
-                        width: 3,
-                      ),
-                      boxShadow: selected ? [BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 8)] : null,
-                    ),
-                    child: selected ? const Icon(Icons.check, color: Colors.white, size: 16) : null,
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
+        // Accent color — this IS the wallet's identity on the home
+        // gallery and in the sidebar, so it gets a line explaining that.
+        Text('Accent color', style: AppTypography.label),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'Tints this wallet everywhere: its mark on the home gallery, '
+          'the sidebar, and every accent inside it.',
+          style: AppTypography.caption,
         ),
-      );
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: WalletCustomizationStore.palette.map((color) {
+            final selected = _custom!.accentColor == color.toARGB32();
+            return InkWell(
+              onTap: () => _saveColor(color),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: AppLayout.isPhone(context) ? 44 : 36,
+                height: AppLayout.isPhone(context) ? 44 : 36,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected ? Colors.white : Colors.transparent,
+                    width: 3,
+                  ),
+                  boxShadow: selected
+                      ? [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.5),
+                            blurRadius: 8,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: selected
+                    ? const Icon(Icons.check, color: Colors.white, size: 16)
+                    : null,
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -1826,7 +2048,9 @@ class _AppearanceSectionState extends State<_AppearanceSection> {
                           child: Text('${e.key}  (${e.value.trim()})'),
                         ),
                     ],
-                    onChanged: (v) { if (v != null) state.setFiatCurrency(v); },
+                    onChanged: (v) {
+                      if (v != null) state.setFiatCurrency(v);
+                    },
                     decoration: InputDecoration(
                       // 16 px inside a 56 dp filled field reads as debris.
                       prefixIcon: phone
@@ -1962,9 +2186,9 @@ class _AboutSectionState extends State<_AboutSection> {
   /// The engine line, in both skins' words.
   String get _engineLine => _engineUnreachable
       ? 'Engine unreachable — the native wallet library did not respond. '
-          'Wallet operations will not work.'
+            'Wallet operations will not work.'
       : 'Engine (wallet-ffi): '
-          '${_engineVersion != null ? 'v$_engineVersion' : '…'}';
+            '${_engineVersion != null ? 'v$_engineVersion' : '…'}';
 
   @override
   Widget build(BuildContext context) {
@@ -2018,7 +2242,9 @@ class _AboutSectionState extends State<_AboutSection> {
                 Text(
                   'Engine unreachable — the native wallet library did not '
                   'respond. Wallet operations will not work.',
-                  style: AppTypography.caption.copyWith(color: AppColors.danger),
+                  style: AppTypography.caption.copyWith(
+                    color: AppColors.danger,
+                  ),
                 )
               else
                 Text(
@@ -2027,9 +2253,10 @@ class _AboutSectionState extends State<_AboutSection> {
                 ),
               const SizedBox(height: AppSpacing.xl),
               GhostButton(
-                  label: 'Source code',
-                  icon: Icons.code,
-                  onPressed: _openSource),
+                label: 'Source code',
+                icon: Icons.code,
+                onPressed: _openSource,
+              ),
             ],
           ),
         ),

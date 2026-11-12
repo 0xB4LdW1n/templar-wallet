@@ -140,6 +140,16 @@ fn assert_keys(context: &str, obj: &Value, keys: &[&str]) {
     }
 }
 
+#[test]
+fn swap_publish_rejects_invalid_proposal_before_network_access() {
+    let mut env = TestEnv::new_without_vault();
+    let error = env.err(
+        "swap_publish",
+        json!({ "proposal_json": "not-json", "note": "local test" }),
+    );
+    assert!(!error.is_empty());
+}
+
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 #[test]
@@ -856,7 +866,7 @@ fn hwi_status_matches_dart_decode_shape() {
 }
 
 /// A Liquid asset must never reach the hardware or air-gap signing paths:
-/// both build a Bitcoin PSBT, so "send L-BTC" would silently become "send
+/// both build a Bitcoin PSBT, so "send LBTC" would silently become "send
 /// BTC". The rejection carries the stable tag the Dart classifier keys on.
 #[cfg(feature = "hardware")]
 #[test]
@@ -1867,7 +1877,7 @@ fn switching_to_regtest_closes_the_wallet_and_reopens_it_there() {
     assert!(cfg.contains("liquid-regtest"), "{cfg}");
 
     // Reopened lazily on the next call, on regtest: el1 addresses, the
-    // regtest policy asset as L-BTC on the dashboard.
+    // regtest policy asset as LBTC on the dashboard.
     let info = env.ok("get_wallet_info", json!({ "wallet_id": id }));
     assert_eq!(info["liquid_network"], json!("liquid-regtest"));
     let addr = env.ok(
@@ -1885,7 +1895,7 @@ fn switching_to_regtest_closes_the_wallet_and_reopens_it_there() {
         .unwrap()
         .iter()
         .find(|a| a["ticker"] == json!("LBTC"))
-        .expect("an L-BTC row");
+        .expect("an LBTC row");
     assert_eq!(
         lbtc["asset_id"],
         json!(templar_core::REGTEST_DEFAULT_POLICY_ASSET)
@@ -1923,7 +1933,7 @@ fn set_liquid_network_rejects_bad_values() {
 }
 
 #[test]
-fn regtest_refuses_the_public_services_with_a_clear_error() {
+fn regtest_refuses_public_services_but_keeps_local_swaps_available() {
     let mut env = TestEnv::new();
     let id = env.create_test_wallet();
     env.ok("set_liquid_network", json!({ "network": "regtest" }));
@@ -1934,8 +1944,6 @@ fn regtest_refuses_the_public_services_with_a_clear_error() {
     );
     assert!(err.contains("not available on Liquid regtest"), "{err}");
     let err = env.err("peg_list", json!({ "wallet_id": id }));
-    assert!(err.contains("not available on Liquid regtest"), "{err}");
-    let err = env.err("list_swaps", json!({ "include_unavailable": false }));
     assert!(err.contains("not available on Liquid regtest"), "{err}");
     let err = env.err(
         "reregister_asset",
@@ -1976,7 +1984,7 @@ fn regtest_node_sync_and_send_end_to_end() {
             .unwrap()
             .iter()
             .find(|a| a["ticker"] == json!("LBTC"))
-            .expect("L-BTC row")["amount"]
+            .expect("LBTC row")["amount"]
             .as_i64()
             .unwrap()
     };
@@ -2244,14 +2252,14 @@ fn protocol_check_pset_is_built_signed_and_judged() {
     assert_eq!(v["is_check"], json!(false));
 
     // On regtest the testnet check is another chain's: refused there, and a
-    // regtest check is built with regtest's L-BTC.
+    // regtest check is built with regtest's LBTC.
     env.ok("set_liquid_network", json!({ "network": "regtest" }));
     let v = env.ok(
         "protocol_is_check_pset",
         json!({ "wallet_id": id, "challenge": CHALLENGE, "pset_base64": pset }),
     );
     assert_eq!(v["is_check"], json!(false));
-    assert!(v["reason"].as_str().unwrap().contains("L-BTC"), "{v}");
+    assert!(v["reason"].as_str().unwrap().contains("LBTC"), "{v}");
     let regtest = env.ok(
         "protocol_check_pset",
         json!({ "wallet_id": id, "challenge": CHALLENGE }),
@@ -2686,7 +2694,7 @@ fn inspect_pset_describes_a_protocol_escrow_spend() {
         .unwrap()
         .contains("OP_CHECKMULTISIG"));
     assert_eq!(inputs[0]["amount_sats"], json!(1_000_000));
-    assert_eq!(inputs[0]["ticker"], json!("L-BTC"));
+    assert_eq!(inputs[0]["ticker"], json!("LBTC"));
     assert!(inputs[0]["key_fingerprints"]
         .as_array()
         .unwrap()
@@ -2730,7 +2738,7 @@ fn inspect_pset_describes_a_protocol_escrow_spend() {
     assert_eq!(after["inputs"][0]["signed_by"], json!(["73c5da0a"]));
     assert_eq!(after["sigs_have"], json!(1));
 
-    // On regtest the same PSET is refused: it carries testnet L-BTC.
+    // On regtest the same PSET is refused: it carries testnet LBTC.
     env.ok("set_liquid_network", json!({ "network": "regtest" }));
     let err = env.err(
         "inspect_pset",

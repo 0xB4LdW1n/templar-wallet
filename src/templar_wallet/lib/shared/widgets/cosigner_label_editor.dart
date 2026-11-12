@@ -29,11 +29,8 @@ Future<CosignerLabel?> showCosignerLabelEditor(
 }) {
   return showAppDialog<CosignerLabel>(
     context,
-    builder: (_) => _CosignerLabelDialog(
-      label: label,
-      index: index,
-      subtitle: subtitle,
-    ),
+    builder: (_) =>
+        _CosignerLabelDialog(label: label, index: index, subtitle: subtitle),
   );
 }
 
@@ -53,8 +50,9 @@ class _CosignerLabelDialog extends StatefulWidget {
 }
 
 class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
-  late final TextEditingController _name =
-      TextEditingController(text: widget.label.name ?? '');
+  late final TextEditingController _name = TextEditingController(
+    text: widget.label.name ?? '',
+  );
   late String? _iconId = widget.label.iconId;
   late int? _color = widget.label.colorValue;
 
@@ -82,9 +80,10 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (widget.subtitle case final sub?) ...[
-              Text(sub,
-                  style:
-                      AppTypography.caption.copyWith(color: s.inkSecondary)),
+              Text(
+                sub,
+                style: AppTypography.caption.copyWith(color: s.inkSecondary),
+              ),
               const SizedBox(height: AppSpacing.md),
             ],
             Row(
@@ -130,7 +129,8 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
                     selected: _iconId == entry.key,
                     color: accent,
                     onTap: () => setState(
-                        () => _iconId = _iconId == entry.key ? null : entry.key),
+                      () => _iconId = _iconId == entry.key ? null : entry.key,
+                    ),
                     child: Icon(entry.value, size: 18),
                   ),
               ],
@@ -167,7 +167,9 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
             // USB hardware wallet" while its signature is missing.
             Container(
               padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.sm,
+              ),
               decoration: BoxDecoration(
                 color: s.panelInset,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
@@ -175,22 +177,29 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.usb_rounded,
-                      size: 18, color: _hardware ? accent : s.inkSecondary),
+                  Icon(
+                    Icons.usb_rounded,
+                    size: 18,
+                    color: _hardware ? accent : s.inkSecondary,
+                  ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('USB hardware wallet',
-                            style: AppTypography.body
-                                .copyWith(fontWeight: FontWeight.w600)),
+                        Text(
+                          'USB hardware wallet',
+                          style: AppTypography.body.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                         Text(
                           'A Ledger or Jade plugged into this computer. '
                           'Co-signing then offers “Sign with USB hardware '
                           'wallet” for this key.',
-                          style: AppTypography.caption
-                              .copyWith(color: s.inkSecondary),
+                          style: AppTypography.caption.copyWith(
+                            color: s.inkSecondary,
+                          ),
                         ),
                       ],
                     ),
@@ -221,15 +230,17 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
     // The flag is only written down once somebody has actually said: a label
     // that was merely inferring from its icon keeps inferring, so changing
     // the icon later still changes the answer.
-    final explicit = widget.label.hardware != null ||
-        _hardware != widget.label.isHardware;
-    Navigator.of(context).pop(CosignerLabel(
-      id: widget.label.id,
-      name: _name.text.trim().isEmpty ? null : _name.text.trim(),
-      iconId: _iconId,
-      colorValue: _color,
-      hardware: explicit ? _hardware : null,
-    ));
+    final explicit =
+        widget.label.hardware != null || _hardware != widget.label.isHardware;
+    Navigator.of(context).pop(
+      CosignerLabel(
+        id: widget.label.id,
+        name: _name.text.trim().isEmpty ? null : _name.text.trim(),
+        iconId: _iconId,
+        colorValue: _color,
+        hardware: explicit ? _hardware : null,
+      ),
+    );
   }
 }
 

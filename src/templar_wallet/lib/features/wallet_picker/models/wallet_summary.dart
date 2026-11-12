@@ -90,7 +90,9 @@ class WalletSummary {
     if (isHardwareWallet) {
       final model = (deviceModel ?? '').toLowerCase();
       if (model.contains('jade')) return 'Jade USB';
-      if (model.contains('ledger') || model.contains('nano')) return 'Ledger USB';
+      if (model.contains('ledger') || model.contains('nano')) {
+        return 'Ledger USB';
+      }
       return 'USB device';
     }
     return 'Software';
@@ -105,30 +107,31 @@ class WalletSummary {
         };
 
   factory WalletSummary.fromJson(Map<String, dynamic> j) => WalletSummary(
-        id: j['id'] as String,
-        name: j['name'] as String,
-        type: _typeFromString(j['wallet_type'] as String? ?? ''),
-        network: WalletNetwork.testnet,
-        balanceSats: j['balance_sats'] as int? ?? 0,
-        txCount: j['tx_count'] as int? ?? 0,
-        lastSyncAt: DateTime.fromMillisecondsSinceEpoch(
-            ((j['last_sync_at'] as int? ?? 0) * 1000)),
-        isWatchOnly: j['is_watch_only'] as bool? ?? false,
-        typeLabel: j['type_label'] as String? ?? '',
-        liquidEnabled: j['liquid_enabled'] as bool? ?? false,
-        // Absent means "has Bitcoin": every wallet shape but the Liquid-only
-        // one does, and older payloads carried no flag at all.
-        bitcoinEnabled: j['bitcoin_enabled'] as bool? ?? true,
-        deviceModel: j['device_model'] as String?,
-        masterFingerprint: j['master_fingerprint'] as String?,
-        xpub: j['xpub'] as String?,
-        requiredSigs: (j['required_sigs'] as num?)?.toInt(),
-        totalSigners: (j['total_signers'] as num?)?.toInt(),
-      );
+    id: j['id'] as String,
+    name: j['name'] as String,
+    type: _typeFromString(j['wallet_type'] as String? ?? ''),
+    network: WalletNetwork.testnet,
+    balanceSats: j['balance_sats'] as int? ?? 0,
+    txCount: j['tx_count'] as int? ?? 0,
+    lastSyncAt: DateTime.fromMillisecondsSinceEpoch(
+      ((j['last_sync_at'] as int? ?? 0) * 1000),
+    ),
+    isWatchOnly: j['is_watch_only'] as bool? ?? false,
+    typeLabel: j['type_label'] as String? ?? '',
+    liquidEnabled: j['liquid_enabled'] as bool? ?? false,
+    // Absent means "has Bitcoin": every wallet shape but the Liquid-only
+    // one does, and older payloads carried no flag at all.
+    bitcoinEnabled: j['bitcoin_enabled'] as bool? ?? true,
+    deviceModel: j['device_model'] as String?,
+    masterFingerprint: j['master_fingerprint'] as String?,
+    xpub: j['xpub'] as String?,
+    requiredSigs: (j['required_sigs'] as num?)?.toInt(),
+    totalSigners: (j['total_signers'] as num?)?.toInt(),
+  );
 
   static WalletType _typeFromString(String s) => switch (s) {
-        'multisig' => WalletType.multisig,
-        'watch_only' => WalletType.watchOnly,
-        _ => WalletType.singlesig,
-      };
+    'multisig' => WalletType.multisig,
+    'watch_only' => WalletType.watchOnly,
+    _ => WalletType.singlesig,
+  };
 }

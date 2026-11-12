@@ -14,7 +14,7 @@ abstract final class AmountUnits {
     return v;
   }
 
-  /// "0.00123456" (BTC or L-BTC) → satoshis.
+  /// "0.00123456" (BTC or LBTC) → satoshis.
   static int? satsFromCoin(String text) {
     final v = parseDecimal(text);
     if (v == null) return null;

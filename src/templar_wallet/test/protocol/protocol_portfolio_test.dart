@@ -139,11 +139,13 @@ void main() {
     });
 
     test('pending_request null, due_at_estimate null, txids nulls', () {
-      final p = _parse('''
+      final p = _parse(
+        '''
         {"loans":[{"id": 2, "state": "repaid", "pending_request": null,
           "due_at_estimate": null, "blocks_left": 0,
           "txids": {"origination": "aa", "repayment": "bb", "liquidation": null},
-          "next_action": {"kind": "none", "label": "Repaid", "url": null}}]}''');
+          "next_action": {"kind": "none", "label": "Repaid", "url": null}}]}''',
+      );
       final l = p.loans.single;
       expect(l.pendingRequest, isNull);
       expect(l.dueAtEstimate, isNull);
@@ -165,7 +167,8 @@ void main() {
 
     test('a pending request whose link is not templar:// is ignored', () {
       final p = _parse(
-          '{"loans":[{"id":1,"pending_request":{"id":"r","action":"x","link":"https://evil.example/"}}]}');
+        '{"loans":[{"id":1,"pending_request":{"id":"r","action":"x","link":"https://evil.example/"}}]}',
+      );
       expect(p.loans.single.pendingRequest, isNull);
     });
 
@@ -176,7 +179,8 @@ void main() {
 
     test('numbers may arrive as strings or doubles', () {
       final p = _parse(
-          '{"tip_height":"99","loans":[{"id":"4","start_height":1.0,"term_height":11}]}');
+        '{"tip_height":"99","loans":[{"id":"4","start_height":1.0,"term_height":11}]}',
+      );
       expect(p.tipHeight, 99);
       expect(p.loans.single.id, 4);
       expect(p.loans.single.termProgress(6), 0.5);
@@ -184,20 +188,21 @@ void main() {
   });
 
   group('words this build does not know', () {
-    test('an unknown state is kept, shown as sent, and treated as closed',
-        () {
+    test('an unknown state is kept, shown as sent, and treated as open', () {
       final p = _parse('{"loans":[{"id":1,"state":"renegotiating"}]}');
       final l = p.loans.single;
       expect(l.state, ProtocolLoanState.unknown);
       expect(l.rawState, 'renegotiating');
       expect(l.stateLabel, 'renegotiating');
-      expect(l.state.isOpen, isFalse);
-      expect(p.closedLoans.single.id, 1);
+      expect(l.state.isOpen, isTrue);
+      expect(p.openLoans.single.id, 1);
+      expect(p.closedLoans, isEmpty);
     });
 
     test('an unknown next_action kind keeps its label and word', () {
       final p = _parse(
-          '{"loans":[{"id":1,"next_action":{"kind":"renegotiate","label":"Agree new terms"}}]}');
+        '{"loans":[{"id":1,"next_action":{"kind":"renegotiate","label":"Agree new terms"}}]}',
+      );
       final n = p.loans.single.nextAction!;
       expect(n.kind, ProtocolNextKind.unknown);
       expect(n.rawKind, 'renegotiate');
@@ -205,7 +210,13 @@ void main() {
     });
 
     test('every known state and kind parses', () {
-      for (final s in ['originating', 'active', 'repaid', 'defaulted', 'liquidated']) {
+      for (final s in [
+        'originating',
+        'active',
+        'repaid',
+        'defaulted',
+        'liquidated',
+      ]) {
         expect(ProtocolLoanState.parse(s).name, s);
       }
       for (final k in ['sign', 'repay', 'claim', 'wait', 'none']) {
@@ -251,6 +262,22 @@ void main() {
       expect(protocolBlocksLeftLabel(43200), '≈ 30 d left');
     });
 
+    test('deadlines distinguish future from already reached', () {
+      final now = DateTime.utc(2026, 11, 6, 12);
+      expect(
+        protocolDeadlineLabel(DateTime.utc(2026, 11, 6, 12, 45), now: now),
+        'in 45 min',
+      );
+      expect(
+        protocolDeadlineLabel(DateTime.utc(2026, 11, 6, 15), now: now),
+        'in 3 h',
+      );
+      expect(
+        protocolDeadlineLabel(DateTime.utc(2026, 11, 6, 10), now: now),
+        'reached 2h ago',
+      );
+    });
+
     test('digit grouping leaves decimals and odd strings alone', () {
       expect(protocolGroupDigits('10000'), '10,000');
       expect(protocolGroupDigits('999'), '999');
@@ -270,11 +297,105 @@ void main() {
       expect(protocolBpsLabel(0), '0%');
     });
 
-    test('action labels match the sign screen, proof included', () {
+    test('action labels are human in English and Italian', () {
       expect(protocolActionLabel('origination'), 'Loan origination');
+      expect(protocolActionLabel('payment_preparation'), 'Payment preparation');
+      expect(protocolActionLabel('installment'), 'Installment payment');
+      expect(protocolActionLabel('repayment'), 'Full repayment');
+      expect(
+        protocolActionLabel('payment_claim'),
+        'Claim installment payments',
+      );
+      expect(protocolActionLabel('renewal'), 'Covenant renewal');
+      expect(protocolActionLabel('default'), 'Default settlement');
+      expect(
+        protocolActionLabel('collateral_claim'),
+        'Claim collateral remainder',
+      );
+      expect(protocolActionLabel('liquidation'), 'Collateral liquidation');
       expect(protocolActionLabel('proof'), 'Proof of key');
+      expect(protocolActionLabel('swap'), 'Atomic swap');
       expect(protocolActionLabel(''), 'Signing request');
-      expect(protocolActionLabel('custom'), 'custom');
+      expect(protocolActionLabel('custom_action'), 'Custom action');
+      expect(
+        protocolActionLabel('installment', languageCode: 'it'),
+        'Pagamento della rata',
+      );
+      expect(
+        protocolActionLabel('collateral_claim', languageCode: 'it'),
+        'Ritiro del collaterale residuo',
+      );
+    });
+  });
+
+  group('extended repayment and covenant data', () {
+    final p = _parse('''
+      {"loans":[{
+        "id":42,"ref":"SQ-42","role":"borrower","state":"active",
+        "collateral":{"ticker":"LBTC","amount":"0.50000000","sats":50000000},
+        "repayment_plan":{
+          "kind":"installments","n_total":6,"n_paid":2,"m_missed":1,
+          "m_max":3,"step":2,"s_max":6,"deadline_height":1600,
+          "deadline_estimate":1793966400,
+          "balance":{"ticker":"rUSDt","amount":"6500","sats":650000000000},
+          "regular_due":{"ticker":"rUSDt","amount":"1100","sats":110000000000},
+          "early_due":{"ticker":"rUSDt","amount":"6550","sats":655000000000},
+          "penalty_due":{"ticker":"rUSDt","amount":"1200","sats":120000000000}
+        },
+        "covenant":{"status":"active","current_txid":"cc33","nodes":[
+          {"index":0,"status":"replaced","txid":"aa11","spent_by":"installment","successor_txid":"bb22","balance":{"ticker":"rUSDt","amount":"8000"},"n":1,"m":0,"s":1},
+          {"index":1,"status":"replaced","txid":"bb22","spent_by":"renewal","successor_txid":"cc33","balance":{"ticker":"rUSDt","amount":"6500"},"n":2,"m":0,"s":2},
+          {"index":2,"status":"active","txid":"cc33","created_by":"renewal","balance":{"ticker":"rUSDt","amount":"6500"},"n":2,"m":1,"s":2}
+        ]},
+        "collateral_outcome":{"locked":{"ticker":"LBTC","amount":"0.50000000","sats":50000000},"forfeit":{"ticker":"LBTC","amount":"0.35"},"return":{"ticker":"LBTC","amount":"0.15"},"return_claimed":false},
+        "next_action":{"kind":"renewal","label":"Review covenant renewal"}
+      }]}
+    ''');
+
+    test('partial repayment lowers B and keeps all collateral locked', () {
+      final l = p.loans.single;
+      final plan = l.repaymentPlan!;
+      expect(plan.balance!.display, '6,500 rUSDt');
+      expect(plan.nPaid, 2);
+      expect(plan.mMissed, 1);
+      expect(plan.periodsBeforeDefault, 3);
+      expect(l.collateral!.sats, 50000000);
+      expect(l.collateralOutcome!.locked!.sats, 50000000);
+      expect(l.actionRequired(), isTrue);
+    });
+
+    test('renewal replaces the covenant without changing B', () {
+      final nodes = p.loans.single.covenant!.nodes;
+      expect(nodes[1].spentBy, 'renewal');
+      expect(nodes[1].balance!.amount, '6500');
+      expect(nodes[2].createdBy, 'renewal');
+      expect(nodes[2].balance!.amount, '6500');
+      expect(nodes[2].m, 1);
+      expect(p.loans.single.covenant!.current!.txid, 'cc33');
+    });
+
+    test('default allocations and unclaimed borrower remainder stay exact', () {
+      final outcome = p.loans.single.collateralOutcome!;
+      expect(outcome.forfeit!.display, '0.35 LBTC');
+      expect(outcome.returnAmount!.display, '0.15 LBTC');
+      expect(outcome.hasRemainderToClaim, isTrue);
+    });
+
+    test('terminal covenant has no successor', () {
+      final terminal = ProtocolCovenantNode.fromJson({
+        'index': 3,
+        'status': 'defaulted',
+        'txid': 'dd44',
+      })!;
+      expect(terminal.isTerminal, isTrue);
+      expect(terminal.successorTxid, isNull);
+    });
+
+    test('portfolio v1 remains backward compatible', () {
+      final loan = _parse(_contract).loans.single;
+      expect(loan.repaymentPlan, isNull);
+      expect(loan.covenant, isNull);
+      expect(loan.collateralOutcome, isNull);
     });
   });
 }

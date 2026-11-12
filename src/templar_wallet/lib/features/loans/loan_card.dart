@@ -80,7 +80,8 @@ class _LoanCardState extends State<LoanCard> {
       decoration: BoxDecoration(
         color: s.surfaceGlass,
         borderRadius: BorderRadius.circular(
-            phone ? AppSpacing.radiusLg : AppSpacing.radiusMd),
+          phone ? AppSpacing.radiusLg : AppSpacing.radiusMd,
+        ),
         border: Border.all(
           // A waiting signature is the one thing on this screen the user has
           // to act on; its card says so at the edge, not with a wash.
@@ -161,9 +162,12 @@ class _TitleRow extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text(loan.ref,
-                      style: AppTypography.sectionTitleOf(context)
-                          .copyWith(color: s.ink)),
+                  Text(
+                    loan.ref,
+                    style: AppTypography.sectionTitleOf(
+                      context,
+                    ).copyWith(color: s.ink),
+                  ),
                   const SizedBox(width: AppSpacing.sm),
                   TagChip(label: loan.stateLabel, color: stateColor),
                 ],
@@ -187,9 +191,7 @@ class _TitleRow extends StatelessWidget {
         if (loan.state.isOpen)
           _TermRing(
             progress: progress,
-            label: progress == null
-                ? '—'
-                : '${(progress * 100).round()}%',
+            label: progress == null ? '—' : '${(progress * 100).round()}%',
             color: progress != null && progress >= 1 ? s.warning : s.liquid,
           ),
       ],
@@ -199,17 +201,21 @@ class _TitleRow extends StatelessWidget {
 
 /// The chip colour of a loan state, shared with the Loans screen's summary.
 Color loanStateColor(AppScheme s, ProtocolLoanState state) => switch (state) {
-      ProtocolLoanState.originating => s.warning,
-      ProtocolLoanState.active => s.liquid,
-      ProtocolLoanState.repaid => s.success,
-      ProtocolLoanState.defaulted => s.danger,
-      ProtocolLoanState.liquidated => s.danger,
-      ProtocolLoanState.unknown => s.inkFaint,
-    };
+  ProtocolLoanState.originating => s.warning,
+  ProtocolLoanState.active => s.liquid,
+  ProtocolLoanState.repaid => s.success,
+  ProtocolLoanState.defaulted => s.danger,
+  ProtocolLoanState.liquidated => s.danger,
+  ProtocolLoanState.unknown => s.inkFaint,
+};
 
 /// A small ring: how much of the term has run, as the one glance figure.
 class _TermRing extends StatelessWidget {
-  const _TermRing({required this.progress, required this.label, required this.color});
+  const _TermRing({
+    required this.progress,
+    required this.label,
+    required this.color,
+  });
   final double? progress;
   final String label;
   final Color color;
@@ -247,7 +253,11 @@ class _TermRing extends StatelessWidget {
 }
 
 class _RingPainter extends CustomPainter {
-  const _RingPainter({required this.progress, required this.track, required this.fill});
+  const _RingPainter({
+    required this.progress,
+    required this.track,
+    required this.fill,
+  });
   final double progress;
   final Color track;
   final Color fill;
@@ -268,7 +278,13 @@ class _RingPainter extends CustomPainter {
         ..strokeWidth = stroke
         ..strokeCap = StrokeCap.round
         ..color = fill;
-      canvas.drawArc(r, -math.pi / 2, math.pi * 2 * progress.clamp(0.0, 1.0), false, p);
+      canvas.drawArc(
+        r,
+        -math.pi / 2,
+        math.pi * 2 * progress.clamp(0.0, 1.0),
+        false,
+        p,
+      );
     }
   }
 
@@ -303,12 +319,14 @@ class _NextLine extends StatelessWidget {
       expiry = left.isNegative
           ? 'request expired — the site will issue a new one'
           : left.inMinutes >= 1
-              ? 'request expires in ${left.inMinutes} min'
-              : 'request expires in under a minute';
+          ? 'request expires in ${left.inMinutes} min'
+          : 'request expires in under a minute';
     }
     return DataWell(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, vertical: AppSpacing.sm + 2),
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm + 2,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -321,15 +339,21 @@ class _NextLine extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(action.label,
-                    style: AppTypography.body
-                        .copyWith(color: s.ink, fontWeight: FontWeight.w600)),
+                Text(
+                  action.label,
+                  style: AppTypography.body.copyWith(
+                    color: s.ink,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 if (expiry != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
                       '${protocolActionLabel(p!.action)} · $expiry',
-                      style: AppTypography.caption.copyWith(color: s.inkSecondary),
+                      style: AppTypography.caption.copyWith(
+                        color: s.inkSecondary,
+                      ),
                     ),
                   ),
               ],
@@ -358,8 +382,8 @@ class _TermBar extends StatelessWidget {
 
     final leftText = progress == null
         ? (loan.state == ProtocolLoanState.originating
-            ? 'Term starts when the opening transaction confirms'
-            : 'No term yet')
+              ? 'Term starts when the opening transaction confirms'
+              : 'No term yet')
         : 'Block ${_g(start)} → ${_g(term)}';
     final rightText = [
       if (left.isNotEmpty) left,
@@ -374,20 +398,24 @@ class _TermBar extends StatelessWidget {
             Icon(Icons.schedule_rounded, size: 14, color: s.inkFaint),
             const SizedBox(width: AppSpacing.xs),
             Expanded(
-              child: Text(leftText,
-                  style: AppTypography.caption.copyWith(color: s.inkFaint),
-                  overflow: TextOverflow.ellipsis),
+              child: Text(
+                leftText,
+                style: AppTypography.caption.copyWith(color: s.inkFaint),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             if (rightText.isNotEmpty) ...[
               const SizedBox(width: AppSpacing.sm),
-              Text(rightText,
-                  key: const Key('loan-time-left'),
-                  style: AppTypography.caption.copyWith(
-                    color: progress != null && progress >= 1
-                        ? s.warning
-                        : s.inkSecondary,
-                    fontWeight: FontWeight.w600,
-                  )),
+              Text(
+                rightText,
+                key: const Key('loan-time-left'),
+                style: AppTypography.caption.copyWith(
+                  color: progress != null && progress >= 1
+                      ? s.warning
+                      : s.inkSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ],
         ),
@@ -549,7 +577,9 @@ class _FlowRow extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 6),
                     child: Icon(
-                      d.done ? Icons.arrow_forward_rounded : Icons.arrow_right_alt_rounded,
+                      d.done
+                          ? Icons.arrow_forward_rounded
+                          : Icons.arrow_right_alt_rounded,
                       size: 16,
                       color: d.done ? d.tint : s.inkFaint,
                     ),
@@ -592,13 +622,13 @@ class _Amounts extends StatelessWidget {
         (
           'Interest',
           '${loan.interest!.display}'
-              '${loan.interest!.rateBps != null ? ' · ${protocolBpsLabel(loan.interest!.rateBps!)}' : ''}'
+              '${loan.interest!.rateBps != null ? ' · ${protocolBpsLabel(loan.interest!.rateBps!)}' : ''}',
         ),
       if (loan.templarFee != null)
         (
           'Templar fee',
           '${loan.templarFee!.display}'
-              '${(loan.templarFee!.payer ?? '').isNotEmpty ? ' · paid by ${loan.templarFee!.payer}' : ''}'
+              '${(loan.templarFee!.payer ?? '').isNotEmpty ? ' · paid by ${loan.templarFee!.payer}' : ''}',
         ),
     ];
     return Column(
@@ -613,8 +643,10 @@ class _Amounts extends StatelessWidget {
               children: [
                 Text(
                   loan.role == 'lender' ? 'OWED TO YOU' : 'YOU OWE',
-                  style: AppTypography.navSection
-                      .copyWith(color: s.inkFaint, letterSpacing: 1.2),
+                  style: AppTypography.navSection.copyWith(
+                    color: s.inkFaint,
+                    letterSpacing: 1.2,
+                  ),
                 ),
                 const Spacer(),
                 Amount(
@@ -625,8 +657,10 @@ class _Amounts extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.xs),
-                Text(owed.ticker,
-                    style: AppTypography.caption.copyWith(color: s.inkSecondary)),
+                Text(
+                  owed.ticker,
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
+                ),
               ],
             ),
           ),
@@ -637,9 +671,12 @@ class _Amounts extends StatelessWidget {
               children: [
                 SizedBox(
                   width: 96,
-                  child: Text(label,
-                      style:
-                          AppTypography.caption.copyWith(color: s.inkSecondary)),
+                  child: Text(
+                    label,
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
                 ),
                 Expanded(
                   child: Amount(
@@ -667,15 +704,18 @@ class _Details extends StatelessWidget {
     final s = AppScheme.of(context);
     final tx = loan.txids;
     final rows = <(String, String)>[
-      if ((loan.escrowAddress ?? '').isNotEmpty) ('Escrow', loan.escrowAddress!),
+      if ((loan.escrowAddress ?? '').isNotEmpty)
+        ('Escrow', loan.escrowAddress!),
       if ((tx.origination ?? '').isNotEmpty) ('Opened in', tx.origination!),
       if ((tx.repayment ?? '').isNotEmpty) ('Repaid in', tx.repayment!),
       if ((tx.liquidation ?? '').isNotEmpty) ('Liquidated in', tx.liquidation!),
       if (loan.openedAt != null) ('Opened', _localShort(loan.openedAt!)),
     ];
     if (rows.isEmpty) {
-      return Text('The site sent no details for this loan yet.',
-          style: AppTypography.caption.copyWith(color: s.inkSecondary));
+      return Text(
+        'The site sent no details for this loan yet.',
+        style: AppTypography.caption.copyWith(color: s.inkSecondary),
+      );
     }
     return DataWell(
       child: Column(
@@ -683,7 +723,11 @@ class _Details extends StatelessWidget {
         children: [
           for (var i = 0; i < rows.length; i++) ...[
             if (i > 0) Divider(height: AppSpacing.md, color: s.edge),
-            CopyRow(label: rows[i].$1, value: rows[i].$2, mono: rows[i].$1 != 'Opened'),
+            CopyRow(
+              label: rows[i].$1,
+              value: rows[i].$2,
+              mono: rows[i].$1 != 'Opened',
+            ),
           ],
         ],
       ),

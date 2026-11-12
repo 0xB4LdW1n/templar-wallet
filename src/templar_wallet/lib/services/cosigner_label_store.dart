@@ -33,8 +33,10 @@ class CosignerLabelStore {
       try {
         final m = jsonDecode(raw) as Map<String, dynamic>;
         for (final e in m.entries) {
-          out[e.key] =
-              CosignerLabel.fromJson(e.key, e.value as Map<String, dynamic>);
+          out[e.key] = CosignerLabel.fromJson(
+            e.key,
+            e.value as Map<String, dynamic>,
+          );
         }
       } catch (_) {
         // A corrupt entry costs names, never access to the wallet.

@@ -63,7 +63,11 @@ class WalletCreatedView extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: const Icon(Icons.check_rounded, color: Colors.white, size: 46),
+                child: const Icon(
+                  Icons.check_rounded,
+                  color: Colors.white,
+                  size: 46,
+                ),
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
@@ -102,8 +106,9 @@ class WalletCreatedView extends StatelessWidget {
                                 width: 110,
                                 child: Text(
                                   details[i].label,
-                                  style: AppTypography.caption
-                                      .copyWith(color: s.inkFaint),
+                                  style: AppTypography.caption.copyWith(
+                                    color: s.inkFaint,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: AppSpacing.sm),
@@ -111,13 +116,16 @@ class WalletCreatedView extends StatelessWidget {
                                 child: details[i].mono
                                     ? Align(
                                         alignment: Alignment.centerLeft,
-                                        child: HexText(details[i].value,
-                                            truncate: true),
+                                        child: HexText(
+                                          details[i].value,
+                                          truncate: true,
+                                        ),
                                       )
                                     : Text(
                                         details[i].value,
-                                        style: AppTypography.bodySmall
-                                            .copyWith(color: s.ink),
+                                        style: AppTypography.bodySmall.copyWith(
+                                          color: s.ink,
+                                        ),
                                       ),
                               ),
                             ],

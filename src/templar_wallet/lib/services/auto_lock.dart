@@ -39,18 +39,22 @@ class AutoLockPolicy {
 
   /// Whether a vault that went out of sight at [since] should be locked at
   /// [now] under a [seconds] setting.
-  static bool due({required DateTime since, required DateTime now, required int seconds}) {
+  static bool due({
+    required DateTime since,
+    required DateTime now,
+    required int seconds,
+  }) {
     if (seconds == never) return false;
     return now.difference(since).inSeconds >= seconds;
   }
 
   static String label(int seconds) => switch (seconds) {
-        0 => 'Immediately',
-        never => 'Never',
-        60 => 'After 1 minute',
-        final s when s % 60 == 0 => 'After ${s ~/ 60} minutes',
-        final s => 'After $s seconds',
-      };
+    0 => 'Immediately',
+    never => 'Never',
+    60 => 'After 1 minute',
+    final s when s % 60 == 0 => 'After ${s ~/ 60} minutes',
+    final s => 'After $s seconds',
+  };
 }
 
 /// Settings row for [AutoLockPolicy]: shows the current choice and opens a

@@ -29,16 +29,16 @@ class _StubBridge implements WalletBridge {
 
   @override
   Future<LiquidNetworkInfo> getLiquidNetwork() async => LiquidNetworkInfo(
-        network: regtest ? 'liquid-regtest' : 'liquid-testnet',
-        shortName: regtest ? 'regtest' : 'testnet',
-        policyAsset: regtest ? _regtestAsset : '',
-        backend: regtest ? 'elements_rpc' : 'electrum',
-        backendDescription: regtest
-            ? 'elements_rpc http://127.0.0.1:18884'
-            : 'electrum ssl://elements-testnet.blockstream.info:50002',
-        envLocked: envLocked,
-        regtestDefaultPolicyAsset: _regtestAsset,
-      );
+    network: regtest ? 'liquid-regtest' : 'liquid-testnet',
+    shortName: regtest ? 'regtest' : 'testnet',
+    policyAsset: regtest ? _regtestAsset : '',
+    backend: regtest ? 'elements_rpc' : 'electrum',
+    backendDescription: regtest
+        ? 'elements_rpc http://127.0.0.1:18884'
+        : 'electrum ssl://elements-testnet.blockstream.info:50002',
+    envLocked: envLocked,
+    regtestDefaultPolicyAsset: _regtestAsset,
+  );
 
   @override
   Future<List<WalletSummary>> listWallets() async => wallets ?? const [];
@@ -62,14 +62,14 @@ WalletSummary _wallet(String id, String name, {bool liquid = true}) =>
     );
 
 Widget _host(WalletBridge bridge, {AppState? state}) => MaterialApp(
-      theme: AppTheme.dark(),
-      home: ChangeNotifierProvider<AppState>(
-        create: (_) => state ?? AppState(),
-        child: Scaffold(
-          body: SingleChildScrollView(child: ProtocolSection(bridge: bridge)),
-        ),
-      ),
-    );
+  theme: AppTheme.dark(),
+  home: ChangeNotifierProvider<AppState>(
+    create: (_) => state ?? AppState(),
+    child: Scaffold(
+      body: SingleChildScrollView(child: ProtocolSection(bridge: bridge)),
+    ),
+  ),
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -89,14 +89,17 @@ void main() {
     addTearDown(t.view.reset);
   }
 
-  testWidgets('says what it is ready for, with the regtest asset id',
-      (t) async {
+  testWidgets('says what it is ready for, with the regtest asset id', (
+    t,
+  ) async {
     desktop(t);
     await t.pumpWidget(_host(_StubBridge(regtest: true)));
     await t.pumpAndSettle();
 
-    expect(find.text('Ready for Liquid regtest · policy asset 5ac9…b225'),
-        findsOneWidget);
+    expect(
+      find.text('Ready for Liquid regtest · policy asset 5ac9…b225'),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('protocol-change-network')), findsOneWidget);
     expect(find.textContaining('Switches to Liquid testnet'), findsOneWidget);
   });
@@ -126,57 +129,73 @@ void main() {
 
     expect(find.byKey(const Key('protocol-paste-field')), findsOneWidget);
     expect(find.byKey(const Key('protocol-paste-open')), findsOneWidget);
-    expect(find.textContaining('normally opens Templar by itself'),
-        findsOneWidget);
-  });
-
-  testWidgets('a connected site shows what was shared, and forgetting is honest',
-      (t) async {
-    desktop(t);
-    await ProtocolStore.instance.recordConnect(ProtocolConnectedSite(
-      site: 'Templar Protocol demo',
-      origin: 'http://127.0.0.1:8087',
-      network: 'liquid-regtest',
-      walletId: 'w1',
-      walletName: 'Alice',
-      connectedAt: DateTime.now().toUtc(),
-      escrowFingerprint: '73c5da0a',
-      receiveAddress: 'el1qqfakeaddress',
-    ));
-    await t.pumpWidget(_host(_StubBridge(regtest: true)));
-    await t.pumpAndSettle();
-
-    expect(find.text('Templar Protocol demo'), findsOneWidget);
-    expect(find.text('http://127.0.0.1:8087 · Liquid regtest'), findsOneWidget);
     expect(
-        find.textContaining('watch-only descriptor · escrow key 73c5da0a'),
-        findsOneWidget);
-
-    await t.tap(find.widgetWithText(GhostButton, 'Forget'));
-    await t.pumpAndSettle();
-    // The dialog must not promise a revocation the protocol cannot make.
-    expect(find.textContaining('keeps the watch-only descriptor'),
-        findsOneWidget);
-    expect(find.textContaining('Nothing here can revoke it'), findsOneWidget);
-
-    await t.tap(find.widgetWithText(PrimaryButton, 'Forget'));
-    await t.pumpAndSettle();
-    expect(find.text('No site has been connected from this device.'),
-        findsOneWidget);
+      find.textContaining('normally opens Templar by itself'),
+      findsOneWidget,
+    );
   });
+
+  testWidgets(
+    'a connected site shows what was shared, and forgetting is honest',
+    (t) async {
+      desktop(t);
+      await ProtocolStore.instance.recordConnect(
+        ProtocolConnectedSite(
+          site: 'Templar Protocol demo',
+          origin: 'http://127.0.0.1:8087',
+          network: 'liquid-regtest',
+          walletId: 'w1',
+          walletName: 'Alice',
+          connectedAt: DateTime.now().toUtc(),
+          escrowFingerprint: '73c5da0a',
+          receiveAddress: 'el1qqfakeaddress',
+        ),
+      );
+      await t.pumpWidget(_host(_StubBridge(regtest: true)));
+      await t.pumpAndSettle();
+
+      expect(find.text('Templar Protocol demo'), findsOneWidget);
+      expect(
+        find.text('http://127.0.0.1:8087 · Liquid regtest'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('watch-only descriptor · escrow key 73c5da0a'),
+        findsOneWidget,
+      );
+
+      await t.tap(find.widgetWithText(GhostButton, 'Forget'));
+      await t.pumpAndSettle();
+      // The dialog must not promise a revocation the protocol cannot make.
+      expect(
+        find.textContaining('keeps the watch-only descriptor'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Nothing here can revoke it'), findsOneWidget);
+
+      await t.tap(find.widgetWithText(PrimaryButton, 'Forget'));
+      await t.pumpAndSettle();
+      expect(
+        find.text('No site has been connected from this device.'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('history shows the outcome and clears', (t) async {
     desktop(t);
     for (final o in [ProtocolSignOutcome.signed, ProtocolSignOutcome.refused]) {
-      await ProtocolStore.instance.recordSign(ProtocolSignRecord(
-        site: 'Templar Protocol demo',
-        origin: 'http://127.0.0.1:8087',
-        walletName: 'Alice',
-        at: DateTime.now().toUtc(),
-        outcome: o,
-        loanRef: o == ProtocolSignOutcome.signed ? 'SQ-1' : 'SQ-2',
-        action: 'origination',
-      ));
+      await ProtocolStore.instance.recordSign(
+        ProtocolSignRecord(
+          site: 'Templar Protocol demo',
+          origin: 'http://127.0.0.1:8087',
+          walletName: 'Alice',
+          at: DateTime.now().toUtc(),
+          outcome: o,
+          loanRef: o == ProtocolSignOutcome.signed ? 'SQ-1' : 'SQ-2',
+          action: 'origination',
+        ),
+      );
     }
     await t.pumpWidget(_host(_StubBridge()));
     await t.pumpAndSettle();
@@ -195,19 +214,27 @@ void main() {
 
   testWidgets('the preferred wallet is a preference, not a bypass', (t) async {
     desktop(t);
-    await t.pumpWidget(_host(_StubBridge(wallets: [
-      _wallet('w1', 'Alice'),
-      _wallet('w2', 'Bob'),
-      // No Liquid side: cannot answer a Templar Protocol request, so it is not offered.
-      _wallet('w3', 'BTC only', liquid: false),
-    ])));
+    await t.pumpWidget(
+      _host(
+        _StubBridge(
+          wallets: [
+            _wallet('w1', 'Alice'),
+            _wallet('w2', 'Bob'),
+            // No Liquid side: cannot answer a Templar Protocol request, so it is not offered.
+            _wallet('w3', 'BTC only', liquid: false),
+          ],
+        ),
+      ),
+    );
     await t.pumpAndSettle();
 
     expect(find.text('No preference'), findsOneWidget);
     expect(find.text('Alice'), findsOneWidget);
     expect(find.text('BTC only'), findsNothing);
-    expect(find.textContaining('still asks for your app password'),
-        findsOneWidget);
+    expect(
+      find.textContaining('still asks for your app password'),
+      findsOneWidget,
+    );
 
     await t.tap(find.text('Bob'));
     await t.pumpAndSettle();
@@ -218,8 +245,9 @@ void main() {
     expect(await ProtocolStore.instance.preferredWalletId(), isNull);
   });
 
-  testWidgets('how it works is folded, and names the escrow path once open',
-      (t) async {
+  testWidgets('how it works is folded, and names the escrow path once open', (
+    t,
+  ) async {
     desktop(t);
     await t.pumpWidget(_host(_StubBridge()));
     await t.pumpAndSettle();
@@ -235,56 +263,66 @@ void main() {
     expect(find.text('docs/guides/PROTOCOL_CONNECTOR.md'), findsOneWidget);
   });
 
-  testWidgets('the Loans shortcut leads the page and counts usable sites',
-      (t) async {
+  testWidgets('the Loans shortcut leads the page and counts usable sites', (
+    t,
+  ) async {
     desktop(t);
-    await ProtocolStore.instance.recordConnect(ProtocolConnectedSite(
-      site: 'Old site',
-      origin: 'http://127.0.0.1:8087',
-      network: 'liquid-regtest',
-      walletId: 'w1',
-      walletName: 'Alice',
-      connectedAt: DateTime.now().toUtc(),
-    ));
-    await ProtocolStore.instance.recordConnect(ProtocolConnectedSite(
-      site: 'New site',
-      origin: 'https://lend.example',
-      network: 'liquid-regtest',
-      walletId: 'w1',
-      walletName: 'Alice',
-      connectedAt: DateTime.now().toUtc(),
-      portfolioUrl: 'https://lend.example/connector/portfolio',
-      portfolioToken: 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_ABCDE',
-    ));
-    await t.pumpWidget(_host(_StubBridge(regtest: true)));
+    await ProtocolStore.instance.recordConnect(
+      ProtocolConnectedSite(
+        site: 'Old site',
+        origin: 'http://127.0.0.1:8087',
+        network: 'liquid-regtest',
+        walletId: 'w1',
+        walletName: 'Alice',
+        connectedAt: DateTime.now().toUtc(),
+      ),
+    );
+    await ProtocolStore.instance.recordConnect(
+      ProtocolConnectedSite(
+        site: 'New site',
+        origin: 'https://lend.example',
+        network: 'liquid-regtest',
+        walletId: 'w1',
+        walletName: 'Alice',
+        connectedAt: DateTime.now().toUtc(),
+        portfolioUrl: 'https://lend.example/connector/portfolio',
+        portfolioToken: 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_ABCDE',
+      ),
+    );
+    final state = AppState();
+    await state.setLoansEnabled(true);
+    await t.pumpWidget(_host(_StubBridge(regtest: true), state: state));
     await t.pumpAndSettle();
 
     final shortcut = find.byKey(const Key('protocol-loans-shortcut'));
     expect(shortcut, findsOneWidget);
     // Above the status card: the first thing on the page is the way to the loans.
-    expect(t.getTopLeft(shortcut).dy,
-        lessThan(t.getTopLeft(find.text('Status')).dy));
+    expect(
+      t.getTopLeft(shortcut).dy,
+      lessThan(t.getTopLeft(find.text('Status')).dy),
+    );
     expect(find.textContaining('from 1 connected site'), findsOneWidget);
     // The token never reaches the screen.
     expect(find.textContaining('AbCdEfGh'), findsNothing);
   });
 
-  testWidgets('Loans stays out of the menu until the switch puts it there',
-      (t) async {
+  testWidgets('Loans shortcut follows the single Advanced preference', (
+    t,
+  ) async {
     desktop(t);
     final state = AppState();
     await t.pumpWidget(_host(_StubBridge(), state: state));
     await t.pumpAndSettle();
 
-    expect(state.loansInMenu, isFalse);
-    expect(find.textContaining('Off: Loans opens from here'), findsOneWidget);
-    await t.tap(find.byKey(const Key('protocol-loans-in-menu')));
+    expect(state.loansEnabled, isFalse);
+    expect(find.byKey(const Key('protocol-loans-shortcut')), findsNothing);
+
+    await state.setLoansEnabled(true);
     await t.pumpAndSettle();
-    expect(state.loansInMenu, isTrue);
-    expect(find.textContaining('Beside the Dashboard'), findsOneWidget);
+    expect(find.byKey(const Key('protocol-loans-shortcut')), findsOneWidget);
     // Remembered across a restart.
     final again = AppState();
     await again.loadPrefs();
-    expect(again.loansInMenu, isTrue);
+    expect(again.loansEnabled, isTrue);
   });
 }

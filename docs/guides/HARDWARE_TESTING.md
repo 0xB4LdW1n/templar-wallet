@@ -141,7 +141,7 @@ app (not "Bitcoin" — HWI is called with `--chain test`), quit Ledger Live.
 quit Blockstream Green (one app per serial port). PIN unlock needs internet on
 the host.
 
-**Faucets:** BTC https://coinfaucet.eu/en/btc-testnet/ · L-BTC https://liquidtestnet.com/faucet
+**Faucets:** BTC https://coinfaucet.eu/en/btc-testnet/ · LBTC https://liquidtestnet.com/faucet
 
 ### 1.5 CLI smoke test — do this before touching the app
 
@@ -297,7 +297,7 @@ Send → BTC → review → **Send**:
 | Mainnet xpub at import | Rejected (testnet-only app) |
 | Reject on the Jade | Nothing broadcast |
 | Load a .psbt file that is empty / garbage | Clear message, nothing broadcast |
-| **Select L-BTC on an air-gap wallet** | Not offered at all: Liquid assets are filtered out of the asset step for hardware and air-gap wallets. If you reach it another way, the send is refused with `LIQUID_HW_UNSUPPORTED` — the backend rejects it even if the UI ever lets it through. |
+| **Select LBTC on an air-gap wallet** | Not offered at all: Liquid assets are filtered out of the asset step for hardware and air-gap wallets. If you reach it another way, the send is refused with `LIQUID_HW_UNSUPPORTED` — the backend rejects it even if the UI ever lets it through. |
 
 ---
 
@@ -439,7 +439,7 @@ outputs and asset amounts, you approve, it broadcasts.
 | Jade unplugged at send | `DEVICE_NOT_FOUND` naming the fix (unlock, close Green) |
 | A *different* Jade than the wallet's, at import | Refused with both fingerprints named |
 | Green open while connecting | Port busy — must be a clear error, not a hang |
-| Air-gap wallet, L-BTC selected | Not offered; there is no Liquid PSET QR flow on either side |
+| Air-gap wallet, LBTC selected | Not offered; there is no Liquid PSET QR flow on either side |
 
 ## 6. What is still missing
 

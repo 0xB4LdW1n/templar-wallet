@@ -86,7 +86,8 @@ class PairingRecapView extends StatelessWidget {
   /// Extra line under the checks — what happens at signing time, typically.
   final String? footnote;
 
-  bool get _allOk => networks.every((n) => n.ok) && checks.every((c) => c.passed);
+  bool get _allOk =>
+      networks.every((n) => n.ok) && checks.every((c) => c.passed);
 
   @override
   Widget build(BuildContext context) {
@@ -97,117 +98,125 @@ class PairingRecapView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-          // Headline: green only when everything asked for is there.
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: (_allOk ? s.success : s.warning).withValues(alpha: 0.14),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _allOk ? Icons.check_rounded : Icons.warning_amber_rounded,
-                  color: _allOk ? s.success : s.warning,
-                  size: 26,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _allOk ? 'Pairing complete' : 'Paired, with one part missing',
-                      style: AppTypography.pageTitle.copyWith(fontSize: 20),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$walletName · $deviceLabel',
-                      style: AppTypography.bodySmall
-                          .copyWith(color: s.inkSecondary),
-                    ),
-                  ],
-                ),
-              ),
-              if (fingerprint.isNotEmpty)
-                StatusBadge(
-                  label: fingerprint,
-                  variant: BadgeVariant.accent,
-                  icon: Icons.fingerprint,
-                ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.xl),
-          for (final n in networks) ...[
-            _NetworkResultCard(network: n),
-            const SizedBox(height: AppSpacing.md),
-          ],
-          if (checks.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'CHECKS',
-              style: AppTypography.label
-                  .copyWith(color: s.inkFaint, letterSpacing: 1.2),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            for (final c in checks)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      c.passed ? Icons.check_circle : Icons.cancel,
-                      size: 16,
-                      color: c.passed ? s.success : s.danger,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text.rich(
-                        TextSpan(
-                          text: c.label,
-                          style: AppTypography.bodySmall
-                              .copyWith(color: s.inkSecondary),
-                          children: [
-                            if (c.detail != null)
-                              TextSpan(
-                                text: '  ${c.detail}',
-                                style: AppTypography.monoSmall
-                                    .copyWith(color: s.inkFaint),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-          if (footnote != null) ...[
-            const SizedBox(height: AppSpacing.lg),
+        // Headline: green only when everything asked for is there.
+        Row(
+          children: [
             Container(
-              padding: const EdgeInsets.all(AppSpacing.md),
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
-                color: s.surfaceRaised,
-                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                color: (_allOk ? s.success : s.warning).withValues(alpha: 0.14),
+                shape: BoxShape.circle,
               ),
-              child: Row(
+              child: Icon(
+                _allOk ? Icons.check_rounded : Icons.warning_amber_rounded,
+                color: _allOk ? s.success : s.warning,
+                size: 26,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info_outline_rounded, size: 16, color: s.inkFaint),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      footnote!,
-                      style: AppTypography.bodySmall
-                          .copyWith(color: s.inkSecondary),
+                  Text(
+                    _allOk
+                        ? 'Pairing complete'
+                        : 'Paired, with one part missing',
+                    style: AppTypography.pageTitle.copyWith(fontSize: 20),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$walletName · $deviceLabel',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: s.inkSecondary,
                     ),
                   ),
                 ],
               ),
             ),
+            if (fingerprint.isNotEmpty)
+              StatusBadge(
+                label: fingerprint,
+                variant: BadgeVariant.accent,
+                icon: Icons.fingerprint,
+              ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        for (final n in networks) ...[
+          _NetworkResultCard(network: n),
+          const SizedBox(height: AppSpacing.md),
+        ],
+        if (checks.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'CHECKS',
+            style: AppTypography.label.copyWith(
+              color: s.inkFaint,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          for (final c in checks)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    c.passed ? Icons.check_circle : Icons.cancel,
+                    size: 16,
+                    color: c.passed ? s.success : s.danger,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        text: c.label,
+                        style: AppTypography.bodySmall.copyWith(
+                          color: s.inkSecondary,
+                        ),
+                        children: [
+                          if (c.detail != null)
+                            TextSpan(
+                              text: '  ${c.detail}',
+                              style: AppTypography.monoSmall.copyWith(
+                                color: s.inkFaint,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+        if (footnote != null) ...[
+          const SizedBox(height: AppSpacing.lg),
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: s.surfaceRaised,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline_rounded, size: 16, color: s.inkFaint),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    footnote!,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ],
     );
@@ -246,8 +255,9 @@ class _NetworkResultCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       n.detail,
-                      style: AppTypography.bodySmall
-                          .copyWith(color: s.inkSecondary),
+                      style: AppTypography.bodySmall.copyWith(
+                        color: s.inkSecondary,
+                      ),
                     ),
                   ],
                 ),

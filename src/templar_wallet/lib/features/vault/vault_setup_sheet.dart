@@ -41,12 +41,20 @@ class _VaultSetupSheetState extends State<VaultSetupSheet> {
       setState(() => _error = 'Passphrases do not match');
       return;
     }
-    setState(() { _busy = true; _error = null; });
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       await walletBridge.setupVault(p);
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
-      if (mounted) setState(() { _busy = false; _error = 'Setup failed: $e'; });
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = 'Setup failed: $e';
+        });
+      }
     }
   }
 
@@ -64,7 +72,10 @@ class _VaultSetupSheetState extends State<VaultSetupSheet> {
           onPressed: _busy ? null : _submit,
           child: _busy
               ? const SizedBox(
-                  width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Text('Encrypt'),
         ),
       ],
@@ -87,7 +98,9 @@ class _VaultSetupSheetState extends State<VaultSetupSheet> {
             decoration: BoxDecoration(
               color: AppColors.danger.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-              border: Border.all(color: AppColors.danger.withValues(alpha: 0.4)),
+              border: Border.all(
+                color: AppColors.danger.withValues(alpha: 0.4),
+              ),
             ),
             child: Text(
               'If you lose this passphrase, the wallets stored in this app '

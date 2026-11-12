@@ -28,7 +28,8 @@ Future<void> showTxSuccessDialog(
   return showAppDialog<void>(
     context,
     barrierDismissible: false,
-    builder: (_) => _TxSuccessDialog(txid: txid, preview: preview, ticker: ticker),
+    builder: (_) =>
+        _TxSuccessDialog(txid: txid, preview: preview, ticker: ticker),
   );
 }
 
@@ -48,7 +49,9 @@ class _TxSuccessDialog extends StatelessWidget {
   Future<void> _openExplorer(BuildContext context) async {
     final app = context.read<AppState>();
     final base = _isLiquid ? app.liquidExplorerUrl : app.btcExplorerUrl;
-    final trimmed = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    final trimmed = base.endsWith('/')
+        ? base.substring(0, base.length - 1)
+        : base;
     final uri = Uri.parse('$trimmed/tx/$txid');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -80,8 +83,11 @@ class _TxSuccessDialog extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Icon(Icons.check_rounded,
-                  color: Colors.white, size: phone ? 30 : 34),
+              child: Icon(
+                Icons.check_rounded,
+                color: Colors.white,
+                size: phone ? 30 : 34,
+              ),
             ),
           ),
         ),
@@ -154,10 +160,7 @@ class _TxSuccessDialog extends StatelessWidget {
       // and a scroll view of its own.
       content: phone
           ? body
-          : SizedBox(
-              width: 520,
-              child: SingleChildScrollView(child: body),
-            ),
+          : SizedBox(width: 520, child: SingleChildScrollView(child: body)),
       actions: actions,
     );
   }

@@ -48,12 +48,15 @@ class ProtocolNetworkMismatchCard extends StatefulWidget {
   final bool busy;
 
   @override
-  State<ProtocolNetworkMismatchCard> createState() => _ProtocolNetworkMismatchCardState();
+  State<ProtocolNetworkMismatchCard> createState() =>
+      _ProtocolNetworkMismatchCardState();
 }
 
-class _ProtocolNetworkMismatchCardState extends State<ProtocolNetworkMismatchCard> {
+class _ProtocolNetworkMismatchCardState
+    extends State<ProtocolNetworkMismatchCard> {
   late final TextEditingController _policyAsset = TextEditingController(
-    text: widget.mismatch.policyAssetFor(
+    text:
+        widget.mismatch.policyAssetFor(
           widget.info?.regtestDefaultPolicyAsset ?? '',
         ) ??
         '',
@@ -69,10 +72,11 @@ class _ProtocolNetworkMismatchCardState extends State<ProtocolNetworkMismatchCar
 
   /// The label of the one action that moves this forward.
   String get _switchLabel => switch (widget.mismatch.kind) {
-        ProtocolMismatchKind.chain => "Switch this wallet to the site's chain",
-        _ => 'Switch this wallet to '
-            '${protocolNetworkLabel(widget.mismatch.siteNetwork)}',
-      };
+    ProtocolMismatchKind.chain => "Switch this wallet to the site's chain",
+    _ =>
+      'Switch this wallet to '
+          '${protocolNetworkLabel(widget.mismatch.siteNetwork)}',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +89,7 @@ class _ProtocolNetworkMismatchCardState extends State<ProtocolNetworkMismatchCar
       title: 'Wrong network',
       subtitle: m.kind == ProtocolMismatchKind.chain
           ? 'Same network name, different chain — the two nodes do not share '
-              'an L-BTC asset, so nothing signed on one is valid on the other.'
+                'an LBTC asset, so nothing signed on one is valid on the other.'
           : 'A wallet only signs on the chain it is running.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -101,7 +105,8 @@ class _ProtocolNetworkMismatchCardState extends State<ProtocolNetworkMismatchCar
           else if (_locked)
             const InfoBanner(
               title: 'The network is fixed for this session',
-              message: 'TEMPLAR_LIQUID_NETWORK sets it for this run of the app, '
+              message:
+                  'TEMPLAR_LIQUID_NETWORK sets it for this run of the app, '
                   'so it cannot be switched from here. Unset the variable and '
                   'start Templar again, then open the link once more.',
             )
@@ -113,14 +118,14 @@ class _ProtocolNetworkMismatchCardState extends State<ProtocolNetworkMismatchCar
                 enabled: !widget.busy,
                 style: AppTypography.mono,
                 decoration: InputDecoration(
-                  labelText: 'Regtest L-BTC asset id',
+                  labelText: 'Regtest LBTC asset id',
                   hintText: widget.info?.regtestDefaultPolicyAsset,
                   helperText: m.sitePolicyAsset != null
                       ? 'Sent by the site with this request. Edit it only if '
-                          'you know your node uses another one.'
+                            'you know your node uses another one.'
                       : 'The site did not name one, so the stock '
-                          'liquidregtest id is used. Your node reports its own '
-                          'with elements-cli dumpassetlabels.',
+                            'liquidregtest id is used. Your node reports its own '
+                            'with elements-cli dumpassetlabels.',
                   helperMaxLines: 3,
                   prefixIcon: phone ? null : const Icon(Icons.tag, size: 16),
                 ),
@@ -128,7 +133,8 @@ class _ProtocolNetworkMismatchCardState extends State<ProtocolNetworkMismatchCar
               const SizedBox(height: AppSpacing.lg),
             ],
             const WarningBanner(
-              message: 'Switching closes the open wallet. Templar reopens this '
+              message:
+                  'Switching closes the open wallet. Templar reopens this '
                   'request straight after, and you pick the wallet again.',
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -141,8 +147,8 @@ class _ProtocolNetworkMismatchCardState extends State<ProtocolNetworkMismatchCar
               onPressed: widget.busy
                   ? null
                   : () => widget.onSwitch(
-                        needsAsset ? _policyAsset.text.trim() : null,
-                      ),
+                      needsAsset ? _policyAsset.text.trim() : null,
+                    ),
             ),
           ],
           const SizedBox(height: AppSpacing.md),

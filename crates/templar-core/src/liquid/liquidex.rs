@@ -63,11 +63,11 @@ type DerivationPath = lwk_wollet::bitcoin::bip32::DerivationPath;
 /// Result of resolving the signing key material for a wallet UTXO.
 type KeyResult = Result<(SecretKey, PublicKey), TemplarError>;
 
-/// L-BTC asset id on Liquid **testnet** (display hex).
+/// LBTC asset id on Liquid **testnet** (display hex).
 pub const LBTC_TESTNET_ASSET_ID: &str =
     "144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49";
 
-/// L-BTC asset id on Liquid **mainnet** (display hex).
+/// LBTC asset id on Liquid **mainnet** (display hex).
 pub const LBTC_MAINNET_ASSET_ID: &str =
     "6f0279e9ed041c3d710a9f57d0c02928416460c4b722ae3457a11eec381c526d";
 
@@ -78,7 +78,7 @@ const DEFAULT_FEE_RATE_KVB: f32 = 100.0;
 const MAX_FEE_RATE_KVB: f32 = 10_000.0;
 
 /// Validate a wire-provided fee rate: default, floor to the relay minimum,
-/// refuse non-finite or absurd values (they would otherwise burn wallet L-BTC
+/// refuse non-finite or absurd values (they would otherwise burn wallet LBTC
 /// as fee, or overflow the u64 fee math on Infinity).
 fn sanitize_fee_rate(fee_rate: Option<f32>) -> Result<f32, TemplarError> {
     let rate = fee_rate.unwrap_or(DEFAULT_FEE_RATE_KVB);
@@ -322,8 +322,8 @@ fn p2wpkh_script_pubkey(pk: &PublicKey) -> Script {
 // Offline + deep verification
 // ---------------------------------------------------------------------------
 
-/// Offline network heuristic: match leg asset ids against known L-BTC ids.
-/// Mainnet takes priority: a proposal touching mainnet L-BTC on either leg is
+/// Offline network heuristic: match leg asset ids against known LBTC ids.
+/// Mainnet takes priority: a proposal touching mainnet LBTC on either leg is
 /// mainnet no matter what else it claims. The regtest policy asset is only
 /// recognised when `local` is a regtest, because it is node-specific.
 fn detect_network_on(proposal: &LiquidexProposal, local: &LiquidNetwork) -> SwapNetwork {
@@ -824,6 +824,237 @@ pub fn broadcast_transaction_on(
     Ok(tx.txid().to_string())
 }
 
+/// Build a signed spend of an explicit Liquid P2WSH HTLC output. The claim
+/// path supplies the preimage; the refund path uses the absolute CLTV.
+/// Token contracts automatically add wallet LBTC inputs for the network fee.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LiquidHtlcSpendRequest {
+    pub funding_txid: String,
+    pub funding_vout: u32,
+    pub asset_id: String,
+    pub amount_sats: u64,
+    pub script_hex: String,
+    pub payment_hash: String,
+    pub timeout: u64,
+    pub preimage_hex: Option<String>,
+    #[serde(default = "default_htlc_fee")]
+    pub fee_sats: u64,
+}
+
+fn default_htlc_fee() -> u64 {
+    500
+}
+
+pub fn spend_liquid_htlc(
+    manager: &LiquidWalletManager,
+    request: &LiquidHtlcSpendRequest,
+    swap_secret_key: &[u8; 32],
+) -> Result<Transaction, TemplarError> {
+    use lwk_wollet::elements::hashes::{sha256, Hash};
+
+    if request.amount_sats == 0 || request.fee_sats == 0 {
+        return Err(
+            LiquidError::PsetBuildFailed("HTLC amount and fee must be positive".into()).into(),
+        );
+    }
+    let asset = AssetId::from_str(&request.asset_id)
+        .map_err(|e| LiquidError::PsetBuildFailed(format!("HTLC asset: {e}")))?;
+    let txid = Txid::from_str(&request.funding_txid)
+        .map_err(|e| LiquidError::PsetBuildFailed(format!("HTLC txid: {e}")))?;
+    let script_bytes = hex::decode(&request.script_hex)
+        .map_err(|e| LiquidError::PsetBuildFailed(format!("HTLC script: {e}")))?;
+    let witness_script = Script::from(script_bytes);
+    let secp = Secp256k1::new();
+    let swap_sk = SecretKey::from_slice(swap_secret_key)
+        .map_err(|e| LiquidError::SigningFailed(format!("HTLC key: {e}")))?;
+    let policy_asset = manager.wollet.policy_asset();
+    let mut fee_inputs: Vec<WalletTxOut> = Vec::new();
+    let mut fee_total = 0u64;
+    if asset != policy_asset {
+        let mut candidates: Vec<WalletTxOut> = manager
+            .wollet
+            .utxos()
+            .map_err(|e| LiquidError::PsetBuildFailed(format!("utxos: {e}")))?
+            .into_iter()
+            .filter(|u| !u.is_spent && u.unblinded.asset == policy_asset)
+            .collect();
+        candidates.sort_by_key(|u| std::cmp::Reverse(u.unblinded.value));
+        for utxo in candidates {
+            if fee_total >= request.fee_sats {
+                break;
+            }
+            fee_total = fee_total.saturating_add(utxo.unblinded.value);
+            fee_inputs.push(utxo);
+        }
+        if fee_total < request.fee_sats {
+            return Err(LiquidError::PsetBuildFailed(format!(
+                "token HTLC needs {} sats LBTC for fees; wallet has {fee_total}",
+                request.fee_sats
+            ))
+            .into());
+        }
+    } else if request.amount_sats <= request.fee_sats {
+        return Err(
+            LiquidError::PsetBuildFailed("HTLC fee consumes the LBTC output".into()).into(),
+        );
+    }
+
+    let mut in_secrets = vec![TxOutSecrets::new(
+        asset,
+        AssetBlindingFactor::zero(),
+        request.amount_sats,
+        ValueBlindingFactor::zero(),
+    )];
+    in_secrets.extend(fee_inputs.iter().map(|u| u.unblinded));
+
+    let receive = manager
+        .wollet
+        .address(None)
+        .map_err(|e| LiquidError::PsetBuildFailed(format!("receive address: {e}")))?
+        .address()
+        .clone();
+    let mut specs = vec![(
+        if asset == policy_asset {
+            request.amount_sats - request.fee_sats
+        } else {
+            request.amount_sats
+        },
+        asset,
+        receive.clone(),
+    )];
+    if asset != policy_asset && fee_total > request.fee_sats {
+        specs.push((fee_total - request.fee_sats, policy_asset, receive));
+    }
+    let fee_secrets = TxOutSecrets::new(
+        policy_asset,
+        AssetBlindingFactor::zero(),
+        request.fee_sats,
+        ValueBlindingFactor::zero(),
+    );
+    let mut rng = rand::thread_rng();
+    let mut outputs = Vec::new();
+    let mut prior_secrets = Vec::new();
+    let last = specs.len() - 1;
+    for (amount, out_asset, address) in specs.iter().take(last) {
+        let (out, abf, vbf, _) = TxOut::new_not_last_confidential(
+            &mut rng,
+            &secp,
+            *amount,
+            address.clone(),
+            *out_asset,
+            &in_secrets,
+        )
+        .map_err(|e| LiquidError::PsetBuildFailed(format!("blind HTLC payout: {e}")))?;
+        prior_secrets.push(TxOutSecrets::new(*out_asset, abf, *amount, vbf));
+        outputs.push(out);
+    }
+    {
+        let (amount, out_asset, address) = &specs[last];
+        let blinder = address.blinding_pubkey.ok_or_else(|| {
+            TemplarError::from(LiquidError::PsetBuildFailed(
+                "wallet receive address is not confidential".into(),
+            ))
+        })?;
+        let mut out_secrets: Vec<&TxOutSecrets> = prior_secrets.iter().collect();
+        out_secrets.push(&fee_secrets);
+        let (out, _, _, _) = TxOut::new_last_confidential(
+            &mut rng,
+            &secp,
+            *amount,
+            *out_asset,
+            address.script_pubkey(),
+            blinder,
+            &in_secrets,
+            &out_secrets,
+        )
+        .map_err(|e| LiquidError::PsetBuildFailed(format!("blind final HTLC payout: {e}")))?;
+        outputs.push(out);
+    }
+    outputs.push(TxOut::new_fee(request.fee_sats, policy_asset));
+
+    let claim = request.preimage_hex.is_some();
+    let mut inputs = vec![TxIn {
+        previous_output: OutPoint::new(txid, request.funding_vout),
+        is_pegin: false,
+        script_sig: Script::new(),
+        sequence: Sequence::from_consensus(INPUT_SEQUENCE),
+        asset_issuance: Default::default(),
+        witness: TxInWitness::default(),
+    }];
+    inputs.extend(fee_inputs.iter().map(|u| TxIn {
+        previous_output: u.outpoint,
+        is_pegin: false,
+        script_sig: Script::new(),
+        sequence: Sequence::from_consensus(INPUT_SEQUENCE),
+        asset_issuance: Default::default(),
+        witness: TxInWitness::default(),
+    }));
+    let lock_time = if claim {
+        LockTime::ZERO
+    } else {
+        LockTime::from_consensus(request.timeout as u32)
+    };
+    let mut tx = Transaction {
+        version: 2,
+        lock_time,
+        input: inputs,
+        output: outputs,
+    };
+
+    let mut witnesses: Vec<(usize, Vec<Vec<u8>>)> = Vec::new();
+    {
+        let mut cache = SighashCache::new(&tx);
+        let sighash = cache.segwitv0_sighash(
+            0,
+            &witness_script,
+            Value::Explicit(request.amount_sats),
+            EcdsaSighashType::All,
+        );
+        let msg = Message::from_digest_slice(&sighash[..])
+            .map_err(|e| LiquidError::SigningFailed(format!("HTLC sighash: {e}")))?;
+        let mut sig = secp.sign_ecdsa(&msg, &swap_sk).serialize_der().to_vec();
+        sig.push(EcdsaSighashType::All as u8);
+        let mut witness = vec![sig];
+        if let Some(preimage_hex) = &request.preimage_hex {
+            let preimage = hex::decode(preimage_hex)
+                .map_err(|e| LiquidError::SigningFailed(format!("preimage: {e}")))?;
+            if sha256::Hash::hash(&preimage).to_string() != request.payment_hash {
+                return Err(LiquidError::SigningFailed(
+                    "preimage does not match payment hash".into(),
+                )
+                .into());
+            }
+            witness.push(preimage);
+            witness.push(vec![1]);
+        } else {
+            witness.push(Vec::new());
+        }
+        witness.push(witness_script.as_bytes().to_vec());
+        witnesses.push((0, witness));
+
+        for (offset, utxo) in fee_inputs.iter().enumerate() {
+            let index = offset + 1;
+            let (sk, pk) = derive_utxo_key(&secp, manager, utxo)?;
+            let (_, value) = commitments_for(&secp, &utxo.unblinded);
+            let sighash = cache.segwitv0_sighash(
+                index,
+                &p2wpkh_script_code(&pk),
+                value,
+                EcdsaSighashType::All,
+            );
+            let msg = Message::from_digest_slice(&sighash[..])
+                .map_err(|e| LiquidError::SigningFailed(format!("fee input sighash: {e}")))?;
+            let mut sig = secp.sign_ecdsa(&msg, &sk).serialize_der().to_vec();
+            sig.push(EcdsaSighashType::All as u8);
+            witnesses.push((index, vec![sig, pk.to_bytes()]));
+        }
+    }
+    for (index, witness) in witnesses {
+        tx.input[index].witness.script_witness = witness;
+    }
+    Ok(tx)
+}
+
 // ---------------------------------------------------------------------------
 // Key derivation (wpkh slip77 singlesig wallets)
 // ---------------------------------------------------------------------------
@@ -919,7 +1150,7 @@ pub fn make_proposal(
     let outpoint = parse_outpoint(utxo)?;
     if want_asset_id == LBTC_MAINNET_ASSET_ID {
         return Err(LiquidError::PsetBuildFailed(
-            "want asset is mainnet L-BTC — it cannot be received on Liquid testnet".into(),
+            "want asset is mainnet LBTC — it cannot be received on Liquid testnet".into(),
         )
         .into());
     }
@@ -1069,7 +1300,7 @@ pub struct TakeResult {
 }
 
 /// Deep-verifies and takes a proposal: keeps the maker's input/output at
-/// index 0, adds taker inputs supplying the wanted asset plus L-BTC for the
+/// index 0, adds taker inputs supplying the wanted asset plus LBTC for the
 /// fee, an output to the taker of the offered asset, change outputs and an
 /// explicit fee output (last); blinds so the transaction balances *including*
 /// the maker's revealed blinders; rebuilds the maker output's rangeproof and
@@ -1614,7 +1845,7 @@ pub fn build_cancel_tx(
             .drain_lbtc_wallet()
             .drain_lbtc_to(self_address);
     } else {
-        // Spend the offered token UTXO fully to ourselves; allow L-BTC
+        // Spend the offered token UTXO fully to ourselves; allow LBTC
         // UTXOs to fund the fee.
         let mut allowed: Vec<OutPoint> = vec![outpoint];
         allowed.extend(
@@ -1651,11 +1882,11 @@ mod tests {
     use lwk_wollet::elements::hashes::{sha256d, Hash};
 
     /// Real mainnet proposal, id 9 from the liquidex.it book
-    /// (DBEER 1000 sats → 1000 sats L-BTC).
+    /// (DBEER 1000 sats → 1000 sats LBTC).
     const FIXTURE_9: &str = r#"{"version":0,"tx":"02000000010162457676604122dc2c3ab6b9ac5a787411cc90f07edd8651c656fd5ed5dfd45c000000001716001461362b692acf41e26c88c58abcd633cbbe06f420feffffff010b90f4a0ea769100ad4200aabb115f6ead24ba5180eea84f231f3c51c047f02f57092c307774be067befd563d6eb23ca185f963e22f9e96b3f224e94d28ed3cd2fd2020ea96dbab999be940e62be9ff1d8525f354730a3546d71a70696e1f40082996c17a914ea94f77a850e4b018d67c8c4ba087977ec63e1db8700000000000002473044022053a7107a113adffe78e556aa5fa0391b3a2301277630d77febd5398f7a834d520220484feb14c5b0b313759b79501a36d471985b5fe33a346cbcd3d059a0d32214a283210247fa74dbe2fe4f4d0d8e5cc16573f097cb9909670eedd733b50f37e343c9b08a000000","inputs":[{"asset":"002452cb8f56a0a5628240edfb3d1e966c9b1959adcfb95b5726e5e9688611bf","asset_blinder":"10abf182945667b6aae98a79535b91f2343eb6a920d8d99d3de06fa024e38c77","amount_blinder":"6cce12bfa4cd11818de662104e61f6be53275e21c343e984bb06c6749669ad2f","amount":1000}],"outputs":[{"asset":"6f0279e9ed041c3d710a9f57d0c02928416460c4b722ae3457a11eec381c526d","asset_blinder":"e8bfdc63d9750f16a2934b42466c1bfd171e5f3bcd8eafcd9e3ef954cf8a6d58","amount_blinder":"8e2d5cb748d14d5edb06643da6b05208671fbca875682a67690e3436d3ceb22a","amount":1000}]}"#;
 
     /// Real mainnet proposal, id 12 from the liquidex.it book
-    /// (SCAM 100 sats → 10000 sats L-BTC).
+    /// (SCAM 100 sats → 10000 sats LBTC).
     const FIXTURE_12: &str = r#"{"version":0,"tx":"020000000101369cad9338ac2e18a578f776017c033a94a2de1f9c99c7f1dc104c808de119320100000017160014faa46a00f7c1da2b2849d8da527d75ac2eaa02ecfeffffff010a69a83c9812cc5db6f17705bec234c7f2db944fb97a2d505218ee95ba0fcbf3d2084d57fa29588eafcaeba6406ac5cf30fbf61b45b82f62b6e38c3fcb9a7afabcd6020e007f598d79146add5278b9c8682937cb39cb30472810044e0a16b5072ed5d417a914b6b3813b25aa72c568bd3bc9ce1598f628aa3c3d8700000000000002473044022040be95060db855044daa5de5d1a779159d8f572b4bfd2cc081669cc336401708022018070ceebc77c72164c2228cafd40601253b776df08d813c057fcbe4defdf718832103d5cd246942cec54a46855481f587b11c87fb2acbc3694c85811c3b9f477b00ea000000","inputs":[{"asset":"123465c803ae336c62180e52d94ee80d80828db54df9bedbb9860060f49de2eb","asset_blinder":"278a034a31a45006592a95f165c3a7265e342b16428c24b95e2cfecbf2b0f3e2","amount_blinder":"954b1aff411fb09d26d8c144077598bb9b4ee5d64582abbe882917a5bca98ebb","amount":100}],"outputs":[{"asset":"6f0279e9ed041c3d710a9f57d0c02928416460c4b722ae3457a11eec381c526d","asset_blinder":"c07137aeeda9aca3567b6aa506c773dd524b959fe4d4e3f245380f7c3158452a","amount_blinder":"1f478cd6bc57051f3783a847669600b60ac4db70f1967211dfba7f3b6c0c3a5d","amount":10000}]}"#;
 
     fn check(result: &VerifyResult, name: &str) -> Option<bool> {
@@ -1797,7 +2028,7 @@ mod tests {
 
     #[test]
     fn mainnet_leg_wins_over_testnet_leg() {
-        // A proposal offering testnet L-BTC while wanting mainnet L-BTC must
+        // A proposal offering testnet LBTC while wanting mainnet LBTC must
         // classify as mainnet, not testnet — otherwise it looks takeable.
         let mut proposal = LiquidexProposal::from_json(FIXTURE_9).unwrap();
         proposal.inputs[0].asset = LBTC_TESTNET_ASSET_ID.to_string();
@@ -1993,7 +2224,7 @@ mod tests {
         )
         .unwrap();
 
-        // Taker wallet: 1000 of W (change expected) and 10000 L-BTC for fee.
+        // Taker wallet: 1000 of W (change expected) and 10000 LBTC for fee.
         let (utxo_w, key_w) = synth_utxo(&mut rng, &secp, asset_w, 1000, 0, b"taker-w");
         let (utxo_l, key_l) = synth_utxo(&mut rng, &secp, policy, 10_000, 3, b"taker-l");
         let taker = SynthWallet {
@@ -2026,7 +2257,7 @@ mod tests {
         )
         .unwrap();
 
-        // Structure: maker in/out at 0; receive + W change + L-BTC change +
+        // Structure: maker in/out at 0; receive + W change + LBTC change +
         // fee outputs; fee last and explicit.
         assert_eq!(build.tx.input.len(), 3);
         assert_eq!(
@@ -2091,7 +2322,7 @@ mod tests {
         )
         .unwrap();
 
-        // Taker has L-BTC but none of the wanted asset.
+        // Taker has LBTC but none of the wanted asset.
         let (utxo_l, key_l) = synth_utxo(&mut rng, &secp, policy, 10_000, 3, b"poor-taker-l");
         let taker = SynthWallet {
             utxos: vec![utxo_l],
@@ -2147,5 +2378,50 @@ mod tests {
         assert_eq!(op.vout, 0);
         assert!(parse_outpoint("nonsense").is_err());
         assert!(parse_outpoint("abcd:x").is_err());
+    }
+
+    #[test]
+    fn spends_explicit_lbtc_htlc_to_confidential_wallet_output() {
+        use crate::{
+            derive_swap_secret_key, htlc_script, payment_hash_hex, swap_public_key, HtlcTerms,
+        };
+        const WORDS: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let manager = LiquidWalletManager::from_mnemonic_with_persist_on(
+            &LiquidNetwork::testnet(),
+            WORDS,
+            None,
+        )
+        .unwrap();
+        let key = derive_swap_secret_key(WORDS, 1, 4).unwrap();
+        let preimage = [42u8; 32];
+        let terms = HtlcTerms {
+            payment_hash: payment_hash_hex(&preimage),
+            claim_pubkey: swap_public_key(&key).to_string(),
+            refund_pubkey: swap_public_key(&key).to_string(),
+            timeout: 1_900_000_000,
+        };
+        let script = htlc_script(&terms).unwrap();
+        let tx = spend_liquid_htlc(
+            &manager,
+            &LiquidHtlcSpendRequest {
+                funding_txid: "11".repeat(32),
+                funding_vout: 0,
+                asset_id: LBTC_TESTNET_ASSET_ID.into(),
+                amount_sats: 100_000,
+                script_hex: hex::encode(script.as_bytes()),
+                payment_hash: terms.payment_hash,
+                timeout: terms.timeout,
+                preimage_hex: Some(hex::encode(preimage)),
+                fee_sats: 500,
+            },
+            &key.secret_bytes(),
+        )
+        .unwrap();
+        assert_eq!(tx.input.len(), 1);
+        assert_eq!(tx.input[0].witness.script_witness.len(), 4);
+        assert_eq!(tx.output.len(), 2);
+        assert_eq!(tx.output[1].value.explicit(), Some(500));
+        assert!(tx.output[0].value.explicit().is_none());
+        assert!(tx.output[0].witness.rangeproof.is_some());
     }
 }

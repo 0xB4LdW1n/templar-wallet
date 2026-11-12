@@ -57,16 +57,20 @@ class FormCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(title!,
-                            style: AppTypography.sectionTitleOf(context)
-                                .copyWith(color: s.ink)),
+                        Text(
+                          title!,
+                          style: AppTypography.sectionTitleOf(
+                            context,
+                          ).copyWith(color: s.ink),
+                        ),
                         if (subtitle != null)
                           Padding(
                             padding: const EdgeInsets.only(top: AppSpacing.xs),
                             child: Text(
                               subtitle!,
-                              style: AppTypography.caption
-                                  .copyWith(color: s.inkSecondary),
+                              style: AppTypography.caption.copyWith(
+                                color: s.inkSecondary,
+                              ),
                             ),
                           ),
                       ],
@@ -81,10 +85,7 @@ class FormCard extends StatelessWidget {
               padding: EdgeInsets.only(top: _headerGap(context)),
               child: Divider(height: 1, color: s.edge),
             ),
-          Padding(
-            padding: padding ?? EdgeInsets.all(pad),
-            child: child,
-          ),
+          Padding(padding: padding ?? EdgeInsets.all(pad), child: child),
         ],
       ),
     );
@@ -92,11 +93,7 @@ class FormCard extends StatelessWidget {
 }
 
 class SummaryCard extends StatelessWidget {
-  const SummaryCard({
-    super.key,
-    required this.rows,
-    this.title,
-  });
+  const SummaryCard({super.key, required this.rows, this.title});
 
   final List<({String label, String value, bool isMono})> rows;
   final String? title;
@@ -119,9 +116,12 @@ class SummaryCard extends StatelessWidget {
           if (title != null)
             Padding(
               padding: EdgeInsets.fromLTRB(pad, pad, pad, 0),
-              child: Text(title!,
-                  style: AppTypography.sectionTitleOf(context)
-                      .copyWith(color: s.ink)),
+              child: Text(
+                title!,
+                style: AppTypography.sectionTitleOf(
+                  context,
+                ).copyWith(color: s.ink),
+              ),
             ),
           ...rows.asMap().entries.map((entry) {
             final isLast = entry.key == rows.length - 1;
@@ -131,7 +131,9 @@ class SummaryCard extends StatelessWidget {
               style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
             );
             final valueStyle =
-                (row.isMono ? AppTypography.monoSmall : AppTypography.numericSmall)
+                (row.isMono
+                        ? AppTypography.monoSmall
+                        : AppTypography.numericSmall)
                     .copyWith(color: s.ink);
 
             final Widget body;
@@ -241,15 +243,23 @@ class SectionCard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(title!,
-                              style: AppTypography.sectionTitleOf(context)
-                                  .copyWith(color: s.ink)),
+                          Text(
+                            title!,
+                            style: AppTypography.sectionTitleOf(
+                              context,
+                            ).copyWith(color: s.ink),
+                          ),
                           if (subtitle != null)
                             Padding(
-                              padding: const EdgeInsets.only(top: AppSpacing.xs),
-                              child: Text(subtitle!,
-                                  style: AppTypography.caption
-                                      .copyWith(color: s.inkSecondary)),
+                              padding: const EdgeInsets.only(
+                                top: AppSpacing.xs,
+                              ),
+                              child: Text(
+                                subtitle!,
+                                style: AppTypography.caption.copyWith(
+                                  color: s.inkSecondary,
+                                ),
+                              ),
                             ),
                         ],
                       ),
@@ -263,10 +273,7 @@ class SectionCard extends StatelessWidget {
               padding: EdgeInsets.only(top: _headerGap(context)),
               child: Divider(height: 1, color: s.edge),
             ),
-          Padding(
-            padding: padding ?? EdgeInsets.all(pad),
-            child: child,
-          ),
+          Padding(padding: padding ?? EdgeInsets.all(pad), child: child),
         ],
       ),
     );

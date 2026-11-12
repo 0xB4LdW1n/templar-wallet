@@ -117,10 +117,14 @@ class GlassDialog extends StatelessWidget {
                             colors: [
                               tint,
                               Color.alphaBlend(
-                                  Colors.white.withValues(alpha: 0.30), tint),
+                                Colors.white.withValues(alpha: 0.30),
+                                tint,
+                              ),
                             ],
                           ),
-                          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusMd,
+                          ),
                         ),
                         child: Icon(icon, color: Colors.white, size: 20),
                       ),
@@ -199,11 +203,13 @@ class _GlassPasswordFieldState extends State<GlassPasswordField> {
         fillColor: phone
             ? s.panelInset
             : (isDark
-                ? Colors.white.withValues(alpha: 0.06)
-                : Colors.white.withValues(alpha: 0.55)),
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.white.withValues(alpha: 0.55)),
         suffixIcon: IconButton(
-          icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility,
-              size: 18),
+          icon: Icon(
+            _obscure ? Icons.visibility_off : Icons.visibility,
+            size: 18,
+          ),
           onPressed: () => setState(() => _obscure = !_obscure),
           tooltip: _obscure ? 'Show' : 'Hide',
         ),
@@ -211,7 +217,6 @@ class _GlassPasswordFieldState extends State<GlassPasswordField> {
     );
   }
 }
-
 
 // ── Adaptive dialog / sheet ───────────────────────────────────────────────────
 
@@ -222,7 +227,8 @@ class _GlassPasswordFieldState extends State<GlassPasswordField> {
 /// inside a dialog route would be laid out as a full-height panel pinned to
 /// the top of the screen.
 bool _rendersAsSheet(BuildContext context) =>
-    AppLayout.isPhone(context) && ModalRoute.of(context) is ModalBottomSheetRoute;
+    AppLayout.isPhone(context) &&
+    ModalRoute.of(context) is ModalBottomSheetRoute;
 
 /// Opens a dialog the way the window expects: [showDialog] on desktop, a
 /// modal bottom sheet on a phone ([AppLayout.isPhone]). Use it in place of
@@ -388,7 +394,9 @@ class AppSheet extends StatelessWidget {
                     colors: [
                       tint,
                       Color.alphaBlend(
-                          Colors.white.withValues(alpha: 0.30), tint),
+                        Colors.white.withValues(alpha: 0.30),
+                        tint,
+                      ),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(AppSpacing.radiusMd),

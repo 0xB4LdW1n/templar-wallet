@@ -59,7 +59,9 @@ class _BurnScreenState extends State<BurnScreen> {
     final walletId = context.read<AppState>().activeWalletId ?? 'wallet-1';
     try {
       final data = await _bridge.getWalletSummary(walletId);
-      final liquid = data.assets.where((a) => a.ticker != 'BTC' && a.ticker != 'LBTC').toList();
+      final liquid = data.assets
+          .where((a) => a.ticker != 'BTC' && a.ticker != 'LBTC')
+          .toList();
       if (mounted) {
         setState(() {
           _liquidAssets = liquid;
@@ -82,12 +84,17 @@ class _BurnScreenState extends State<BurnScreen> {
       return;
     }
     if (amount > asset.amount) {
-      setState(() => _error =
-          'Amount exceeds current holdings (${asset.amount} base units).');
+      setState(
+        () => _error =
+            'Amount exceeds current holdings (${asset.amount} base units).',
+      );
       return;
     }
 
-    setState(() { _error = null; _submitting = true; });
+    setState(() {
+      _error = null;
+      _submitting = true;
+    });
 
     try {
       final walletId = context.read<AppState>().activeWalletId ?? 'wallet-1';
@@ -96,9 +103,19 @@ class _BurnScreenState extends State<BurnScreen> {
         assetId: asset.assetId,
         amountSats: amount,
       );
-      if (mounted) setState(() { _resultTxid = txid; _submitting = false; });
+      if (mounted) {
+        setState(() {
+          _resultTxid = txid;
+          _submitting = false;
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _submitting = false; });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _submitting = false;
+        });
+      }
     }
   }
 
@@ -112,7 +129,9 @@ class _BurnScreenState extends State<BurnScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: PageBackground.flat(child: _resultTxid != null ? _buildResult() : _buildForm()),
+      body: PageBackground.flat(
+        child: _resultTxid != null ? _buildResult() : _buildForm(),
+      ),
     );
   }
 
@@ -128,8 +147,9 @@ class _BurnScreenState extends State<BurnScreen> {
               subtitle: 'Permanently destroy token supply',
               actions: [
                 GhostButton(
-                    label: 'Back to Liquid',
-                    onPressed: () => context.go(AppRoutes.liquid))
+                  label: 'Back to Liquid',
+                  onPressed: () => context.go(AppRoutes.liquid),
+                ),
               ],
             ),
             const DangerBanner(
@@ -144,24 +164,31 @@ class _BurnScreenState extends State<BurnScreen> {
               FormCard(
                 title: 'Asset',
                 child: _liquidAssets.isEmpty
-                    ? Text('No burnable assets found.',
-                        style: AppTypography.caption)
+                    ? Text(
+                        'No burnable assets found.',
+                        style: AppTypography.caption,
+                      )
                     : DropdownButtonFormField<String>(
                         initialValue: _selectedAsset?.assetId,
                         items: _liquidAssets
-                            .map((a) => DropdownMenuItem(
-                                  value: a.assetId,
-                                  child: Text(
-                                      '${AssetRegistryService.instance.displayTicker(a)} — ${AssetRegistryService.instance.displayName(a)}'),
-                                ))
+                            .map(
+                              (a) => DropdownMenuItem(
+                                value: a.assetId,
+                                child: Text(
+                                  '${AssetRegistryService.instance.displayTicker(a)} — ${AssetRegistryService.instance.displayName(a)}',
+                                ),
+                              ),
+                            )
                             .toList(),
                         onChanged: (v) => setState(() {
-                          _selectedAsset = _liquidAssets
-                              .firstWhere((a) => a.assetId == v);
+                          _selectedAsset = _liquidAssets.firstWhere(
+                            (a) => a.assetId == v,
+                          );
                           _confirmController.clear();
                         }),
-                        decoration:
-                            const InputDecoration(hintText: 'Select asset'),
+                        decoration: const InputDecoration(
+                          hintText: 'Select asset',
+                        ),
                       ),
               ),
               if (_selectedAsset != null) ...[
@@ -171,12 +198,12 @@ class _BurnScreenState extends State<BurnScreen> {
                     (
                       label: 'Current holdings',
                       value: _selectedAsset!.displayAmount,
-                      isMono: false
+                      isMono: false,
                     ),
                     (
                       label: 'Base units',
                       value: '${_selectedAsset!.amount}',
-                      isMono: true
+                      isMono: true,
                     ),
                   ],
                 ),
@@ -191,7 +218,7 @@ class _BurnScreenState extends State<BurnScreen> {
                         controller: _amountController,
                         keyboardType: TextInputType.number,
                         inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly
+                          FilteringTextInputFormatter.digitsOnly,
                         ],
                         decoration: const InputDecoration(
                           labelText: 'Amount to burn (base units)',
@@ -201,9 +228,10 @@ class _BurnScreenState extends State<BurnScreen> {
                     if (_selectedAsset != null) ...[
                       const SizedBox(width: AppSpacing.md),
                       TextButton(
-                        onPressed: () => setState(() =>
-                            _amountController.text =
-                                '${_selectedAsset!.amount}'),
+                        onPressed: () => setState(
+                          () => _amountController.text =
+                              '${_selectedAsset!.amount}',
+                        ),
                         child: const Text('Burn all'),
                       ),
                     ],
@@ -226,8 +254,9 @@ class _BurnScreenState extends State<BurnScreen> {
                       decoration: InputDecoration(
                         hintText: _confirmTicker,
                         focusedBorder: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(AppSpacing.radiusSm),
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusSm,
+                          ),
                           borderSide: BorderSide(
                             color: _confirmed
                                 ? AppColors.danger
@@ -246,14 +275,17 @@ class _BurnScreenState extends State<BurnScreen> {
               ],
               const SizedBox(height: AppSpacing.xl),
               if (_submitting)
-                Row(children: [
-                  const SizedBox(
+                Row(
+                  children: [
+                    const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2)),
-                  const SizedBox(width: AppSpacing.md),
-                  Text('Broadcasting…', style: AppTypography.caption),
-                ])
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Text('Broadcasting…', style: AppTypography.caption),
+                  ],
+                )
               else
                 DangerButton(
                   label: 'Burn tokens',
@@ -282,8 +314,9 @@ class _BurnScreenState extends State<BurnScreen> {
               subtitle: 'Tokens destroyed on-chain',
               actions: [
                 GhostButton(
-                    label: 'Back to Liquid',
-                    onPressed: () => context.go(AppRoutes.liquid))
+                  label: 'Back to Liquid',
+                  onPressed: () => context.go(AppRoutes.liquid),
+                ),
               ],
             ),
             const InfoBanner(message: 'Burn transaction broadcast on-chain.'),

@@ -170,7 +170,7 @@ pub fn set_network(
 }
 
 /// A Liquid send after MAX resolution: fixed recipients plus an optional
-/// L-BTC drain destination (the "send MAX L-BTC" output).
+/// LBTC drain destination (the "send MAX LBTC" output).
 struct ResolvedLiquidSend {
     recipients: Vec<(String, u64, String)>,
     drain_lbtc_to: Option<String>,
@@ -180,7 +180,7 @@ struct ResolvedLiquidSend {
 ///
 /// Per-output `asset_id` falls back to the transaction-level asset. MAX
 /// outputs resolve here: tokens get their full balance (fees are paid in
-/// L-BTC, so the whole token balance is spendable); L-BTC MAX becomes the
+/// LBTC, so the whole token balance is spendable); LBTC MAX becomes the
 /// builder's drain destination so LWK computes `balance − fee` exactly.
 fn resolve_liquid_outputs(
     liq: &LiquidWalletManager,
@@ -242,8 +242,8 @@ fn resolve_liquid_outputs(
 fn asset_display(state: &AppState, asset_id: &str, amount: u64) -> (String, String) {
     if state.is_policy_asset(asset_id) {
         (
-            "L-BTC".to_string(),
-            format!("{:.8} L-BTC", amount as f64 / 1e8),
+            "LBTC".to_string(),
+            format!("{:.8} LBTC", amount as f64 / 1e8),
         )
     } else {
         (
@@ -277,7 +277,7 @@ pub fn preview_send(
 
     // Outputs for the review diagram — one row per external recipient, each
     // carrying its own asset. Liquid inputs stay auto-selected and blinded,
-    // so only the recipient side is listed. MAX outputs (including the L-BTC
+    // so only the recipient side is listed. MAX outputs (including the LBTC
     // drain) show their concrete resolved amount here.
     let out_rows: Vec<TxIoDto> = details
         .recipients

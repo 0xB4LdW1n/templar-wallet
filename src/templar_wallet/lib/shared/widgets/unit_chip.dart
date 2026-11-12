@@ -4,7 +4,7 @@ import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 
-/// The unit beside an amount field. Plain text for a token; on a BTC/L-BTC
+/// The unit beside an amount field. Plain text for a token; on a BTC/LBTC
 /// row with a live price it is a target that flips the field to the other
 /// unit ([other]) — the ⇅ glyph says it can, the label says which unit the
 /// number in the box is in right now.
@@ -23,7 +23,10 @@ class UnitChip extends StatelessWidget {
     final phone = AppLayout.isPhone(context);
     if (onTap == null) {
       return Padding(
-        padding: const EdgeInsets.only(left: AppSpacing.sm, right: AppSpacing.md),
+        padding: const EdgeInsets.only(
+          left: AppSpacing.sm,
+          right: AppSpacing.md,
+        ),
         child: Text(
           label,
           style: AppTypography.caption.copyWith(color: s.inkSecondary),
@@ -71,7 +74,8 @@ class UnitChip extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(
-            phone ? AppSpacing.radiusMd : AppSpacing.radiusSm),
+          phone ? AppSpacing.radiusMd : AppSpacing.radiusSm,
+        ),
         child: ConstrainedBox(
           constraints: BoxConstraints(
             minWidth: phone ? AppLayout.minTouchTarget : 0,

@@ -27,7 +27,8 @@ class _QuietBridge implements WalletBridge {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Widget _hostWith(WalletBridge b) => MaterialApp(home: WalletTypeScreen(bridge: b));
+Widget _hostWith(WalletBridge b) =>
+    MaterialApp(home: WalletTypeScreen(bridge: b));
 
 void _desktopWindow(WidgetTester t) {
   t.view.physicalSize = const Size(1280, 900);
@@ -67,8 +68,9 @@ void main() {
       ..liquidEnabled = true;
   });
 
-  testWidgets('the first question is the structure, watch-only set apart',
-      (t) async {
+  testWidgets('the first question is the structure, watch-only set apart', (
+    t,
+  ) async {
     await _pump(t);
 
     expect(find.text('What kind of wallet?'), findsOneWidget);
@@ -81,8 +83,9 @@ void main() {
     expect(find.text('On this computer'), findsNothing);
   });
 
-  testWidgets('single-sig is asked where its keys live; multisig is not',
-      (t) async {
+  testWidgets('single-sig is asked where its keys live; multisig is not', (
+    t,
+  ) async {
     await _pump(t);
     await _tapCard(t, 'One key');
     await _continue(t);
@@ -154,8 +157,9 @@ void main() {
     expect(t.getTopLeft(back).dx, buttonX);
   });
 
-  testWidgets('an answer that drops a question keeps the step in range',
-      (t) async {
+  testWidgets('an answer that drops a question keeps the step in range', (
+    t,
+  ) async {
     await _pump(t);
     await _tapCard(t, 'One key');
     await _continue(t); // step 2 — keys

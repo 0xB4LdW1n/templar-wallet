@@ -11,11 +11,15 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Default public order book (mainnet, read-only browsing).
 pub const DEFAULT_BOOK_URL: &str = "https://liquidex.it/api/book";
+
+/// Local Templar order book used by testnet and regtest wallet flows.
+pub const LOCAL_BOOK_URL: &str = "http://127.0.0.1:3210/api/book";
+pub const LOCAL_MARKETS_URL: &str = "http://127.0.0.1:3210/api/markets";
 
 /// Errors from fetching or decoding the order book.
 #[derive(Debug, Error)]
@@ -25,6 +29,9 @@ pub enum BookError {
 
     #[error("Order book returned HTTP {0}")]
     Http(u16),
+
+    #[error("Order book rejected the request (HTTP {status}): {message}")]
+    Rejected { status: u16, message: String },
 
     #[error("Order book response could not be parsed: {0}")]
     Parse(String),
@@ -50,6 +57,12 @@ impl BookLeg {
     /// not in the testnet `AssetRegistry`).
     pub fn ticker(&self) -> String {
         let first = self.name.split(" - ").next().map(str::trim).unwrap_or("");
+        if matches!(
+            first.to_ascii_uppercase().as_str(),
+            "L-BTC" | "TL-BTC" | "RL-BTC"
+        ) {
+            return "LBTC".to_string();
+        }
         if !first.is_empty() {
             return first.to_string();
         }
@@ -78,6 +91,36 @@ pub struct BookEntry {
     pub outputs: Vec<BookLeg>,
 }
 
+/// One chain-aware leg from the local unified markets API.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct MarketBookLeg {
+    pub chain: String,
+    pub network: String,
+    pub asset_id: String,
+    pub ticker: String,
+    pub name: String,
+    pub precision: u8,
+    pub amount_sats: u64,
+    pub display_amount: String,
+}
+
+/// A unified Liquid or BTC↔Liquid market row.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct MarketBookEntry {
+    pub id: String,
+    pub source_id: u64,
+    pub status: String,
+    pub settlement: String,
+    pub demo: bool,
+    pub available: bool,
+    pub maker_gives: MarketBookLeg,
+    pub maker_wants: MarketBookLeg,
+    pub price_display: String,
+    pub note: String,
+    pub created_at: u64,
+    pub proposal_json: String,
+}
+
 /// Fetches and parses the order book at `url` (10 s timeout).
 ///
 /// The caller decides the URL — `TEMPLAR_SWAP_BOOK_URL` override and the
@@ -97,6 +140,78 @@ pub fn fetch_book(url: &str) -> Result<Vec<BookEntry>, BookError> {
     }
     let body = resp.text().map_err(|e| BookError::Network(e.to_string()))?;
     parse_book(&body)
+}
+
+/// Fetches the unified localhost markets feed.
+pub fn fetch_markets(url: &str) -> Result<Vec<MarketBookEntry>, BookError> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| BookError::Network(e.to_string()))?;
+    let resp = client
+        .get(url)
+        .send()
+        .map_err(|e| BookError::Network(e.to_string()))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(BookError::Http(status.as_u16()));
+    }
+    let body = resp.text().map_err(|e| BookError::Network(e.to_string()))?;
+    parse_markets(&body)
+}
+
+pub fn parse_markets(raw: &str) -> Result<Vec<MarketBookEntry>, BookError> {
+    serde_json::from_str(raw).map_err(|e| BookError::Parse(e.to_string()))
+}
+
+#[derive(Serialize)]
+struct PublishRequest<'a> {
+    network: &'a str,
+    proposal_json: &'a str,
+    note: &'a str,
+}
+
+#[derive(Deserialize)]
+struct PublishResponse {
+    id: u64,
+}
+
+/// Publishes an already-signed proposal to a Templar local order book.
+/// No wallet key or descriptor is sent.
+pub fn publish_offer(
+    url: &str,
+    network: &str,
+    proposal_json: &str,
+    note: &str,
+) -> Result<u64, BookError> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| BookError::Network(e.to_string()))?;
+    let resp = client
+        .post(url)
+        .json(&PublishRequest {
+            network,
+            proposal_json,
+            note,
+        })
+        .send()
+        .map_err(|e| BookError::Network(e.to_string()))?;
+    let status = resp.status();
+    let body = resp.text().map_err(|e| BookError::Network(e.to_string()))?;
+    if !status.is_success() {
+        let message = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|value| value["error"].as_str().map(str::to_string))
+            .unwrap_or_else(|| body.trim().to_string());
+        return Err(BookError::Rejected {
+            status: status.as_u16(),
+            message,
+        });
+    }
+    serde_json::from_str::<PublishResponse>(&body)
+        .map(|response| response.id)
+        .map_err(|e| BookError::Parse(e.to_string()))
 }
 
 /// Parses the raw `/api/book` JSON (a map keyed by offer id) into entries
@@ -257,7 +372,7 @@ mod tests {
         assert_eq!(e9.inputs[0].ticker(), "DBEER");
         assert_eq!(e9.inputs[0].sats, 1000);
         assert_eq!(e9.inputs[0].amount, "10.00");
-        assert_eq!(e9.outputs[0].ticker(), "L-BTC");
+        assert_eq!(e9.outputs[0].ticker(), "LBTC");
         assert_eq!(e9.outputs[0].asset, MAINNET_LBTC);
         assert_eq!(e9.outputs[0].sats, 1000);
 
@@ -343,5 +458,27 @@ mod tests {
     #[test]
     fn empty_book_is_ok() {
         assert!(parse_book("{}").unwrap().is_empty());
+    }
+
+    #[test]
+    fn unified_market_feed_keeps_chain_and_demo_semantics() {
+        let raw = r#"[{
+            "id":"demo:7","source_id":7,"status":"open",
+            "settlement":"htlc-demo","demo":true,"available":true,
+            "maker_gives":{"chain":"bitcoin","network":"bitcoin-testnet",
+                "asset_id":"btc-testnet","ticker":"BTC","name":"Bitcoin",
+                "precision":8,"amount_sats":100000,"display_amount":"0.00100000"},
+            "maker_wants":{"chain":"liquid","network":"liquid-testnet",
+                "asset_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "ticker":"USDT","name":"Test USD","precision":2,
+                "amount_sats":2500,"display_amount":"25.00"},
+            "price_display":"0.00100000 → 25.00","note":"demo",
+            "created_at":42,"proposal_json":""
+        }]"#;
+        let rows = parse_markets(raw).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].demo);
+        assert_eq!(rows[0].maker_gives.chain, "bitcoin");
+        assert_eq!(rows[0].maker_wants.ticker, "USDT");
     }
 }

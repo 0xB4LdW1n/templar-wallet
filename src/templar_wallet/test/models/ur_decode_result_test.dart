@@ -11,9 +11,11 @@ Map<String, dynamic> decode(String raw) =>
 
 void main() {
   test('decodes an in-progress scan (integer progress from JSON)', () {
-    final r = UrDecodeResult.fromJson(decode('''
+    final r = UrDecodeResult.fromJson(
+      decode('''
       {"progress": 0, "complete": false, "kind": "", "psbt_base64": null, "descriptor": null}
-    '''));
+    '''),
+    );
     // jsonDecode hands `0` over as int — the mapper must accept any num.
     expect(r.progress, 0.0);
     expect(r.complete, isFalse);
@@ -23,9 +25,11 @@ void main() {
   });
 
   test('decodes a completed PSBT scan', () {
-    final r = UrDecodeResult.fromJson(decode('''
+    final r = UrDecodeResult.fromJson(
+      decode('''
       {"progress": 1.0, "complete": true, "kind": "psbt", "psbt_base64": "cHNidP8BAA==", "descriptor": null}
-    '''));
+    '''),
+    );
     expect(r.progress, 1.0);
     expect(r.complete, isTrue);
     expect(r.kind, 'psbt');

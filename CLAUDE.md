@@ -96,7 +96,7 @@ live before trusting any on-screen balance.
 8. **Frozen coins are never spent** — the set lives on the registry entry
    (`WalletEntry.frozen`, `frozen.rs`). Every builder takes it
    (`AppState::frozen_on`): BDK leaves it out with `unspendable`, LWK with
-   `set_wallet_utxos` where LWK allows it (L-BTC-only payments) and refuses
+   `set_wallet_utxos` where LWK allows it (LBTC-only payments) and refuses
    otherwise; every signer runs `refuse_frozen_inputs` first. A new spend or
    sign path must do both.
 
@@ -175,7 +175,9 @@ file_selector, shared_preferences, app_links, share_plus, url_launcher.
 ## Env overrides
 
 `TEMPLAR_DATA_DIR`, `TEMPLAR_HWI_BIN`, `TEMPLAR_ELECTRUM_URL`,
-`TEMPLAR_LIQUID_ELECTRUM_URL`, `TEMPLAR_SWAP_BOOK_URL`.
+`TEMPLAR_LIQUID_ELECTRUM_URL`, `TEMPLAR_SWAP_BOOK_URL`,
+`TEMPLAR_SWAP_MARKETS_URL`, `TEMPLAR_SWAP_ADMIN_URL`,
+`TEMPLAR_ORDERBOOK_DB`.
 
 Liquid network (`crates/templar-core/src/liquid/{network,chain}.rs`):
 `TEMPLAR_LIQUID_NETWORK=testnet|regtest` (locks the Settings switch; default =
@@ -187,7 +189,12 @@ the value saved in `AppConfig`, else testnet), `TEMPLAR_LIQUID_REGTEST_POLICY_AS
 global network:
 the templarlib state passes it to the `*_on` constructors; the no-suffix constructors
 read the env and default to testnet (what the Templar Protocol relies on). Peg,
-public order book and asset-registry submission are refused on regtest.
+public order books and asset-registry submission are refused on regtest. The
+localhost `templar-orderbook` service supports both testnet and regtest; see
+`docs/guides/LOCAL_ORDERBOOK.md`. Its unified market feed can also carry
+testnet-only BTC/Liquid `htlc-demo` quotes. These are UI data only: they never
+sign, broadcast, or settle, and must not be presented as production atomic
+swaps.
 
 ## Build & Run
 

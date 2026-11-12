@@ -213,7 +213,7 @@ pub fn create_wallet(
 /// Bitcoin-only.
 ///
 /// Restore used to pass `liquid: false` unconditionally, so every recovered
-/// wallet ended up without a Liquid descriptor — no LIQUID section, no L-BTC
+/// wallet ended up without a Liquid descriptor — no LIQUID section, no LBTC
 /// address, no CT descriptor — even though the same seed derives both chains.
 /// Rather than force a re-import, this derives the descriptor from the seed
 /// already in the entry and persists it. Idempotent: a wallet that already has

@@ -76,8 +76,10 @@ class _AuroraField extends StatefulWidget {
 
 class _AuroraFieldState extends State<_AuroraField>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: const Duration(seconds: 32));
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 32),
+  );
 
   @override
   void dispose() {
@@ -88,8 +90,9 @@ class _AuroraFieldState extends State<_AuroraField>
   @override
   Widget build(BuildContext context) {
     // Rebuilds when reduce-effects flips; reduced-motion is read live too.
-    final reduceEffects =
-        context.select<AppState, bool>((st) => st.reduceEffects);
+    final reduceEffects = context.select<AppState, bool>(
+      (st) => st.reduceEffects,
+    );
     final frozen = AppMotion.reduced(context) || reduceEffects;
     if (frozen) {
       if (_c.isAnimating) _c.stop();
@@ -198,15 +201,20 @@ class SheetSurface extends StatelessWidget {
 /// for the element that matters most (balance, quorum). Frosting is skipped
 /// when the user enables "reduce effects" (translucent fill remains).
 class HeroPanel extends StatelessWidget {
-  const HeroPanel({super.key, required this.child, this.padding = const EdgeInsets.all(AppSpacing.cardPadding)});
+  const HeroPanel({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(AppSpacing.cardPadding),
+  });
   final Widget child;
   final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final reduceEffects =
-        context.select<AppState, bool>((st) => st.reduceEffects);
+    final reduceEffects = context.select<AppState, bool>(
+      (st) => st.reduceEffects,
+    );
 
     final phone = AppLayout.isPhone(context);
     final body = Container(
@@ -215,8 +223,8 @@ class HeroPanel extends StatelessWidget {
         color: phone
             ? s.panel
             : reduceEffects
-                ? s.surfaceSolid.withValues(alpha: 0.92)
-                : s.surfaceGlass,
+            ? s.surfaceSolid.withValues(alpha: 0.92)
+            : s.surfaceGlass,
         borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
         border: Border.all(color: s.edge),
         // A BoxDecoration paints its gradient in place of its colour, so the
@@ -294,17 +302,23 @@ class RailPanel extends StatelessWidget {
           Container(
             decoration: BoxDecoration(
               color: s.surfaceRaised,
-              border: Border(left: BorderSide(color: rail ?? s.accent, width: 3)),
+              border: Border(
+                left: BorderSide(color: rail ?? s.accent, width: 3),
+              ),
             ),
             padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.lg, vertical: AppSpacing.sm + 2),
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.sm + 2,
+            ),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
                     title.toUpperCase(),
-                    style: AppTypography.navSection
-                        .copyWith(color: s.inkSecondary, letterSpacing: 1.1),
+                    style: AppTypography.navSection.copyWith(
+                      color: s.inkSecondary,
+                      letterSpacing: 1.1,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -314,10 +328,13 @@ class RailPanel extends StatelessWidget {
           ),
           Divider(height: 1, color: s.edge),
           Padding(
-            padding: padding ??
-                EdgeInsets.all(AppLayout.isPhone(context)
-                    ? AppSpacing.cardPaddingSmall
-                    : AppSpacing.cardPadding),
+            padding:
+                padding ??
+                EdgeInsets.all(
+                  AppLayout.isPhone(context)
+                      ? AppSpacing.cardPaddingSmall
+                      : AppSpacing.cardPadding,
+                ),
             child: child,
           ),
         ],
@@ -331,7 +348,11 @@ class RailPanel extends StatelessWidget {
 /// Solid, AA-contrast backing for critical data (addresses, outpoints,
 /// descriptors, amounts). Never translucent — guardrail, not a style choice.
 class DataWell extends StatelessWidget {
-  const DataWell({super.key, required this.child, this.padding = const EdgeInsets.all(AppSpacing.md + 2)});
+  const DataWell({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(AppSpacing.md + 2),
+  });
   final Widget child;
   final EdgeInsetsGeometry padding;
 
@@ -357,7 +378,12 @@ class DataWell extends StatelessWidget {
 /// On a phone a long value (an outpoint, an address) stacks under its label
 /// so it gets the whole column instead of the ~250 dp left of the label.
 class KvRow extends StatelessWidget {
-  const KvRow({super.key, required this.label, required this.value, this.labelWidth = 86});
+  const KvRow({
+    super.key,
+    required this.label,
+    required this.value,
+    this.labelWidth = 86,
+  });
   final String label;
   final String value;
   final double labelWidth;
@@ -458,8 +484,11 @@ class TestnetBadge extends StatelessWidget {
           maxLines: 1,
           softWrap: false,
           overflow: TextOverflow.ellipsis,
-          style: AppTypography.navSection
-              .copyWith(color: s.testnet, fontSize: 10, letterSpacing: 1.2),
+          style: AppTypography.navSection.copyWith(
+            color: s.testnet,
+            fontSize: 10,
+            letterSpacing: 1.2,
+          ),
         ),
       ),
     );
@@ -613,7 +642,9 @@ class _HoverRowState extends State<HoverRow> {
     final row = MouseRegion(
       onEnter: (_) => setState(() => _h = true),
       onExit: (_) => setState(() => _h = false),
-      cursor: widget.onTap != null ? SystemMouseCursors.click : MouseCursor.defer,
+      cursor: widget.onTap != null
+          ? SystemMouseCursors.click
+          : MouseCursor.defer,
       child: AnimatedContainer(
         duration: AppMotion.of(context, AppMotion.instant),
         color: _h && widget.onTap != null

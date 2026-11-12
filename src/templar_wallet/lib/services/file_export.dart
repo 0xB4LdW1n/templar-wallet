@@ -56,11 +56,13 @@ abstract final class FileExport {
     await exportDir.create(recursive: true);
     final file = File('${exportDir.path}/$suggestedName');
     await file.writeAsBytes(bytes, flush: true);
-    final result = await SharePlus.instance.share(ShareParams(
-      files: [XFile(file.path, mimeType: mimeType, name: suggestedName)],
-      title: shareTitle ?? suggestedName,
-      sharePositionOrigin: origin,
-    ));
+    final result = await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(file.path, mimeType: mimeType, name: suggestedName)],
+        title: shareTitle ?? suggestedName,
+        sharePositionOrigin: origin,
+      ),
+    );
     return result.status == ShareResultStatus.dismissed ? null : 'shared';
   }
 
@@ -72,15 +74,14 @@ abstract final class FileExport {
     String mimeType = 'text/plain',
     List<XTypeGroup> acceptedTypeGroups = const [],
     String? shareTitle,
-  }) =>
-      saveOrShare(
-        context,
-        suggestedName: suggestedName,
-        bytes: Uint8List.fromList(text.codeUnits),
-        mimeType: mimeType,
-        acceptedTypeGroups: acceptedTypeGroups,
-        shareTitle: shareTitle,
-      );
+  }) => saveOrShare(
+    context,
+    suggestedName: suggestedName,
+    bytes: Uint8List.fromList(text.codeUnits),
+    mimeType: mimeType,
+    acceptedTypeGroups: acceptedTypeGroups,
+    shareTitle: shareTitle,
+  );
 
   /// Opens the platform file picker. Desktop filters by [extensions];
   /// Android shows every file (see the class doc) so the caller must

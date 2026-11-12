@@ -77,7 +77,7 @@ pub fn escrow_xpub_from_mnemonic(mnemonic: &str) -> Result<String, TemplarError>
 // or a Jade's `87h` BIP87 account — and lets it back in by a signature on a
 // transaction that can never be broadcast: one input whose prevout is
 // `sha256("templar-proof" ‖ challenge)`, a hash no transaction has, carrying
-// an explicit 0 L-BTC `witness_utxo` to P2WPKH(loan key `/0/0`); one
+// an explicit 0 LBTC `witness_utxo` to P2WPKH(loan key `/0/0`); one
 // `OP_RETURN(challenge)` output; a fee output of 0. The sighash commits to
 // the prevout and hence to the challenge (origin · nonce · expiry), so one
 // proof is good for one site and one challenge. The wallet both builds it
@@ -239,7 +239,7 @@ pub fn check_pset_shape(
     }
     if utxo.asset != confidential::Asset::Explicit(network.policy_asset()) {
         return Err(shape(&format!(
-            "the input's asset is not {}'s L-BTC",
+            "the input's asset is not {}'s LBTC",
             network.name()
         )));
     }
@@ -864,9 +864,9 @@ pub(crate) mod tests {
         two.add_input(fresh().inputs()[0].clone());
         assert!(why(&two, CHALLENGE, &xpub, &network).contains("one input"));
 
-        // Another chain's L-BTC.
+        // Another chain's LBTC.
         let regtest = LiquidNetwork::regtest_default();
-        assert!(why(&fresh(), CHALLENGE, &xpub, &regtest).contains("L-BTC"));
+        assert!(why(&fresh(), CHALLENGE, &xpub, &regtest).contains("LBTC"));
         assert!(is_check_pset(
             &check_pset(CHALLENGE, &xpub, &regtest).unwrap(),
             CHALLENGE,

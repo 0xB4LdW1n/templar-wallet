@@ -1,15 +1,18 @@
 //! Bitcoin wallet operations — balance, addresses, UTXOs, transactions, send.
 
+use std::str::FromStr;
+
 use templar_core::bitcoin::wallet::refuse_frozen_inputs;
 use templar_core::{
-    check_input_utxos, inspect_psbt, public_descriptor, CoinChain, WalletManager, WalletProfile,
+    check_input_utxos, inspect_psbt, public_descriptor, BitcoinTxid, CoinChain, WalletManager,
+    WalletProfile,
 };
 
 use crate::state::{AppState, ChainSyncOutcome};
 use crate::types::{
-    AddressInfoDto, AssetBalanceDto, DashboardDto, PsbtInputDto, PsbtInspectionDto, PsbtOutputDto,
-    PsbtSignerDto, RecentActivityDto, TransactionDto, TxIoDto, TxPreviewDto, UtxoDto,
-    WalletInfoDto,
+    AddressInfoDto, AssetBalanceDto, DashboardDto, FeeBumpPreviewDto, PsbtInputDto,
+    PsbtInspectionDto, PsbtOutputDto, PsbtSignerDto, RecentActivityDto, TransactionDto, TxIoDto,
+    TxPreviewDto, UtxoDto, WalletInfoDto,
 };
 
 const DUST_THRESHOLD: u64 = 546;
@@ -54,7 +57,7 @@ pub fn get_dashboard(state: &AppState, wallet_id: &str) -> Result<DashboardDto, 
         assets.push(btc_asset);
     }
 
-    // L-BTC balance, captured for the Liquid-only total below.
+    // LBTC balance, captured for the Liquid-only total below.
     let mut liquid_lbtc: Option<u64> = None;
 
     // Add Liquid assets if liquid wallet open
@@ -89,7 +92,7 @@ pub fn get_dashboard(state: &AppState, wallet_id: &str) -> Result<DashboardDto, 
 
         // Always show LBTC (even at 0 — indicates liquid wallet is connected).
         // The policy asset is the open wallet's own, so a regtest wallet
-        // reports its node's L-BTC and not the testnet id.
+        // reports its node's LBTC and not the testnet id.
         let policy_asset = liq.policy_asset_hex();
         let lbtc = bal.as_ref().map(|b| b.lbtc());
         liquid_lbtc = lbtc;
@@ -177,11 +180,11 @@ pub fn get_dashboard(state: &AppState, wallet_id: &str) -> Result<DashboardDto, 
 
     let recent_activity = get_recent_activity(state).unwrap_or_default();
 
-    // Liquid-only wallets total in L-BTC ("—" while the balance is
+    // Liquid-only wallets total in LBTC ("—" while the balance is
     // unreadable); everything else keeps the BTC-denominated total.
     let total_display = if is_liquid_only {
         match liquid_lbtc {
-            Some(v) => format!("{:.8} L-BTC", v as f64 / 1e8),
+            Some(v) => format!("{:.8} LBTC", v as f64 / 1e8),
             None => "—".to_string(),
         }
     } else {
@@ -274,7 +277,7 @@ fn get_recent_activity(state: &AppState) -> Result<Vec<RecentActivityDto>, Strin
                     .map(|h| liq_tip.saturating_sub(h) + 1)
                     .unwrap_or(0);
                 // One row per asset the transaction actually moved — a token
-                // transfer must not surface as an empty/misleading L-BTC row.
+                // transfer must not surface as an empty/misleading LBTC row.
                 for (asset_id, delta) in liquid_delta_rows(&tx.balance, &state.policy_asset_hex()) {
                     let direction = if delta >= 0 { "incoming" } else { "outgoing" };
                     let (ticker, amount) = liquid_delta_display(state, &asset_id, delta);
@@ -326,7 +329,7 @@ pub fn generate_receive_address(
 ) -> Result<AddressInfoDto, String> {
     match asset {
         // The Flutter UI sends the bare ticker "LBTC"; older callers used
-        // "L-BTC"/"liquid". Accept all so the Liquid tab never silently falls
+        // "LBTC"/"liquid". Accept all so the Liquid tab never silently falls
         // through to the Bitcoin branch and hands back a BTC address.
         "LBTC" | "L-BTC" | "liquid" => {
             let liq = state.liquid.as_ref().ok_or("Liquid wallet not open")?;
@@ -365,6 +368,8 @@ pub fn list_transactions(state: &AppState) -> Result<Vec<TransactionDto>, String
     if let Some(btc) = &state.bitcoin {
         let tip = btc.get_tip_height();
         let txs = btc.list_transactions().map_err(|e| e.to_string())?;
+        let frozen = state.frozen_on(CoinChain::Bitcoin);
+        let (can_authorize, signer_reason) = fee_bump_signer_capability(state);
         for tx in txs {
             let net = tx.received as i64 - tx.sent as i64;
             let direction = if net >= 0 { "incoming" } else { "outgoing" };
@@ -378,6 +383,20 @@ pub fn list_transactions(state: &AppState) -> Result<Vec<TransactionDto>, String
                 .as_ref()
                 .map(|ct| tip.saturating_sub(ct.height) + 1)
                 .unwrap_or(0);
+            let bump = (confirmations == 0)
+                .then(|| btc.fee_bump_capabilities(tx.txid, &frozen).ok())
+                .flatten();
+            let technical_speed = bump.as_ref().is_some_and(|b| b.can_rbf || b.can_cpfp);
+            let technical_cancel = bump.as_ref().is_some_and(|b| b.can_cancel);
+            let unavailable_reason = if confirmations > 0 {
+                None
+            } else if !can_authorize && (technical_speed || technical_cancel) {
+                signer_reason.clone()
+            } else if !technical_speed && !technical_cancel {
+                Some("No replaceable input or spendable child output is available".to_string())
+            } else {
+                None
+            };
             result.push(TransactionDto {
                 txid: tx.txid.to_string(),
                 direction: direction.to_string(),
@@ -391,6 +410,14 @@ pub fn list_transactions(state: &AppState) -> Result<Vec<TransactionDto>, String
                     .unwrap_or(0),
                 confirmations,
                 fee: tx.fee.map(|f| format!("{} sats", f)),
+                fee_sats: bump.as_ref().and_then(|b| b.fee_sats).map(|f| f as i64),
+                fee_rate: bump.as_ref().and_then(|b| b.fee_rate).map(|r| r as f64),
+                vsize: bump.as_ref().map(|b| b.vsize as i64).unwrap_or(0),
+                is_replaceable: bump.as_ref().is_some_and(|b| b.replaceable),
+                can_rbf: can_authorize && bump.as_ref().is_some_and(|b| b.can_rbf),
+                can_cpfp: can_authorize && bump.as_ref().is_some_and(|b| b.can_cpfp),
+                can_cancel: can_authorize && technical_cancel,
+                fee_bump_unavailable_reason: unavailable_reason,
                 note: None,
                 counterparty: None,
                 fiat_estimate: None,
@@ -406,7 +433,7 @@ pub fn list_transactions(state: &AppState) -> Result<Vec<TransactionDto>, String
                     .height
                     .map(|h| liq_tip.saturating_sub(h) + 1)
                     .unwrap_or(0);
-                // One row per asset delta (L-BTC first). The fee rides on the
+                // One row per asset delta (LBTC first). The fee rides on the
                 // first row only, so a multi-asset tx doesn't repeat it.
                 let fee = format!("{} sats", tx.fee);
                 for (i, (asset_id, delta)) in
@@ -425,6 +452,15 @@ pub fn list_transactions(state: &AppState) -> Result<Vec<TransactionDto>, String
                         timestamp: tx.timestamp.map(|t| t as i64).unwrap_or(0),
                         confirmations,
                         fee: (i == 0).then(|| fee.clone()),
+                        fee_sats: (i == 0).then_some(tx.fee as i64),
+                        fee_rate: None,
+                        vsize: 0,
+                        is_replaceable: false,
+                        can_rbf: false,
+                        can_cpfp: false,
+                        can_cancel: false,
+                        fee_bump_unavailable_reason: (confirmations == 0)
+                            .then(|| "Fee bumping is currently Bitcoin-only".to_string()),
                         note: None,
                         counterparty: None,
                         fiat_estimate: None,
@@ -436,6 +472,87 @@ pub fn list_transactions(state: &AppState) -> Result<Vec<TransactionDto>, String
 
     result.sort_by(|a, b| newest_first(a.timestamp, a.confirmations, b.timestamp, b.confirmations));
     Ok(result)
+}
+
+fn fee_bump_signer_capability(state: &AppState) -> (bool, Option<String>) {
+    let Some(wallet_id) = state.active_wallet_id.as_deref() else {
+        return (false, Some("No wallet is open".to_string()));
+    };
+    let Some(entry) = state.registry.find(wallet_id) else {
+        return (false, Some("Wallet not found".to_string()));
+    };
+    match &entry.profile {
+        WalletProfile::HardwareWallet {
+            device_model,
+            device_fingerprint,
+            ..
+        } if device_model == "watch-only" && device_fingerprint != "airgap" => (
+            false,
+            Some("This watch-only wallet cannot sign a fee-bump transaction".to_string()),
+        ),
+        WalletProfile::Policy {
+            local_fingerprint: None,
+            ..
+        } => (
+            false,
+            Some("This policy wallet has no local signing key".to_string()),
+        ),
+        _ => (true, None),
+    }
+}
+
+pub fn preview_fee_bump(
+    state: &AppState,
+    txid: &str,
+    action: &str,
+    method: &str,
+    fee_rate: f32,
+) -> Result<FeeBumpPreviewDto, String> {
+    let btc = state.bitcoin.as_ref().ok_or("Bitcoin wallet not open")?;
+    let txid = BitcoinTxid::from_str(txid).map_err(|e| format!("Invalid transaction id: {e}"))?;
+    let frozen = state.frozen_on(CoinChain::Bitcoin);
+    let caps = btc
+        .fee_bump_capabilities(txid, &frozen)
+        .map_err(|e| e.to_string())?;
+    let plan = match action {
+        "cancel" => btc.create_rbf_cancel(txid, fee_rate, &frozen),
+        "speed_up" => match method {
+            "rbf" => btc.create_rbf_bump(txid, fee_rate, &frozen),
+            "cpfp" => btc.create_cpfp_bump(txid, fee_rate, &frozen),
+            "auto" | "" if caps.can_rbf => btc.create_rbf_bump(txid, fee_rate, &frozen),
+            "auto" | "" if caps.can_cpfp => btc.create_cpfp_bump(txid, fee_rate, &frozen),
+            "auto" | "" => return Err("This transaction cannot be sped up with RBF or CPFP".into()),
+            other => return Err(format!("Unknown fee-bump method: {other}")),
+        },
+        other => return Err(format!("Unknown fee-bump action: {other}")),
+    }
+    .map_err(|e| e.to_string())?;
+    let cpfp = plan.method == "cpfp";
+    let extra = if cpfp {
+        plan.new_fee_sats
+    } else {
+        plan.new_fee_sats.saturating_sub(plan.old_fee_sats)
+    };
+    let total = if cpfp {
+        plan.old_fee_sats.saturating_add(plan.new_fee_sats)
+    } else {
+        plan.new_fee_sats
+    };
+
+    Ok(FeeBumpPreviewDto {
+        method: plan.method.to_string(),
+        original_txid: txid.to_string(),
+        psbt_base64: WalletManager::psbt_to_base64(&plan.psbt),
+        old_fee_sats: plan.old_fee_sats as i64,
+        old_fee_rate: plan.old_fee_rate as f64,
+        old_vsize: plan.old_vsize as i64,
+        new_fee_sats: plan.new_fee_sats as i64,
+        new_fee_rate: plan.new_fee_rate as f64,
+        new_vsize: plan.new_vsize_est as i64,
+        extra_fee_sats: extra as i64,
+        effective_fee_rate: plan.effective_fee_rate as f64,
+        total_fee_sats: total as i64,
+    })
 }
 
 pub fn list_utxos(state: &AppState, chain: &str) -> Result<Vec<UtxoDto>, String> {
@@ -465,8 +582,8 @@ pub fn list_utxos(state: &AppState, chain: &str) -> Result<Vec<UtxoDto>, String>
                     let is_policy = state.is_policy_asset(&asset_id);
                     let (ticker, display_amount) = if is_policy {
                         (
-                            "L-BTC".to_string(),
-                            format!("{:.8} L-BTC", amount as f64 / 1e8),
+                            "LBTC".to_string(),
+                            format!("{:.8} LBTC", amount as f64 / 1e8),
                         )
                     } else {
                         // Registry-resolved ticker + per-asset precision
@@ -726,7 +843,7 @@ fn format_btc(sats: u64) -> String {
 }
 
 /// Signed, precision-aware display for one Liquid per-asset delta.
-/// Returns `(ticker, amount)`, e.g. `("L-BTC", "+0.00100000 L-BTC")` or
+/// Returns `(ticker, amount)`, e.g. `("LBTC", "+0.00100000 LBTC")` or
 /// `("USDT", "-12.50 USDT")` — ticker and precision resolved via the asset
 /// registry (local issued-asset metadata first).
 fn liquid_delta_display(state: &AppState, asset_id: &str, delta: i64) -> (String, String) {
@@ -734,8 +851,8 @@ fn liquid_delta_display(state: &AppState, asset_id: &str, delta: i64) -> (String
     let magnitude = delta.unsigned_abs();
     if state.is_policy_asset(asset_id) {
         (
-            "L-BTC".to_string(),
-            format!("{sign}{:.8} L-BTC", magnitude as f64 / 1e8),
+            "LBTC".to_string(),
+            format!("{sign}{:.8} LBTC", magnitude as f64 / 1e8),
         )
     } else {
         let ticker = state.asset_registry.ticker(asset_id).to_string();
@@ -748,9 +865,9 @@ fn liquid_delta_display(state: &AppState, asset_id: &str, delta: i64) -> (String
 }
 
 /// One display row per nonzero asset delta of a Liquid transaction:
-/// `(asset_id, delta)`, L-BTC (`policy_asset`) first, then other assets in a
+/// `(asset_id, delta)`, LBTC (`policy_asset`) first, then other assets in a
 /// deterministic order. A tx whose deltas are all zero still yields one
-/// L-BTC row so it never disappears from history.
+/// LBTC row so it never disappears from history.
 fn liquid_delta_rows(
     balance: &std::collections::HashMap<String, i64>,
     policy_asset: &str,
@@ -1116,7 +1233,7 @@ pub fn list_previous_addresses(
     match asset {
         "LBTC" | "L-BTC" | "liquid" => {
             // LWK exposes every wallet output (spent included) via txos();
-            // templar-core aggregates them into per-address history. Only L-BTC
+            // templar-core aggregates them into per-address history. Only LBTC
             // counts toward received_sats — token-only addresses report 0.
             let liq = state.liquid.as_ref().ok_or("Liquid wallet not open")?;
             let addrs = liq
@@ -1328,6 +1445,33 @@ pub fn sign_psbt_handler(
                 return Err(
                     "No signature was added — this wallet's key(s) either already signed this \
                      PSBT or are not part of its spending policy"
+                        .into(),
+                );
+            }
+        }
+        WalletProfile::Policy {
+            local_fingerprint: Some(_),
+            ..
+        } => {
+            let (sigs_before, _) = WalletManager::count_signatures(&psbt);
+            match (&state.active_wallet_id, &state.bitcoin) {
+                (Some(active), Some(mgr)) if active == wallet_id => {
+                    mgr.sign_no_finalize(&mut psbt).map_err(|e| e.to_string())?;
+                }
+                _ => {
+                    let mgr = WalletManager::from_multisig_profile(
+                        &state.data_dir,
+                        &entry.profile,
+                        wallet_id,
+                    )
+                    .map_err(|e| e.to_string())?;
+                    mgr.sign_no_finalize(&mut psbt).map_err(|e| e.to_string())?;
+                }
+            }
+            let (sigs_after, _) = WalletManager::count_signatures(&psbt);
+            if sigs_after <= sigs_before {
+                return Err(
+                    "No signature was added — this policy's local key cannot spend this path"
                         .into(),
                 );
             }

@@ -34,8 +34,10 @@ import '../wallet_picker/models/wallet_summary.dart';
 import 'models/protocol_link.dart';
 import 'models/protocol_proof.dart';
 import 'models/protocol_records.dart';
+import 'models/protocol_review_agreement.dart';
 import 'models/protocol_wallet_fit.dart';
 import 'protocol_confirm_gate.dart';
+import 'protocol_transaction_review.dart';
 import 'protocol_paste_card.dart';
 import 'protocol_network_mismatch_card.dart';
 
@@ -62,7 +64,16 @@ class ProtocolRequestScreen extends StatefulWidget {
   State<ProtocolRequestScreen> createState() => _ProtocolRequestScreenState();
 }
 
-enum _Phase { paste, loading, locked, error, mismatch, chooseWallet, review, done }
+enum _Phase {
+  paste,
+  loading,
+  locked,
+  error,
+  mismatch,
+  chooseWallet,
+  review,
+  done,
+}
 
 class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
   final _bridge = walletBridge;
@@ -107,12 +118,9 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
   String? _escrowXpub;
   String? _receiveAddress;
 
-  /// Connect: the small checkbox that puts Loans in the main menu once the
-  /// site has taken the wallet. Shown only while it is not there yet.
-  bool _addLoans = false;
-
   // Sign: the wallet's own reading of the PSET.
   PsetInspection? _inspection;
+  ProtocolReviewAgreement? _agreement;
 
   /// Sign, action `proof` only: whether the PSET is exactly the check of the
   /// request's challenge for this wallet's key (§9.5). Anything else under
@@ -168,6 +176,7 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
       _request = null;
       _mismatch = null;
       _inspection = null;
+      _agreement = null;
       _proofVerdict = null;
       _nextUrl = null;
       // A switch closed whatever was open; and a second link is a second
@@ -176,7 +185,6 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
       _ctDescriptor = null;
       _escrowXpub = null;
       _receiveAddress = null;
-      _addLoans = false;
     });
     ProtocolRequest? fetched;
     try {
@@ -268,14 +276,17 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
           .get(link.url, headers: const {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 15));
     } on TimeoutException {
-      throw ProtocolLinkError('${link.url.host} did not answer within 15 seconds.');
+      throw ProtocolLinkError(
+        '${link.url.host} did not answer within 15 seconds.',
+      );
     } catch (e) {
       throw ProtocolLinkError('Could not reach ${link.url.host}: ${_clean(e)}');
     }
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
       throw ProtocolLinkError(
-          '${link.url.host} answered HTTP ${resp.statusCode} for this request. '
-          'It may have expired or been used already.');
+        '${link.url.host} answered HTTP ${resp.statusCode} for this request. '
+        'It may have expired or been used already.',
+      );
     }
     final Object? decoded;
     try {
@@ -284,7 +295,9 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
       throw const ProtocolLinkError('The site did not answer with JSON.');
     }
     if (decoded is! Map<String, dynamic>) {
-      throw const ProtocolLinkError('The site did not answer with a request object.');
+      throw const ProtocolLinkError(
+        'The site did not answer with a request object.',
+      );
     }
     return ProtocolRequest.fromJson(decoded);
   }
@@ -322,8 +335,9 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     final preferred = wallets.where((w) => w.id == preferredId).firstOrNull;
     setState(() {
       _wallets = wallets;
-      _preferredWalletId =
-          preferred != null && _eligible(preferred) ? preferred.id : null;
+      _preferredWalletId = preferred != null && _eligible(preferred)
+          ? preferred.id
+          : null;
       _connectedWalletIds = {
         for (final s in sites)
           if (s.origin == origin) s.walletId,
@@ -341,6 +355,7 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
       _busy = false;
       _wallet = null;
       _inspection = null;
+      _agreement = null;
       _proofVerdict = null;
       _ctDescriptor = null;
       _escrowXpub = null;
@@ -381,7 +396,8 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     final desc = info.liquidDescriptor;
     if (desc == null || desc.isEmpty) {
       throw ProtocolLinkError(
-          '"${w.name}" has no Liquid descriptor. Enable Liquid on it first.');
+        '"${w.name}" has no Liquid descriptor. Enable Liquid on it first.',
+      );
     }
     final xpub = await _bridge.getProtocolEscrowXpub(w.id);
     final addr = await _bridge.generateReceiveAddress(w.id, 'LBTC');
@@ -401,9 +417,13 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     // independently of what the site claimed in `network`.
     final inspection = await _bridge.inspectPset(w.id, pset);
     final verdict = req.isProof ? await _judgeProof(w, req, pset) : null;
+    final agreement = req.isProof
+        ? null
+        : ProtocolReviewAgreement.compare(req, inspection);
     if (!mounted) return;
     setState(() {
       _inspection = inspection;
+      _agreement = agreement;
       _proofVerdict = verdict;
       _phase = _Phase.review;
     });
@@ -414,24 +434,32 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
   /// check is recomputed by the engine from the challenge text and the key —
   /// the site's PSET is compared against it, never taken at its word.
   Future<ProtocolCheckVerdict> _judgeProof(
-      WalletSummary w, ProtocolRequest req, String pset) async {
+    WalletSummary w,
+    ProtocolRequest req,
+    String pset,
+  ) async {
     final challenge = req.challenge;
     if (challenge == null || challenge.isEmpty) {
       return const ProtocolCheckVerdict(
         isCheck: false,
-        reason: 'The site sent a proof request without the challenge text it '
+        reason:
+            'The site sent a proof request without the challenge text it '
             'is supposed to prove. Nothing can be checked, so nothing is signed.',
       );
     }
     if (w.isHardwareWallet) {
       return const ProtocolCheckVerdict(
-          isCheck: false, reason: kProtocolJadeProofUnsupported);
+        isCheck: false,
+        reason: kProtocolJadeProofUnsupported,
+      );
     }
     try {
       return await _bridge.protocolIsCheckPset(w.id, challenge, pset);
     } catch (e) {
       return ProtocolCheckVerdict(
-          isCheck: false, reason: 'The proof could not be checked: ${_clean(e)}');
+        isCheck: false,
+        reason: 'The proof could not be checked: ${_clean(e)}',
+      );
     }
   }
 
@@ -454,7 +482,8 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
       context,
       title: 'Share this wallet with ${req.site}?',
       confirmLabel: 'Share',
-      message: 'Templar will send ${req.site} the watch-only descriptor of '
+      message:
+          'Templar will send ${req.site} the watch-only descriptor of '
           '"${w.name}" (it can then see this wallet\'s Liquid balance and '
           'history), its loan escrow key, and a receive address'
           '${proves ? ', and will sign a proof of that key — a check that never moves funds — so the site recognises it again' : ''}. '
@@ -473,7 +502,9 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
         final signed = await _bridge.signPset(w.id, check.psetBase64);
         proof = {'kind': 'check-pset', 'pset': signed};
       } catch (e) {
-        _fail(ProtocolLinkError('Could not sign the proof of key: ${_clean(e)}'));
+        _fail(
+          ProtocolLinkError('Could not sign the proof of key: ${_clean(e)}'),
+        );
         return;
       }
       if (!mounted) return;
@@ -492,10 +523,8 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     // Only once the site has taken it: a refused callback shared nothing.
     if (reply != null) {
       await _recordConnect(
-          ProtocolConnectedSite.portfolioFromReply(reply['portfolio']));
-      if (_addLoans && mounted) {
-        await context.read<AppState>().setLoansInMenu(true);
-      }
+        ProtocolConnectedSite.portfolioFromReply(reply['portfolio']),
+      );
     }
   }
 
@@ -535,7 +564,9 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     final w = _wallet;
     final req = _request;
     final origin = _link?.url.origin;
-    final portfolio = ProtocolConnectedSite.portfolioFromReply(reply['portfolio']);
+    final portfolio = ProtocolConnectedSite.portfolioFromReply(
+      reply['portfolio'],
+    );
     if (w == null || req == null || origin == null || portfolio == null) return;
     final store = ProtocolStore.instance;
     final key = '$origin|${w.id}';
@@ -543,30 +574,34 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     if (known) {
       await store.setPortfolio(key, url: portfolio.url, token: portfolio.token);
     } else {
-      await store.recordConnect(ProtocolConnectedSite(
-        site: req.site,
-        origin: origin,
-        network: req.network,
-        walletId: w.id,
-        walletName: w.name,
-        connectedAt: DateTime.now().toUtc(),
-        portfolioUrl: portfolio.url,
-        portfolioToken: portfolio.token,
-      ));
+      await store.recordConnect(
+        ProtocolConnectedSite(
+          site: req.site,
+          origin: origin,
+          network: req.network,
+          walletId: w.id,
+          walletName: w.name,
+          connectedAt: DateTime.now().toUtc(),
+          portfolioUrl: portfolio.url,
+          portfolioToken: portfolio.token,
+        ),
+      );
     }
   }
 
   /// Remembers how a signing request ended.
   Future<void> _record(ProtocolRequest req, ProtocolSignOutcome outcome) async {
-    await ProtocolStore.instance.recordSign(ProtocolSignRecord(
-      site: req.site,
-      origin: _link?.url.origin ?? '',
-      walletName: _wallet?.name ?? '',
-      at: DateTime.now().toUtc(),
-      outcome: outcome,
-      loanRef: req.loanRef ?? '',
-      action: req.action ?? '',
-    ));
+    await ProtocolStore.instance.recordSign(
+      ProtocolSignRecord(
+        site: req.site,
+        origin: _link?.url.origin ?? '',
+        walletName: _wallet?.name ?? '',
+        at: DateTime.now().toUtc(),
+        outcome: outcome,
+        loanRef: req.loanRef ?? '',
+        action: req.action ?? '',
+      ),
+    );
   }
 
   Future<void> _confirmSign() async {
@@ -574,8 +609,20 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     final req = _request!;
     if (req.isProof && _proofVerdict?.isCheck != true) {
       // The gate is disabled for this case; this is the belt to its braces.
-      _fail(ProtocolLinkError(_proofVerdict?.reason ??
-          'This is not the proof-of-key check of the request\'s challenge.'));
+      _fail(
+        ProtocolLinkError(
+          _proofVerdict?.reason ??
+              'This is not the proof-of-key check of the request\'s challenge.',
+        ),
+      );
+      return;
+    }
+    if (!req.isProof && _agreement?.canSign != true) {
+      _fail(
+        const ProtocolLinkError(
+          'Signing is blocked because the site summary and wallet inspection do not agree.',
+        ),
+      );
       return;
     }
     final ok = await showSpendPasswordGate(
@@ -583,12 +630,12 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
       title: 'Sign for ${req.site}?',
       message: req.isProof
           ? 'Templar is about to sign a proof that "${w.name}" holds its loan '
-              'key, and send it to ${req.site}. The signed check can never be '
-              'broadcast: it spends no coin and pays nobody. $kProtocolProofStatement.'
+                'key, and send it to ${req.site}. The signed check can never be '
+                'broadcast: it spends no coin and pays nobody. $kProtocolProofStatement.'
           : 'Templar is about to sign this ${req.actionLabel.toLowerCase()} '
-              'with the key of "${w.name}" and send the signature to ${req.site}. '
-              'The site broadcasts once every party has signed; nothing is '
-              'broadcast from here.',
+                'with the key of "${w.name}" and send the signature to ${req.site}. '
+                'The site broadcasts once every party has signed; nothing is '
+                'broadcast from here.',
     );
     if (!ok) {
       await _record(req, ProtocolSignOutcome.refused);
@@ -614,7 +661,9 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
       'pset': signed,
     });
     await _record(
-        req, reply != null ? ProtocolSignOutcome.signed : ProtocolSignOutcome.failed);
+      req,
+      reply != null ? ProtocolSignOutcome.signed : ProtocolSignOutcome.failed,
+    );
     if (reply != null) {
       await _storePortfolioFromSign(reply);
       // The loan moved a step: the Loans screen should say so when the user
@@ -646,24 +695,29 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
             .timeout(const Duration(seconds: 20));
       } on TimeoutException {
         throw ProtocolLinkError(
-            '${req.callback.host} did not accept the answer within 20 seconds. '
-            'Nothing was broadcast; you can retry from the site.');
+          '${req.callback.host} did not accept the answer within 20 seconds. '
+          'Nothing was broadcast; you can retry from the site.',
+        );
       } catch (e) {
-        throw ProtocolLinkError('Could not reach ${req.callback.host}: ${_clean(e)}');
+        throw ProtocolLinkError(
+          'Could not reach ${req.callback.host}: ${_clean(e)}',
+        );
       }
       Map<String, dynamic> reply = const {};
       try {
         final decoded = jsonDecode(utf8.decode(resp.bodyBytes));
         if (decoded is Map<String, dynamic>) reply = decoded;
       } catch (_) {}
-      final accepted = resp.statusCode >= 200 &&
+      final accepted =
+          resp.statusCode >= 200 &&
           resp.statusCode < 300 &&
           (reply['ok'] == true || reply.isEmpty);
       if (!accepted) {
         final why = (reply['error'] as String?)?.trim();
         throw ProtocolLinkError(
-            '${req.site} rejected the answer (HTTP ${resp.statusCode})'
-            '${why != null && why.isNotEmpty ? ': $why' : '.'}');
+          '${req.site} rejected the answer (HTTP ${resp.statusCode})'
+          '${why != null && why.isNotEmpty ? ': $why' : '.'}',
+        );
       }
       if (!mounted) return reply;
       setState(() {
@@ -696,8 +750,10 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
   Future<void> _openSite() async {
     final link = _link;
     if (link == null) return;
-    await launchUrl(Uri.parse(link.url.origin),
-        mode: LaunchMode.externalApplication);
+    await launchUrl(
+      Uri.parse(link.url.origin),
+      mode: LaunchMode.externalApplication,
+    );
   }
 
   /// Settings › Network & Sync. It lives inside the wallet shell, so with no
@@ -722,6 +778,14 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     context.go(hasWallet ? AppRoutes.dashboard : AppRoutes.walletPicker);
   }
 
+  Future<void> _cancelRequest() async {
+    final req = _request;
+    if (_link?.action == ProtocolAction.sign && req != null) {
+      await _record(req, ProtocolSignOutcome.cancelled);
+    }
+    if (mounted) _leave();
+  }
+
   void _openLoans() => context.go(AppRoutes.loans);
 
   // ── UI ─────────────────────────────────────────────────────────────────────
@@ -737,7 +801,8 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     final subtitle = req != null
         ? '${req.site} · ${_link?.origin ?? req.callback.host} · ${protocolNetworkLabel(req.network)}'
         : 'A site is asking this wallet to take part in a loan.';
-    final canChangeWallet = _wallet != null &&
+    final canChangeWallet =
+        _wallet != null &&
         _wallets.length > 1 &&
         (_phase == _Phase.review || _phase == _Phase.error) &&
         !_busy;
@@ -762,9 +827,17 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
                         onPressed: _changeWallet,
                       ),
                     GhostButton(
-                      label: _phase == _Phase.done ? 'Close' : 'Cancel',
+                      label: _phase == _Phase.done
+                          ? 'Close'
+                          : _link?.action == ProtocolAction.sign
+                          ? 'Cancel signing request'
+                          : 'Cancel',
                       icon: Icons.close,
-                      onPressed: _busy ? null : _leave,
+                      onPressed: _busy
+                          ? null
+                          : _phase == _Phase.done
+                          ? _leave
+                          : _cancelRequest,
                     ),
                   ],
                 ),
@@ -779,53 +852,65 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
   }
 
   Widget _body() => switch (_phase) {
-        _Phase.paste => ProtocolPasteCard(onOpen: _start),
-        _Phase.loading => Center(
-            child: Padding(
-              padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-              child: const CircularProgressIndicator(),
-            ),
-          ),
-        _Phase.locked => _LockedCard(onUnlock: () {
-            pushVaultUnlock(context, onUnlocked: () {
-              if (mounted && _raw != null) _start(_raw!);
-            });
-          }),
-        _Phase.error => _ErrorCard(
-            message: _error ?? 'Something went wrong.',
-            onRetry: _raw == null ? null : () => _start(_raw!),
-            onOpenSite: _link == null ? null : _openSite,
-            siteName: _request?.site ?? _link?.url.host,
-          ),
-        _Phase.mismatch => ProtocolNetworkMismatchCard(
-            mismatch: _mismatch!,
-            info: _netInfo,
-            busy: _busy,
-            onSwitch: _switchNetwork,
-            onOpenSettings: _openNetworkSettings,
-          ),
-        _Phase.chooseWallet => _WalletChoice(
-            wallets: _wallets,
-            eligible: _eligible,
-            connect: _isConnect,
-            siteName: _request?.site ?? _link?.url.host ?? 'the site',
-            preferredWalletId: _preferredWalletId,
-            activeWalletId: context.read<AppState>().activeWalletId,
-            connectedWalletIds: _connectedWalletIds,
-            onPick: _useWallet,
-          ),
-        _Phase.review => _isConnect ? _connectReview() : _signReview(),
-        _Phase.done => _DoneCard(
-            site: _request!.site,
-            connect: _isConnect,
-            next: _nextUrl,
-            onOpen: _openNext,
-            onClose: _leave,
-            onOpenLoans: _isConnect && context.read<AppState>().loansInMenu
-                ? _openLoans
-                : null,
-          ),
-      };
+    _Phase.paste => ProtocolPasteCard(onOpen: _start),
+    _Phase.loading => Center(
+      child: Padding(
+        padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+        child: const CircularProgressIndicator(),
+      ),
+    ),
+    _Phase.locked => _LockedCard(
+      onUnlock: () {
+        pushVaultUnlock(
+          context,
+          onUnlocked: () {
+            if (mounted && _raw != null) _start(_raw!);
+          },
+        );
+      },
+    ),
+    _Phase.error => _ErrorCard(
+      title: (_error ?? '').contains('expired')
+          ? 'Request expired'
+          : (_error ?? '').contains('Could not reach') ||
+                (_error ?? '').contains('did not accept')
+          ? 'Callback failed — retry available'
+          : 'Request refused',
+      message: _error ?? 'Something went wrong.',
+      onRetry: _raw == null ? null : () => _start(_raw!),
+      onOpenSite: _link == null ? null : _openSite,
+      siteName: _request?.site ?? _link?.url.host,
+    ),
+    _Phase.mismatch => ProtocolNetworkMismatchCard(
+      mismatch: _mismatch!,
+      info: _netInfo,
+      busy: _busy,
+      onSwitch: _switchNetwork,
+      onOpenSettings: _openNetworkSettings,
+    ),
+    _Phase.chooseWallet => _WalletChoice(
+      wallets: _wallets,
+      eligible: _eligible,
+      connect: _isConnect,
+      siteName: _request?.site ?? _link?.url.host ?? 'the site',
+      preferredWalletId: _preferredWalletId,
+      activeWalletId: context.read<AppState>().activeWalletId,
+      connectedWalletIds: _connectedWalletIds,
+      onPick: _useWallet,
+    ),
+    _Phase.review => _isConnect ? _connectReview() : _signReview(),
+    _Phase.done => _DoneCard(
+      site: _request!.site,
+      connect: _isConnect,
+      next: _nextUrl,
+      onOpen: _openNext,
+      onClose: _leave,
+      onOpenLoans: _isConnect && context.read<AppState>().loansEnabled
+          ? _openLoans
+          : null,
+      action: _request?.action,
+    ),
+  };
 
   // ── Connect review ─────────────────────────────────────────────────────────
 
@@ -833,7 +918,6 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     final req = _request!;
     final w = _wallet!;
     final s = AppScheme.of(context);
-    final loansInMenu = context.watch<AppState>().loansInMenu;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -841,12 +925,16 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
           icon: Icons.link_rounded,
           tint: s.liquid,
           title: 'Share a view of "${w.name}" with ${req.site}',
-          subtitle: 'The site will see this wallet\'s Liquid balance and history and '
+          subtitle:
+              'The site will see this wallet\'s Liquid balance and history and '
               'build loan transactions for it. It cannot spend: every signature '
               'happens here, after you confirm.',
           chips: [
             TagChip(label: protocolNetworkLabel(req.network), color: s.liquid),
-            TagChip(label: w.isHardwareWallet ? 'Jade' : 'software seed', color: s.inkSecondary),
+            TagChip(
+              label: w.isHardwareWallet ? 'Jade' : 'software seed',
+              color: s.inkSecondary,
+            ),
           ],
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -857,15 +945,30 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CopyRow(label: 'Wallet', value: 'Templar — ${w.name}', mono: false),
+              CopyRow(
+                label: 'Wallet',
+                value: 'Templar — ${w.name}',
+                mono: false,
+              ),
               const Divider(height: 1),
-              CopyRow(label: 'Signer', value: w.isHardwareWallet ? 'jade' : 'software', mono: false),
+              CopyRow(
+                label: 'Signer',
+                value: w.isHardwareWallet ? 'jade' : 'software',
+                mono: false,
+              ),
               const Divider(height: 1),
-              CopyRow(label: 'Network', value: protocolNetworkLabel(req.network), mono: false),
+              CopyRow(
+                label: 'Network',
+                value: protocolNetworkLabel(req.network),
+                mono: false,
+              ),
               const Divider(height: 1),
               CopyRow(label: 'Receive address', value: _receiveAddress ?? ''),
               const SizedBox(height: AppSpacing.lg),
-              CodeBox(label: 'Liquid CT descriptor (watch-only)', value: _ctDescriptor ?? ''),
+              CodeBox(
+                label: 'Liquid CT descriptor (watch-only)',
+                value: _ctDescriptor ?? '',
+              ),
               const SizedBox(height: AppSpacing.lg),
               CodeBox(
                 label: w.isHardwareWallet
@@ -889,11 +992,11 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
                 : 'Proof of key: not from a Jade yet',
             body: _connectProves
                 ? 'So that ${req.site} recognises this key again later, the wallet '
-                    'also signs a check built from the line below: one input that '
-                    'is no coin, 0 L-BTC, the line itself as the only output. It '
-                    'can never be broadcast. It proves the key; it moves nothing.'
+                      'also signs a check built from the line below: one input that '
+                      'is no coin, 0 LBTC, the line itself as the only output. It '
+                      'can never be broadcast. It proves the key; it moves nothing.'
                 : '$kProtocolJadeProofUnsupported The site may ask for the proof '
-                    'through a signing request instead.',
+                      'through a signing request instead.',
           ),
         ],
         const SizedBox(height: AppSpacing.lg),
@@ -901,20 +1004,14 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
           title: 'Sent to',
           child: CopyRow(label: 'Callback', value: req.callback.toString()),
         ),
-        if (!loansInMenu) ...[
-          const SizedBox(height: AppSpacing.lg),
-          _LoansOptIn(
-            value: _addLoans,
-            onChanged: (v) => setState(() => _addLoans = v),
-          ),
-        ],
         const SizedBox(height: AppSpacing.xl),
         if (_error != null) ...[
           DangerBanner(message: _error!),
           const SizedBox(height: AppSpacing.lg),
         ],
         ProtocolConfirmGate(
-          statement: 'I want ${req.site} to watch "${w.name}" and to use its escrow key in my loans.',
+          statement:
+              'I want ${req.site} to watch "${w.name}" and to use its escrow key in my loans.',
           buttonLabel: 'Share with ${req.site}',
           icon: Icons.link,
           busy: _busy,
@@ -936,9 +1033,12 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     final i = _inspection!;
     final s = AppScheme.of(context);
     final origin = _link?.origin ?? req.callback.origin;
-    final v = _proofVerdict ??
+    final v =
+        _proofVerdict ??
         const ProtocolCheckVerdict(
-            isCheck: false, reason: 'The proof was not checked.');
+          isCheck: false,
+          reason: 'The proof was not checked.',
+        );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -946,18 +1046,23 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
           icon: Icons.verified_user_outlined,
           tint: v.isCheck ? s.liquid : s.danger,
           title: 'Prove that "${w.name}" holds its loan key',
-          subtitle: 'A signature on a check that can never be broadcast: it spends '
+          subtitle:
+              'A signature on a check that can never be broadcast: it spends '
               'no coin and pays nobody. $kProtocolProofStatement.',
           chips: [
             TagChip(label: 'proof of key', color: s.liquid),
-            TagChip(label: protocolNetworkLabel(req.network), color: s.inkSecondary),
+            TagChip(
+              label: protocolNetworkLabel(req.network),
+              color: s.inkSecondary,
+            ),
           ],
         ),
         const SizedBox(height: AppSpacing.lg),
         if (!v.isCheck)
           DangerBanner(
             title: 'Refusing to sign this',
-            message: '${v.reason ?? 'This is not the check of the request\'s challenge.'} '
+            message:
+                '${v.reason ?? 'This is not the check of the request\'s challenge.'} '
                 'Under a proof request Templar signs only the exact check it '
                 'recomputes from the challenge and its own key — nothing else, '
                 'whatever the site says it is.',
@@ -965,7 +1070,8 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
         else
           InfoBanner(
             title: 'The check is genuine',
-            message: 'The engine rebuilt it from the line below and this wallet\'s '
+            message:
+                'The engine rebuilt it from the line below and this wallet\'s '
                 'loan key; the site\'s PSET is that check, byte for byte. It '
                 'proves to $origin that "${w.name}" holds the key, so the site '
                 'can show you your loans again.',
@@ -1010,7 +1116,8 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
         const SizedBox(height: AppSpacing.md),
         ProtocolConfirmGate(
           key: const Key('protocol-proof-gate'),
-          statement: 'I understand this signature proves my loan key to $origin and moves no funds.',
+          statement:
+              'I understand this signature proves my loan key to $origin and moves no funds.',
           buttonLabel: 'Sign the proof for ${req.site}',
           busy: _busy,
           enabled: v.isCheck,
@@ -1033,6 +1140,7 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     final s = AppScheme.of(context);
     final role = req.summary?.role ?? '';
     final loanRef = req.loanRef ?? '';
+    final agreement = _agreement!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1048,14 +1156,16 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
           chips: [
             TagChip(label: req.site, color: s.accent),
             TagChip(label: protocolNetworkLabel(req.network), color: s.liquid),
-            if (i.touchesEscrow) TagChip(label: 'loan escrow', color: s.warning),
+            if (i.touchesEscrow)
+              TagChip(label: 'loan escrow', color: s.warning),
           ],
         ),
         const SizedBox(height: AppSpacing.lg),
         if (ours.isEmpty)
           WarningBanner(
             title: 'Nothing here is for this wallet to sign',
-            message: 'None of the inputs names a key of "${w.name}". Either the '
+            message:
+                'None of the inputs names a key of "${w.name}". Either the '
                 'site sent this request to the wrong wallet, or the wallet that '
                 'took part in the loan is a different one — pick it with '
                 '"Change wallet" above.',
@@ -1068,35 +1178,34 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
                 : null,
           )
         else
-          InfoBanner(
-            title: 'Read it top to bottom',
-            message: 'First what changes for this wallet, then where every coin '
-                'goes — both read by the wallet from the transaction itself. '
-                'Then what ${req.site} says it is. Sign only if they agree; the '
-                'site cannot change what the wallet sees.',
+          ProtocolTransactionReview(
+            request: req,
+            inspection: i,
+            agreement: agreement,
           ),
-        const SizedBox(height: AppSpacing.lg),
-        _NetChangeCard(inspection: i, walletName: w.name),
-        const SizedBox(height: AppSpacing.lg),
-        _FlowCard(inspection: i),
-        const SizedBox(height: AppSpacing.lg),
-        _SiteSaysCard(request: req),
         const SizedBox(height: AppSpacing.lg),
         ExpanderCard(
           key: const Key('protocol-technical-details'),
           title: 'Technical details',
-          subtitle: 'Request ids, every input and output as the wallet reads them, '
+          subtitle:
+              'Request ids, every input and output as the wallet reads them, '
               'the escrow contract.',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _RequestRows(request: req, walletName: w.name),
               const SizedBox(height: AppSpacing.lg),
+              _FlowCard(inspection: i),
+              const SizedBox(height: AppSpacing.lg),
+              _SiteSaysCard(request: req, compact: true),
+              const SizedBox(height: AppSpacing.lg),
               _RawReading(inspection: i, walletName: w.name),
               if (req.escrow != null && req.escrow!.address.isNotEmpty) ...[
                 const SizedBox(height: AppSpacing.lg),
-                Text('Escrow contract named by the site',
-                    style: AppTypography.sectionTitle),
+                Text(
+                  'Escrow contract named by the site',
+                  style: AppTypography.sectionTitle,
+                ),
                 const SizedBox(height: AppSpacing.sm),
                 CopyRow(label: 'Address', value: req.escrow!.address),
                 if (req.escrow!.descriptor.isNotEmpty) ...[
@@ -1119,10 +1228,11 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
         ),
         const SizedBox(height: AppSpacing.md),
         ProtocolConfirmGate(
-          statement: 'I compared what the wallet reads with what the site says, and they describe the same transaction.',
-          buttonLabel: 'Sign and send to ${req.site}',
+          statement:
+              'I reviewed what I send, receive, keep locked, the covenant effect and the fee.',
+          buttonLabel: 'Sign ${req.actionLabel.toLowerCase()}',
           busy: _busy,
-          enabled: ours.isNotEmpty,
+          enabled: ours.isNotEmpty && agreement.canSign,
           onConfirm: _confirmSign,
         ),
       ],
@@ -1131,15 +1241,19 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
 }
 
 IconData _actionIcon(String? action) => switch (action) {
-      'origination' => Icons.handshake_outlined,
-      'repayment' => Icons.payments_outlined,
-      'installment' => Icons.event_repeat_rounded,
-      'default' => Icons.gavel_outlined,
-      'liquidation' => Icons.gavel_outlined,
-      'swap' => Icons.swap_horiz_rounded,
-      'proof' => Icons.verified_user_outlined,
-      _ => Icons.draw_outlined,
-    };
+  'origination' => Icons.handshake_outlined,
+  'payment_preparation' => Icons.account_balance_wallet_outlined,
+  'repayment' => Icons.payments_outlined,
+  'installment' => Icons.event_repeat_rounded,
+  'payment_claim' => Icons.savings_outlined,
+  'renewal' => Icons.autorenew_rounded,
+  'default' => Icons.gavel_outlined,
+  'collateral_claim' => Icons.lock_open_rounded,
+  'liquidation' => Icons.gavel_outlined,
+  'swap' => Icons.swap_horiz_rounded,
+  'proof' => Icons.verified_user_outlined,
+  _ => Icons.draw_outlined,
+};
 
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
@@ -1173,14 +1287,26 @@ class _ActionHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: AppTypography.sectionTitleOf(context).copyWith(color: s.ink)),
+                Text(
+                  title,
+                  style: AppTypography.sectionTitleOf(
+                    context,
+                  ).copyWith(color: s.ink),
+                ),
                 const SizedBox(height: AppSpacing.xs),
-                Text(subtitle,
-                    style: AppTypography.bodySmall.copyWith(color: s.inkSecondary)),
+                Text(
+                  subtitle,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: s.inkSecondary,
+                  ),
+                ),
                 if (chips.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.sm),
-                  Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: chips),
+                  Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    children: chips,
+                  ),
                 ],
               ],
             ),
@@ -1200,18 +1326,26 @@ class _ShareFlow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    Widget tile(IconData icon, Color tint, String title, String body) => Expanded(
+    Widget tile(IconData icon, Color tint, String title, String body) =>
+        Expanded(
           child: DataWell(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ListIconTile(icon: icon, tint: tint, size: 32),
                 const SizedBox(height: AppSpacing.sm),
-                Text(title,
-                    style: AppTypography.body
-                        .copyWith(color: s.ink, fontWeight: FontWeight.w600)),
+                Text(
+                  title,
+                  style: AppTypography.body.copyWith(
+                    color: s.ink,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(body, style: AppTypography.caption.copyWith(color: s.inkSecondary)),
+                Text(
+                  body,
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
+                ),
               ],
             ),
           ),
@@ -1228,14 +1362,26 @@ class _ShareFlow extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              tile(Icons.visibility_outlined, s.liquid, 'A view',
-                  'Watch-only descriptor, loan key, one address → $site'),
+              tile(
+                Icons.visibility_outlined,
+                s.liquid,
+                'A view',
+                'Watch-only descriptor, loan key, one address → $site',
+              ),
               arrow,
-              tile(Icons.language_rounded, s.accent, site,
-                  'Sees balances and history; builds each loan transaction'),
+              tile(
+                Icons.language_rounded,
+                s.accent,
+                site,
+                'Sees balances and history; builds each loan transaction',
+              ),
               arrow,
-              tile(Icons.draw_outlined, s.liquid, 'Your signature',
-                  'Every step comes back here to be read and signed by you'),
+              tile(
+                Icons.draw_outlined,
+                s.liquid,
+                'Your signature',
+                'Every step comes back here to be read and signed by you',
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
@@ -1258,41 +1404,6 @@ class _ShareFlow extends StatelessWidget {
   }
 }
 
-/// The checkbox a connect offers: put Loans in the main menu.
-class _LoansOptIn extends StatelessWidget {
-  const _LoansOptIn({required this.value, required this.onChanged});
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    return FormCard(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.sm, AppSpacing.xs, AppSpacing.lg, AppSpacing.xs),
-      child: Material(
-        type: MaterialType.transparency,
-        child: CheckboxListTile(
-          key: const Key('protocol-add-loans'),
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
-          activeColor: AppColors.accent,
-          value: value,
-          onChanged: (v) => onChanged(v ?? false),
-          title: Text('Add Loans to the menu',
-              style: AppTypography.body.copyWith(color: s.ink)),
-          subtitle: Text(
-            'A Loans page beside the Dashboard with this site\'s loans, payments '
-            'and pending signatures. You can switch it off in Settings › Templar Protocol.',
-            style: AppTypography.caption.copyWith(color: s.inkSecondary),
-          ),
-          secondary: ListIconTile(icon: Icons.handshake_outlined, tint: s.liquid, size: 32),
-        ),
-      ),
-    );
-  }
-}
-
 /// What the signature does to this wallet, in one figure per asset: the net
 /// change the engine computed from its own unblinding — the one number a
 /// PSET cannot misstate. Green comes in, amber goes out.
@@ -1307,7 +1418,8 @@ class _NetChangeCard extends StatelessWidget {
     final lines = inspection.netChangeLines;
     return FormCard(
       title: 'What changes for "$walletName"',
-      subtitle: 'Read by the wallet from the transaction itself, not from the site.',
+      subtitle:
+          'Read by the wallet from the transaction itself, not from the site.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1315,14 +1427,19 @@ class _NetChangeCard extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.only(bottom: AppSpacing.md),
               child: DangerBanner(
-                message: 'An output claims an amount or asset its commitment does not '
+                message:
+                    'An output claims an amount or asset its commitment does not '
                     'prove. The engine will not sign this.',
               ),
             ),
           if (lines.isEmpty)
             Row(
               children: [
-                ListIconTile(icon: Icons.remove_rounded, tint: s.inkFaint, size: 36),
+                ListIconTile(
+                  icon: Icons.remove_rounded,
+                  tint: s.inkFaint,
+                  size: 36,
+                ),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Text(
@@ -1341,10 +1458,16 @@ class _NetChangeCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           Row(
             children: [
-              Icon(Icons.local_gas_station_outlined, size: 14, color: s.inkFaint),
+              Icon(
+                Icons.local_gas_station_outlined,
+                size: 14,
+                color: s.inkFaint,
+              ),
               const SizedBox(width: AppSpacing.xs),
-              Text('Network fee ${inspection.feeDisplay}',
-                  style: AppTypography.caption.copyWith(color: s.inkFaint)),
+              Text(
+                'Network fee ${inspection.feeDisplay}',
+                style: AppTypography.caption.copyWith(color: s.inkFaint),
+              ),
               const Spacer(),
               Text(
                 '${inspection.sigsHave} of ${inspection.sigsNeeded} signatures on the least-signed input',
@@ -1433,10 +1556,19 @@ class _FlowCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('FROM',
-              style: AppTypography.navSection.copyWith(color: s.inkFaint, letterSpacing: 1.2)),
+          Text(
+            'FROM',
+            style: AppTypography.navSection.copyWith(
+              color: s.inkFaint,
+              letterSpacing: 1.2,
+            ),
+          ),
           const SizedBox(height: AppSpacing.xs),
-          Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.xs, children: sources),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            children: sources,
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
             child: Row(
@@ -1446,8 +1578,13 @@ class _FlowCard extends StatelessWidget {
               ],
             ),
           ),
-          Text('TO',
-              style: AppTypography.navSection.copyWith(color: s.inkFaint, letterSpacing: 1.2)),
+          Text(
+            'TO',
+            style: AppTypography.navSection.copyWith(
+              color: s.inkFaint,
+              letterSpacing: 1.2,
+            ),
+          ),
           const SizedBox(height: AppSpacing.xs),
           for (var k = 0; k < i.outputs.length; k++) ...[
             if (k > 0) Divider(height: AppSpacing.md, color: s.edge),
@@ -1460,7 +1597,11 @@ class _FlowCard extends StatelessWidget {
 }
 
 class _SourceChip extends StatelessWidget {
-  const _SourceChip({required this.icon, required this.tint, required this.label});
+  const _SourceChip({
+    required this.icon,
+    required this.tint,
+    required this.label,
+  });
   final IconData icon;
   final Color tint;
   final String label;
@@ -1469,7 +1610,10 @@ class _SourceChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm + 2, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm + 2,
+        vertical: 6,
+      ),
       decoration: BoxDecoration(
         color: s.panelInset,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm + 2),
@@ -1495,15 +1639,24 @@ class _OutputRow extends StatelessWidget {
     final s = AppScheme.of(context);
     final o = output;
     final (icon, tint, label) = switch (o.kind) {
-      'own' => (Icons.account_balance_wallet_outlined, s.liquid, 'Back to this wallet'),
-      'escrow' => (Icons.lock_outline_rounded, s.accent, 'Into the loan escrow'),
+      'own' => (
+        Icons.account_balance_wallet_outlined,
+        s.liquid,
+        'Back to this wallet',
+      ),
+      'escrow' => (
+        Icons.lock_outline_rounded,
+        s.accent,
+        'Into the loan escrow',
+      ),
       'fee' => (Icons.local_gas_station_outlined, s.inkFaint, 'Network fee'),
       _ => (Icons.person_outline_rounded, AppColors.warning, 'To someone else'),
     };
     final addr = o.address;
     final amount = o.unverified
         ? 'unverified'
-        : (o.displayAmount ?? (o.ticker != null ? 'blinded (${o.ticker})' : 'blinded'));
+        : (o.displayAmount ??
+              (o.ticker != null ? 'blinded (${o.ticker})' : 'blinded'));
     return Row(
       children: [
         ListIconTile(icon: icon, tint: tint, size: 36),
@@ -1514,8 +1667,10 @@ class _OutputRow extends StatelessWidget {
             children: [
               Text(label, style: AppTypography.body.copyWith(color: s.ink)),
               if (addr != null && addr.isNotEmpty)
-                Text(_short(addr),
-                    style: AppTypography.monoSmall.copyWith(color: s.inkFaint)),
+                Text(
+                  _short(addr),
+                  style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
+                ),
             ],
           ),
         ),
@@ -1546,15 +1701,20 @@ class _SiteSaysCard extends StatelessWidget {
     final s = AppScheme.of(context);
     final summary = request.summary;
     final body = summary == null || summary.lines.isEmpty
-        ? Text('The site sent no summary.',
-            style: AppTypography.caption.copyWith(color: s.inkSecondary))
+        ? Text(
+            'The site sent no summary.',
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
+          )
         : Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (summary.role.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: TagChip(label: 'Your role: ${summary.role}', color: s.accent),
+                  child: TagChip(
+                    label: 'Your role: ${summary.role}',
+                    color: s.accent,
+                  ),
                 ),
               for (final line in summary.lines)
                 Padding(
@@ -1562,16 +1722,28 @@ class _SiteSaysCard extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.chat_bubble_outline_rounded, size: 14, color: s.inkFaint),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(line.label,
-                            style: AppTypography.bodySmall.copyWith(color: s.inkSecondary)),
+                      Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        size: 14,
+                        color: s.inkFaint,
                       ),
                       const SizedBox(width: AppSpacing.sm),
-                      Text(line.amount,
-                          style: AppTypography.numericSmall
-                              .copyWith(color: s.ink, fontWeight: FontWeight.w600)),
+                      Expanded(
+                        child: Text(
+                          line.label,
+                          style: AppTypography.bodySmall.copyWith(
+                            color: s.inkSecondary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        line.amount,
+                        style: AppTypography.numericSmall.copyWith(
+                          color: s.ink,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1623,10 +1795,18 @@ class _RequestRows extends StatelessWidget {
         if (req.loanRef != null && req.loanRef!.isNotEmpty)
           (label: 'Loan', value: req.loanRef!, isMono: true),
         (label: 'Request id', value: req.id ?? '', isMono: true),
-        (label: 'Network', value: protocolNetworkLabel(req.network), isMono: false),
+        (
+          label: 'Network',
+          value: protocolNetworkLabel(req.network),
+          isMono: false,
+        ),
         (label: 'Wallet', value: walletName, isMono: false),
         (label: 'Callback', value: req.callback.toString(), isMono: true),
-        (label: 'Expires', value: req.expiresAtTime.toLocal().toString(), isMono: false),
+        (
+          label: 'Expires',
+          value: req.expiresAtTime.toLocal().toString(),
+          isMono: false,
+        ),
       ],
     );
   }
@@ -1648,7 +1828,10 @@ class _RawReading extends StatelessWidget {
       children: [
         Text('What "$walletName" reads', style: AppTypography.sectionTitle),
         const SizedBox(height: AppSpacing.sm),
-        Text('Inputs (${i.inputs.length})', style: AppTypography.label.copyWith(color: s.inkSecondary)),
+        Text(
+          'Inputs (${i.inputs.length})',
+          style: AppTypography.label.copyWith(color: s.inkSecondary),
+        ),
         const SizedBox(height: AppSpacing.sm),
         for (final inp in i.inputs)
           Padding(
@@ -1661,14 +1844,20 @@ class _RawReading extends StatelessWidget {
                     children: [
                       TagChip(
                         label: inp.isOurs
-                            ? (inp.isScriptHash ? 'escrow · your key' : 'your coin')
-                            : (inp.isScriptHash ? 'contract · not yours' : 'not yours'),
+                            ? (inp.isScriptHash
+                                  ? 'escrow · your key'
+                                  : 'your coin')
+                            : (inp.isScriptHash
+                                  ? 'contract · not yours'
+                                  : 'not yours'),
                         color: inp.isOurs ? s.liquid : s.inkFaint,
                       ),
                       const Spacer(),
                       Text(
                         inp.displayAmount ??
-                            (inp.ticker != null ? 'blinded (${inp.ticker})' : 'blinded'),
+                            (inp.ticker != null
+                                ? 'blinded (${inp.ticker})'
+                                : 'blinded'),
                         style: AppTypography.numericSmall.copyWith(
                           fontWeight: FontWeight.w700,
                           color: s.ink,
@@ -1687,7 +1876,10 @@ class _RawReading extends StatelessWidget {
             ),
           ),
         const SizedBox(height: AppSpacing.md),
-        Text('Outputs (${i.outputs.length})', style: AppTypography.label.copyWith(color: s.inkSecondary)),
+        Text(
+          'Outputs (${i.outputs.length})',
+          style: AppTypography.label.copyWith(color: s.inkSecondary),
+        ),
         const SizedBox(height: AppSpacing.sm),
         for (final out in i.outputs)
           Padding(
@@ -1703,15 +1895,17 @@ class _RawReading extends StatelessWidget {
                         color: out.isOwn
                             ? s.liquid
                             : out.isEscrow
-                                ? s.accent
-                                : out.isFee
-                                    ? s.inkFaint
-                                    : AppColors.warning,
+                            ? s.accent
+                            : out.isFee
+                            ? s.inkFaint
+                            : AppColors.warning,
                       ),
                       const Spacer(),
                       Text(
                         out.displayAmount ??
-                            (out.ticker != null ? 'blinded (${out.ticker})' : 'blinded'),
+                            (out.ticker != null
+                                ? 'blinded (${out.ticker})'
+                                : 'blinded'),
                         style: AppTypography.numericSmall.copyWith(
                           fontWeight: FontWeight.w700,
                           color: s.ink,
@@ -1767,8 +1961,8 @@ class _ProofCard extends StatelessWidget {
     final expires = left.isNegative
         ? 'expired'
         : left.inMinutes >= 1
-            ? 'in ${left.inMinutes} min'
-            : 'in under a minute';
+        ? 'in ${left.inMinutes} min'
+        : 'in under a minute';
     return FormCard(
       title: title,
       subtitle: body,
@@ -1783,7 +1977,10 @@ class _ProofCard extends StatelessWidget {
                 child: Text(
                   '$kProtocolProofStatement.',
                   key: const Key('protocol-proof-statement'),
-                  style: AppTypography.body.copyWith(color: s.ink, fontWeight: FontWeight.w600),
+                  style: AppTypography.body.copyWith(
+                    color: s.ink,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -1814,19 +2011,26 @@ class _LockedCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return FormCard(
       title: 'Wallet storage is locked',
-      subtitle: 'Enter your app passphrase to read the request and choose a wallet.',
-      child: PrimaryButton(label: 'Unlock', icon: Icons.lock_open_outlined, onPressed: onUnlock),
+      subtitle:
+          'Enter your app passphrase to read the request and choose a wallet.',
+      child: PrimaryButton(
+        label: 'Unlock',
+        icon: Icons.lock_open_outlined,
+        onPressed: onUnlock,
+      ),
     );
   }
 }
 
 class _ErrorCard extends StatelessWidget {
   const _ErrorCard({
+    required this.title,
     required this.message,
     this.onRetry,
     this.onOpenSite,
     this.siteName,
   });
+  final String title;
   final String message;
   final VoidCallback? onRetry;
 
@@ -1858,7 +2062,7 @@ class _ErrorCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DangerBanner(title: 'Request refused', message: message),
+        DangerBanner(title: title, message: message),
         if (buttons.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.lg),
           if (phone)
@@ -1937,7 +2141,9 @@ class _WalletChoice extends StatelessWidget {
     final usable = wallets.where(eligible).toList()
       ..sort((a, b) {
         final r = _rank(a).compareTo(_rank(b));
-        return r != 0 ? r : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        return r != 0
+            ? r
+            : a.name.toLowerCase().compareTo(b.name.toLowerCase());
       });
     final others = wallets.where((w) => !eligible(w)).toList();
     final hasConnected = usable.any((w) => connectedWalletIds.contains(w.id));
@@ -1953,13 +2159,13 @@ class _WalletChoice extends StatelessWidget {
               : 'Which wallet signs for $siteName?',
           subtitle: connect
               ? 'The site will watch this wallet and use its loan key in your loans. '
-                  'A software seed or a Jade, with Liquid enabled.'
+                    'A software seed or a Jade, with Liquid enabled.'
               : hasConnected
-                  ? 'The wallet this site connected is first — a signing request from '
-                      'a site is for the wallet that site knows. Pick another only if '
-                      'you connected this site elsewhere.'
-                  : 'Pick the wallet whose key took part in this loan. This device has '
-                      'not connected $siteName yet, so none is marked.',
+              ? 'The wallet this site connected is first — a signing request from '
+                    'a site is for the wallet that site knows. Pick another only if '
+                    'you connected this site elsewhere.'
+              : 'Pick the wallet whose key took part in this loan. This device has '
+                    'not connected $siteName yet, so none is marked.',
           chips: [
             TagChip(
               label: '${usable.length} usable',
@@ -1970,7 +2176,8 @@ class _WalletChoice extends StatelessWidget {
         const SizedBox(height: AppSpacing.lg),
         if (usable.isEmpty)
           const WarningBanner(
-            message: 'No wallet qualifies. Create or restore a software wallet with '
+            message:
+                'No wallet qualifies. Create or restore a software wallet with '
                 'Liquid enabled (or import a Jade), then open the link again.',
           )
         else
@@ -1988,8 +2195,13 @@ class _WalletChoice extends StatelessWidget {
           ),
         if (others.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.lg),
-          Text('NOT USABLE HERE',
-              style: AppTypography.navSection.copyWith(color: s.inkFaint, letterSpacing: 1.2)),
+          Text(
+            'NOT USABLE HERE',
+            style: AppTypography.navSection.copyWith(
+              color: s.inkFaint,
+              letterSpacing: 1.2,
+            ),
+          ),
           const SizedBox(height: AppSpacing.sm),
           Opacity(
             opacity: 0.7,
@@ -1997,7 +2209,9 @@ class _WalletChoice extends StatelessWidget {
               children: [
                 for (final w in others)
                   ListRow(
-                    icon: w.isHardwareWallet ? Icons.usb_rounded : Icons.account_balance_wallet_outlined,
+                    icon: w.isHardwareWallet
+                        ? Icons.usb_rounded
+                        : Icons.account_balance_wallet_outlined,
                     tint: s.inkFaint,
                     title: w.name,
                     subtitle: '${w.displayType} · ${_whyNot(w)}',
@@ -2031,7 +2245,11 @@ class _WalletRow extends StatelessWidget {
     final w = wallet;
     final badges = <Widget>[
       if (connected)
-        const StatusBadge(label: 'Connected to this site', variant: BadgeVariant.accent, dot: true),
+        const StatusBadge(
+          label: 'Connected to this site',
+          variant: BadgeVariant.accent,
+          dot: true,
+        ),
       if (preferred)
         const StatusBadge(label: 'Preferred', variant: BadgeVariant.success),
       if (open)
@@ -2046,11 +2264,15 @@ class _WalletRow extends StatelessWidget {
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.symmetric(
-                horizontal: kListPad, vertical: AppSpacing.md),
+              horizontal: kListPad,
+              vertical: AppSpacing.md,
+            ),
             child: Row(
               children: [
                 ListIconTile(
-                  icon: w.isHardwareWallet ? Icons.usb_rounded : Icons.key_rounded,
+                  icon: w.isHardwareWallet
+                      ? Icons.usb_rounded
+                      : Icons.key_rounded,
                   tint: connected ? s.accent : s.liquid,
                 ),
                 const SizedBox(width: kListGap),
@@ -2058,21 +2280,29 @@ class _WalletRow extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(w.name,
-                          style: AppTypography.body.copyWith(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: s.ink,
-                          )),
+                      Text(
+                        w.name,
+                        style: AppTypography.body.copyWith(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: s.ink,
+                        ),
+                      ),
                       const SizedBox(height: 2),
                       Text(
                         '${w.displayType} · ${w.networksLabel}'
                         '${w.masterFingerprint != null ? ' · ${w.masterFingerprint}' : ''}',
-                        style: AppTypography.caption.copyWith(color: s.inkSecondary),
+                        style: AppTypography.caption.copyWith(
+                          color: s.inkSecondary,
+                        ),
                       ),
                       if (badges.isNotEmpty) ...[
                         const SizedBox(height: AppSpacing.xs),
-                        Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: badges),
+                        Wrap(
+                          spacing: AppSpacing.xs,
+                          runSpacing: AppSpacing.xs,
+                          children: badges,
+                        ),
                       ],
                     ],
                   ),
@@ -2095,6 +2325,7 @@ class _DoneCard extends StatelessWidget {
     required this.next,
     required this.onOpen,
     required this.onClose,
+    this.action,
     this.onOpenLoans,
   });
   final String site;
@@ -2102,6 +2333,7 @@ class _DoneCard extends StatelessWidget {
   final String? next;
   final VoidCallback onOpen;
   final VoidCallback onClose;
+  final String? action;
 
   /// Set when the Loans page is in the menu: the natural next place after a
   /// connect, where the site's loans show up.
@@ -2113,24 +2345,53 @@ class _DoneCard extends StatelessWidget {
     final phone = AppLayout.isPhone(context);
     final buttons = <Widget>[
       if (next != null)
-        PrimaryButton(label: 'Open in browser', icon: Icons.open_in_new, onPressed: onOpen),
+        PrimaryButton(
+          label: 'Open in browser',
+          icon: Icons.open_in_new,
+          onPressed: onOpen,
+        ),
       if (onOpenLoans != null)
-        SecondaryButton(label: 'Open Loans', icon: Icons.handshake_outlined, onPressed: onOpenLoans),
+        SecondaryButton(
+          label: 'Open Loans',
+          icon: Icons.handshake_outlined,
+          onPressed: onOpenLoans,
+        ),
       SecondaryButton(label: 'Back to wallet', onPressed: onClose),
     ];
+    final status = switch (action) {
+      'installment' =>
+        'Installment signature sent. The borrower payment is separate from the lender claim.',
+      'payment_claim' =>
+        'Payment-claim signature sent. The site must still broadcast and confirm it.',
+      'renewal' =>
+        'Covenant-renewal signature sent. This does not cancel the loan.',
+      'default' =>
+        'Default-settlement signature sent. Confirmation determines the collateral split.',
+      'collateral_claim' =>
+        'Collateral-remainder signature sent. The site must still broadcast and confirm it.',
+      _ =>
+        'The site accepted the signature. It has not reported whether counterpart signing, broadcast, mempool acceptance or confirmation comes next.',
+    };
     return FormCard(
       title: connect ? 'Wallet connected' : 'Signature sent',
       subtitle: connect
           ? '$site now watches this wallet and holds its escrow key. Every signing step for your loans will open here.'
-          : '$site received the signature. It broadcasts once every party has signed; check the loan page for the transaction id.',
+          : status,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.check_circle_outline, color: AppColors.success, size: 22),
+              Icon(
+                Icons.check_circle_outline,
+                color: AppColors.success,
+                size: 22,
+              ),
               const SizedBox(width: AppSpacing.sm),
-              Text('Done', style: AppTypography.sectionTitle.copyWith(color: s.ink)),
+              Text(
+                connect ? 'Connected' : 'Signature sent',
+                style: AppTypography.sectionTitle.copyWith(color: s.ink),
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.lg),
@@ -2145,7 +2406,11 @@ class _DoneCard extends StatelessWidget {
               ],
             )
           else
-            Wrap(spacing: AppSpacing.md, runSpacing: AppSpacing.sm, children: buttons),
+            Wrap(
+              spacing: AppSpacing.md,
+              runSpacing: AppSpacing.sm,
+              children: buttons,
+            ),
         ],
       ),
     );

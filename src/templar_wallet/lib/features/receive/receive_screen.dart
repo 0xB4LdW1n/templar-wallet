@@ -63,7 +63,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   /// runs behind it. Plain visits ask for the last unused address, so the
   /// cache and the refresh agree unless funds arrived in between.
   static final Map<String, ({AddressInfo current, List<AddressInfo> previous})>
-      _cache = {};
+  _cache = {};
 
   String _selectedAsset = 'BTC';
   AddressInfo? _current;
@@ -156,8 +156,9 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     final walletId = context.read<AppState>().activeWalletId ?? 'wallet-1';
     final cacheKey = '$walletId/$asset';
     // Platform, not width: MediaQuery is off limits from initState.
-    final cached =
-        !fresh && AppLayout.isMobilePlatform ? _cache[cacheKey] : null;
+    final cached = !fresh && AppLayout.isMobilePlatform
+        ? _cache[cacheKey]
+        : null;
     setState(() {
       _loading = cached == null;
       if (cached != null) {
@@ -201,7 +202,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   }
 
   /// What this chain calls its coin, for the unit chip and the ≈ line.
-  String get _ticker => _selectedAsset == 'BTC' ? 'BTC' : 'L-BTC';
+  String get _ticker => _selectedAsset == 'BTC' ? 'BTC' : 'LBTC';
 
   /// The requested amount in satoshis — null when the field is empty or does
   /// not parse. A half-typed figure must not quietly become a QR: until it
@@ -280,7 +281,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     final coin = '${PaymentUri.amountText(sats)} $_ticker';
     final fiat = PriceService.instance.hasPrice
         ? ' ≈ ${PriceService.instance.symbol}'
-            '${AmountUnits.fiatText(sats, PriceService.instance.btcPrice)}'
+              '${AmountUnits.fiatText(sats, PriceService.instance.btcPrice)}'
         : '';
     return note.isEmpty ? '$coin$fiat' : '$coin$fiat · $note';
   }
@@ -310,16 +311,19 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     if (_current == null) return;
     // iPad's share popover needs an anchor; Android ignores it.
     final box = context.findRenderObject() as RenderBox?;
-    await SharePlus.instance.share(ShareParams(
-      text: _shareData,
-      subject: _paymentUri != null
-          ? 'Payment request'
-          : (_selectedAsset == 'BTC'
-              ? 'Bitcoin testnet address'
-              : 'Liquid testnet address'),
-      sharePositionOrigin:
-          box == null ? null : box.localToGlobal(Offset.zero) & box.size,
-    ));
+    await SharePlus.instance.share(
+      ShareParams(
+        text: _shareData,
+        subject: _paymentUri != null
+            ? 'Payment request'
+            : (_selectedAsset == 'BTC'
+                  ? 'Bitcoin testnet address'
+                  : 'Liquid testnet address'),
+        sharePositionOrigin: box == null
+            ? null
+            : box.localToGlobal(Offset.zero) & box.size,
+      ),
+    );
   }
 
   Future<void> _newAddress() async {
@@ -433,11 +437,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
       ),
     );
     if (!_requestOpen) {
-      return Semantics(
-        button: true,
-        label: 'Request an amount',
-        child: header,
-      );
+      return Semantics(button: true, label: 'Request an amount', child: header);
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -557,7 +557,9 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                 children: [
                   Text(
                     _caption,
-                    style: AppTypography.caption.copyWith(color: s.inkSecondary),
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
                   ),
                   const Spacer(),
                   // Liquid CT addresses stay stable — no regenerate there.
@@ -619,11 +621,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // QR + address
-                  Expanded(
-                    child: Reveal(
-                      child: _addressCard(context),
-                    ),
-                  ),
+                  Expanded(child: Reveal(child: _addressCard(context))),
                   const SizedBox(width: AppSpacing.xl),
                   // Previous addresses — the newest eight, then the page.
                   Expanded(
@@ -656,45 +654,43 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   Widget _addressCard(BuildContext context) {
     final s = AppScheme.of(context);
     return FormCard(
-                      title: 'Your address',
-                      child: Column(
-                        children: [
-                          Center(
-                            child: _QrTile(data: _shareData, side: 200),
-                          ),
-                          const SizedBox(height: AppSpacing.xl),
-                          // The well always holds the address: it is what a
-                          // human reads back to check, and the link's query
-                          // is machine business. What the QR adds on top is
-                          // named by the section right under it.
-                          DataWell(
-                            child: SelectableText(
-                              _current!.address,
-                              style: AppTypography.mono.copyWith(color: s.ink),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.lg),
-                          _requestSection(context),
-                          const SizedBox(height: AppSpacing.lg),
-                          PrimaryButton(
-                            label: _copyLabel,
-                            icon: _copied ? Icons.check : Icons.copy,
-                            isFullWidth: true,
-                            onPressed: _copyAddress,
-                          ),
-                          if (_canVerifyOnDevice) ...[
-                            const SizedBox(height: AppSpacing.md),
-                            _HwVerifyButton(
-                              verifying: _verifying,
-                              verified: _verified,
-                              error: _hwError,
-                              onVerify: _verifyOnDevice,
-                            ),
-                          ],
-                        ],
-                      ),
-                      );
+      title: 'Your address',
+      child: Column(
+        children: [
+          Center(child: _QrTile(data: _shareData, side: 200)),
+          const SizedBox(height: AppSpacing.xl),
+          // The well always holds the address: it is what a
+          // human reads back to check, and the link's query
+          // is machine business. What the QR adds on top is
+          // named by the section right under it.
+          DataWell(
+            child: SelectableText(
+              _current!.address,
+              style: AppTypography.mono.copyWith(color: s.ink),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          _requestSection(context),
+          const SizedBox(height: AppSpacing.lg),
+          PrimaryButton(
+            label: _copyLabel,
+            icon: _copied ? Icons.check : Icons.copy,
+            isFullWidth: true,
+            onPressed: _copyAddress,
+          ),
+          if (_canVerifyOnDevice) ...[
+            const SizedBox(height: AppSpacing.md),
+            _HwVerifyButton(
+              verifying: _verifying,
+              verified: _verified,
+              error: _hwError,
+              onVerify: _verifyOnDevice,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   /// The desktop list of previous addresses: the newest eight as rows, and
@@ -719,9 +715,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
               'No previous addresses',
               style: AppTypography.caption.copyWith(color: s.inkSecondary),
             )
-          : Column(
-              children: [for (final a in shown) _AddressRow(info: a)],
-            ),
+          : Column(children: [for (final a in shown) _AddressRow(info: a)]),
     );
   }
 
@@ -872,11 +866,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
       title: a.label ?? short,
       subtitle: a.label == null ? '#${a.index}' : '#${a.index} · $short',
       trailing: funded
-          ? ListAmount(
-              value: '${a.receivedSats}',
-              unit: 'sats',
-              maxWidth: 120,
-            )
+          ? ListAmount(value: '${a.receivedSats}', unit: 'sats', maxWidth: 120)
           // Nothing received: the faint copy glyph says what the tap does.
           : Icon(Icons.copy, size: 18, color: s.inkFaint),
       onTap: () => _copyPrevious(a.address),
@@ -892,11 +882,13 @@ void _confirmCopyOnPhone(BuildContext context) {
   HapticFeedback.lightImpact();
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
-    ..showSnackBar(const SnackBar(
-      content: Text('Address copied'),
-      behavior: SnackBarBehavior.floating,
-      duration: Duration(seconds: 2),
-    ));
+    ..showSnackBar(
+      const SnackBar(
+        content: Text('Address copied'),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 2),
+      ),
+    );
 }
 
 /// Drops the transport wrappers ("Exception: wallet-ffi: …") so the phone's
@@ -1079,40 +1071,43 @@ class _AddressRowState extends State<_AddressRow> {
     return HoverRow(
       onTap: _copy,
       child: Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: AppSpacing.sm,
-        horizontal: AppSpacing.xs,
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 24,
-            child: Text('#${widget.info.index}', style: AppTypography.caption),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              _shortAddress(widget.info.address),
-              style: AppTypography.monoSmall,
-              overflow: TextOverflow.ellipsis,
+        padding: const EdgeInsets.symmetric(
+          vertical: AppSpacing.sm,
+          horizontal: AppSpacing.xs,
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 24,
+              child: Text(
+                '#${widget.info.index}',
+                style: AppTypography.caption,
+              ),
             ),
-          ),
-          if (widget.info.label != null)
-            Text(widget.info.label!, style: AppTypography.caption),
-          const SizedBox(width: AppSpacing.sm),
-          if (widget.info.receivedSats > 0)
-            Text(
-              '${widget.info.receivedSats} sats',
-              style: AppTypography.caption,
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                _shortAddress(widget.info.address),
+                style: AppTypography.monoSmall,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          IconButton(
-            icon: Icon(_copied ? Icons.check : Icons.copy, size: 14),
-            onPressed: _copy,
-            visualDensity: VisualDensity.compact,
-            color: _copied ? AppColors.success : AppColors.textMuted,
-          ),
-        ],
-      ),
+            if (widget.info.label != null)
+              Text(widget.info.label!, style: AppTypography.caption),
+            const SizedBox(width: AppSpacing.sm),
+            if (widget.info.receivedSats > 0)
+              Text(
+                '${widget.info.receivedSats} sats',
+                style: AppTypography.caption,
+              ),
+            IconButton(
+              icon: Icon(_copied ? Icons.check : Icons.copy, size: 14),
+              onPressed: _copy,
+              visualDensity: VisualDensity.compact,
+              color: _copied ? AppColors.success : AppColors.textMuted,
+            ),
+          ],
+        ),
       ),
     );
   }

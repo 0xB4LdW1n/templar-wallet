@@ -129,13 +129,15 @@ List<DeviceRow> mergeDeviceRows({
     // Same device on a different path shape (HWI reports its own): match on
     // the fingerprint so it cannot be listed a second time.
     if (rows.any((r) => r.fingerprint == d.fingerprint)) continue;
-    rows.add(DeviceRow(
-      model: d.model,
-      transport: d.path.startsWith('/dev/') ? 'serial' : 'hid',
-      path: d.path,
-      drivable: true,
-      device: d,
-    ));
+    rows.add(
+      DeviceRow(
+        model: d.model,
+        transport: d.path.startsWith('/dev/') ? 'serial' : 'hid',
+        path: d.path,
+        drivable: true,
+        device: d,
+      ),
+    );
   }
   return rows;
 }
@@ -296,7 +298,9 @@ class _DeviceListSectionState extends State<DeviceListSection> {
                   TextButton.icon(
                     onPressed: canIdentify ? _identify : _detect,
                     icon: Icon(
-                      anyUnidentified ? Icons.fingerprint : Icons.refresh_rounded,
+                      anyUnidentified
+                          ? Icons.fingerprint
+                          : Icons.refresh_rounded,
                       size: 16,
                     ),
                     label: Text(anyUnidentified ? 'Identify' : 'Rescan'),
@@ -315,10 +319,11 @@ class _DeviceListSectionState extends State<DeviceListSection> {
                     child: Text(
                       _detectedOnce
                           ? 'Nothing connected yet. Plug in your device with '
-                              'its cable — this list updates on its own.'
+                                'its cable — this list updates on its own.'
                           : 'Looking for devices…',
-                      style: AppTypography.bodySmall
-                          .copyWith(color: s.inkSecondary),
+                      style: AppTypography.bodySmall.copyWith(
+                        color: s.inkSecondary,
+                      ),
                     ),
                   ),
                 ],
@@ -328,7 +333,8 @@ class _DeviceListSectionState extends State<DeviceListSection> {
             for (final row in rows)
               _DeviceRowTile(
                 row: row,
-                isSelected: row.fingerprint != null &&
+                isSelected:
+                    row.fingerprint != null &&
                     row.fingerprint == widget.selected?.fingerprint,
                 liquidWanted: widget.liquidWanted,
                 busy: _identifying,
@@ -449,12 +455,14 @@ class _DeviceRowTile extends StatelessWidget {
                       // What this device can hold, said before it is chosen.
                       if (usable)
                         StatusBadge(
-                          label: row.supportsLiquid ? 'BTC + Liquid' : 'BTC only',
+                          label: row.supportsLiquid
+                              ? 'BTC + Liquid'
+                              : 'BTC only',
                           variant: row.supportsLiquid
                               ? BadgeVariant.accent
                               : (liquidWanted
-                                  ? BadgeVariant.warning
-                                  : BadgeVariant.neutral),
+                                    ? BadgeVariant.warning
+                                    : BadgeVariant.neutral),
                         ),
                     ],
                   ),

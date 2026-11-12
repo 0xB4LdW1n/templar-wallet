@@ -99,22 +99,22 @@ class VaultPassphraseStep extends StatelessWidget {
   /// What encryption is actually protecting, in this wallet's case.
   String _rationale(String place) => seedOnDisk
       ? 'This wallet\'s recovery phrase is saved on $place. A password '
-          'encrypts it (Argon2id + XChaCha20-Poly1305) so it cannot be read '
-          'from your disk, your backups, or by another program running as you.'
+            'encrypts it (Argon2id + XChaCha20-Poly1305) so it cannot be read '
+            'from your disk, your backups, or by another program running as you.'
       : 'Your signing key stays on your device — Templar never sees it, and this '
-          'password does not change that. What it protects is the wallet file '
-          'on $place, which holds your account descriptors and public '
-          'keys: encrypted, they cannot be read (an xpub reveals your whole '
-          'transaction history) or altered (a swapped descriptor would make '
-          'Templar show you someone else\'s receive addresses).';
+            'password does not change that. What it protects is the wallet file '
+            'on $place, which holds your account descriptors and public '
+            'keys: encrypted, they cannot be read (an xpub reveals your whole '
+            'transaction history) or altered (a swapped descriptor would make '
+            'Templar show you someone else\'s receive addresses).';
 
   /// What losing the password costs — very different with keys on a device.
   String get _lossWarning => seedOnDisk
       ? 'If you lose this password, Templar cannot open these wallets. Only your '
-          'written recovery phrase can bring them back — so write it down in '
-          'the next step and keep it somewhere safe.'
+            'written recovery phrase can bring them back — so write it down in '
+            'the next step and keep it somewhere safe.'
       : 'If you lose this password, Templar cannot open these wallets. Your coins '
-          'stay safe on your device: import it again to get the wallet back.';
+            'stay safe on your device: import it again to get the wallet back.';
 
   /// Only reachable where the key lives on a device — with a seed on this disk
   /// the step is [mandatory] and there is nothing to decline.
@@ -131,7 +131,8 @@ class VaultPassphraseStep extends StatelessWidget {
       return _banner(
         color: AppColors.success,
         icon: Icons.verified_user_outlined,
-        text: 'Wallet storage is now encrypted. Templar will ask for this '
+        text:
+            'Wallet storage is now encrypted. Templar will ask for this '
             'password each time it starts.',
       );
     }
@@ -187,8 +188,9 @@ class VaultPassphraseStep extends StatelessWidget {
           Text(
             'Required for a wallet whose recovery phrase is kept on this '
             'computer. One password covers every wallet in Templar.',
-            style:
-                AppTypography.caption.copyWith(color: AppColors.textSecondary),
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
           )
         else
           Align(

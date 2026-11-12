@@ -17,15 +17,18 @@ import 'package:templar_wallet/shared/widgets/utxo_views.dart';
 const _a = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0';
 const _b = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:1';
 
-Utxo _coin(String outpoint, int sats, {UtxoState state = UtxoState.available}) =>
-    Utxo(
-      outpoint: outpoint,
-      amount: sats,
-      displayAmount: '$sats sats',
-      confirmations: 6,
-      state: state,
-      ticker: 'BTC',
-    );
+Utxo _coin(
+  String outpoint,
+  int sats, {
+  UtxoState state = UtxoState.available,
+}) => Utxo(
+  outpoint: outpoint,
+  amount: sats,
+  displayAmount: '$sats sats',
+  confirmations: 6,
+  state: state,
+  ticker: 'BTC',
+);
 
 /// Keeps the frozen set the way the engine does and answers list_utxos
 /// from it.
@@ -35,9 +38,9 @@ class _FreezeBridge implements WalletBridge {
 
   @override
   Future<List<Utxo>> listUtxos(String walletId, String chain) async => [
-        for (final u in [_coin(_a, 90000), _coin(_b, 40000)])
-          frozen.contains(u.outpoint) ? u.copyWith(state: UtxoState.frozen) : u,
-      ];
+    for (final u in [_coin(_a, 90000), _coin(_b, 40000)])
+      frozen.contains(u.outpoint) ? u.copyWith(state: UtxoState.frozen) : u,
+  ];
 
   @override
   Future<void> setUtxosFrozen({
@@ -55,9 +58,9 @@ class _FreezeBridge implements WalletBridge {
 }
 
 Widget _screen(WalletBridge bridge) => ChangeNotifierProvider<AppState>(
-      create: (_) => AppState()..setActiveWallet('w1', name: 'W', type: 'Software'),
-      child: MaterialApp(home: UtxoScreen(bridge: bridge)),
-    );
+  create: (_) => AppState()..setActiveWallet('w1', name: 'W', type: 'Software'),
+  child: MaterialApp(home: UtxoScreen(bridge: bridge)),
+);
 
 /// Pumps the screen once its label store is warm: the store reads a real
 /// file, which only completes outside the test's fake clock — so it is read
@@ -80,41 +83,43 @@ void main() {
   // SharedPreferences, which has no platform side in a widget test.
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('the selection bar freezes the selected coin, then unfreezes it',
-      (t) async {
-    _desktopWindow(t);
-    final bridge = _FreezeBridge();
-    await _open(t, bridge);
+  testWidgets(
+    'the selection bar freezes the selected coin, then unfreezes it',
+    (t) async {
+      _desktopWindow(t);
+      final bridge = _FreezeBridge();
+      await _open(t, bridge);
 
-    // List view: rows are easier to target than banknotes.
-    await t.tap(find.text('List'));
-    await t.pumpAndSettle();
-    await t.tap(find.text('90000 sats'));
-    await t.pumpAndSettle();
-    expect(find.text('Freeze'), findsOneWidget);
+      // List view: rows are easier to target than banknotes.
+      await t.tap(find.text('List'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('90000 sats'));
+      await t.pumpAndSettle();
+      expect(find.text('Freeze'), findsOneWidget);
 
-    await t.tap(find.text('Freeze'));
-    await t.pumpAndSettle();
-    expect(bridge.calls.single.$1, [_a]);
-    expect(bridge.calls.single.$2, isTrue);
-    // Reloaded from the engine: the row wears the chip, the stat counts it,
-    // and the selection is gone.
-    expect(find.text('Frozen'), findsOneWidget);
-    expect(find.text('UTXOs · 1 frozen'), findsOneWidget);
-    expect(find.text('Freeze'), findsNothing);
-    // Let the confirmation snackbar go: it floats over the bar.
-    await t.pump(const Duration(seconds: 5));
-    await t.pumpAndSettle();
+      await t.tap(find.text('Freeze'));
+      await t.pumpAndSettle();
+      expect(bridge.calls.single.$1, [_a]);
+      expect(bridge.calls.single.$2, isTrue);
+      // Reloaded from the engine: the row wears the chip, the stat counts it,
+      // and the selection is gone.
+      expect(find.text('Frozen'), findsOneWidget);
+      expect(find.text('UTXOs · 1 frozen'), findsOneWidget);
+      expect(find.text('Freeze'), findsNothing);
+      // Let the confirmation snackbar go: it floats over the bar.
+      await t.pump(const Duration(seconds: 5));
+      await t.pumpAndSettle();
 
-    await t.tap(find.text('90000 sats'));
-    await t.pumpAndSettle();
-    expect(find.text('Unfreeze'), findsOneWidget);
-    await t.tap(find.text('Unfreeze'));
-    await t.pumpAndSettle();
-    expect(bridge.calls.last.$1, [_a]);
-    expect(bridge.calls.last.$2, isFalse);
-    expect(find.text('Frozen'), findsNothing);
-  });
+      await t.tap(find.text('90000 sats'));
+      await t.pumpAndSettle();
+      expect(find.text('Unfreeze'), findsOneWidget);
+      await t.tap(find.text('Unfreeze'));
+      await t.pumpAndSettle();
+      expect(bridge.calls.last.$1, [_a]);
+      expect(bridge.calls.last.$2, isFalse);
+      expect(find.text('Frozen'), findsNothing);
+    },
+  );
 
   testWidgets('the details sheet freezes the one coin it shows', (t) async {
     _desktopWindow(t);
@@ -133,20 +138,26 @@ void main() {
     expect(bridge.calls.single.$1, hasLength(1));
   });
 
-  testWidgets('the send picker shows a frozen coin but will not pick it',
-      (t) async {
+  testWidgets('the send picker shows a frozen coin but will not pick it', (
+    t,
+  ) async {
     final picked = <int>[];
-    await t.pumpWidget(ChangeNotifierProvider<AppState>(
-      create: (_) => AppState(),
-      child: MaterialApp(
-        home: Scaffold(
-          body: UtxoPicker(
-            utxos: [_coin(_a, 90000, state: UtxoState.frozen), _coin(_b, 40000)],
-            onToggle: picked.add,
+    await t.pumpWidget(
+      ChangeNotifierProvider<AppState>(
+        create: (_) => AppState(),
+        child: MaterialApp(
+          home: Scaffold(
+            body: UtxoPicker(
+              utxos: [
+                _coin(_a, 90000, state: UtxoState.frozen),
+                _coin(_b, 40000),
+              ],
+              onToggle: picked.add,
+            ),
           ),
         ),
       ),
-    ));
+    );
     await t.pumpAndSettle();
     expect(find.text('2 coins · 1 frozen'), findsOneWidget);
     expect(find.text('Frozen'), findsOneWidget);

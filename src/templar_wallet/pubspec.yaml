@@ -66,6 +66,9 @@ flutter:
 
   assets:
     - assets/images/
+    # Vendored OFL fonts keep the wallet typography and golden tests stable
+    # offline. google_fonts discovers the exact family/weight filenames here.
+    - assets/fonts/
     # HWI udev rules, installed on Linux so a non-root user can reach the
     # device. Bundled (not downloaded) so the fix works offline — see
     # assets/udev/README.md.

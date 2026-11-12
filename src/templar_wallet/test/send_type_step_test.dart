@@ -27,12 +27,12 @@ class _NoEngineBridge implements WalletBridge {
 }
 
 Widget _host(String walletType) => MaterialApp(
-      home: ChangeNotifierProvider<AppState>(
-        create: (_) => AppState()
-          ..setActiveWallet('w1', name: 'Test', type: walletType),
-        child: SendScreen(bridge: _NoEngineBridge()),
-      ),
-    );
+  home: ChangeNotifierProvider<AppState>(
+    create: (_) =>
+        AppState()..setActiveWallet('w1', name: 'Test', type: walletType),
+    child: SendScreen(bridge: _NoEngineBridge()),
+  ),
+);
 
 /// A desktop window: `AppLayout.isPhone` also needs a mobile platform, so a
 /// host test can only ever exercise this arm.
@@ -56,15 +56,17 @@ void main() {
     expect(find.text('Import a PSBT'), findsNothing);
   });
 
-  testWidgets('a singlesig wallet keeps its first choice and shares the second',
-      (t) async {
-    await _pump(t, 'Standard');
+  testWidgets(
+    'a singlesig wallet keeps its first choice and shares the second',
+    (t) async {
+      await _pump(t, 'Standard');
 
-    expect(find.text('Standard transaction'), findsOneWidget);
-    expect(find.text('Cosign a transaction'), findsOneWidget);
-    expect(find.text('Co-sign a PSBT'), findsNothing);
-    expect(find.text('Create a partial transaction'), findsNothing);
-  });
+      expect(find.text('Standard transaction'), findsOneWidget);
+      expect(find.text('Cosign a transaction'), findsOneWidget);
+      expect(find.text('Co-sign a PSBT'), findsNothing);
+      expect(find.text('Create a partial transaction'), findsNothing);
+    },
+  );
 
   testWidgets('no wallet is offered a verify-only mode', (t) async {
     for (final type in const ['Multisig 2-of-3', 'Standard']) {

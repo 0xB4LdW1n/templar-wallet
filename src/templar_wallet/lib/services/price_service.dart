@@ -81,7 +81,7 @@ class PriceService extends ChangeNotifier {
 
   /// Format a satoshi amount in the user's Bitcoin denomination.
   /// [sat] true → grouped sats ("1,234,567 sats"); false → "0.01234567 BTC".
-  /// [coin] labels the whole-coin unit (e.g. 'L-BTC' for Liquid bitcoin).
+  /// [coin] labels the whole-coin unit (e.g. 'LBTC' for Liquid bitcoin).
   static String formatUnit(int sats, {required bool sat, String coin = 'BTC'}) {
     if (sat) return '${_group(sats)} sats';
     return '${(sats / 1e8).toStringAsFixed(8)} $coin';
@@ -99,8 +99,11 @@ class PriceService extends ChangeNotifier {
 
   Future<void> fetch({bool force = false}) async {
     if (_fetching) return;
-    if (!force && _lastFetch != null &&
-        DateTime.now().difference(_lastFetch!) < _cacheDuration) { return; }
+    if (!force &&
+        _lastFetch != null &&
+        DateTime.now().difference(_lastFetch!) < _cacheDuration) {
+      return;
+    }
 
     _fetching = true;
     final cur = _currency.toLowerCase();

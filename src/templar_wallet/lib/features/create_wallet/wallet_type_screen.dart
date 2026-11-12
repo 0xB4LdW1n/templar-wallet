@@ -266,9 +266,13 @@ class _WalletTypeScreenState extends State<WalletTypeScreen> {
       return MultisigSetupScreen(baseStep: base, onBackToWizard: _backToWizard);
     }
     return switch (_draft.kind) {
-      WalletKind.hardware => _draft.hwConnection == HwConnection.airgap
-          ? AirgapSetupScreen(baseStep: base, onBackToWizard: _backToWizard)
-          : HardwareSetupScreen(baseStep: base, onBackToWizard: _backToWizard),
+      WalletKind.hardware =>
+        _draft.hwConnection == HwConnection.airgap
+            ? AirgapSetupScreen(baseStep: base, onBackToWizard: _backToWizard)
+            : HardwareSetupScreen(
+                baseStep: base,
+                onBackToWizard: _backToWizard,
+              ),
       _ => CreateWalletScreen(baseStep: base, onBackToWizard: _backToWizard),
     };
   }
@@ -280,32 +284,34 @@ class _WalletTypeScreenState extends State<WalletTypeScreen> {
       return false;
     }
     if (_question == WizardQuestion.vault && !_declined && !_vaultDone) {
-      return _vaultPassCtrl.text.isNotEmpty && _vaultConfirmCtrl.text.isNotEmpty;
+      return _vaultPassCtrl.text.isNotEmpty &&
+          _vaultConfirmCtrl.text.isNotEmpty;
     }
     return true;
   }
 
   String _titleOf(WizardQuestion q) => switch (q) {
-        WizardQuestion.structure => 'What kind of wallet?',
-        WizardQuestion.kind => 'Where do your keys live?',
-        WizardQuestion.coins => 'Which coins?',
-        WizardQuestion.connection => 'How does your device connect?',
-        WizardQuestion.vault => 'Protect this app with a password',
-      };
+    WizardQuestion.structure => 'What kind of wallet?',
+    WizardQuestion.kind => 'Where do your keys live?',
+    WizardQuestion.coins => 'Which coins?',
+    WizardQuestion.connection => 'How does your device connect?',
+    WizardQuestion.vault => 'Protect this app with a password',
+  };
 
   String _subtitleOf(WizardQuestion q) => switch (q) {
-        WizardQuestion.structure =>
-          'One key, several keys that must agree, or no keys at all',
-        WizardQuestion.kind => 'This decides how you approve every payment',
-        WizardQuestion.coins => 'Both run on the same recovery phrase',
-        WizardQuestion.connection => _usbHardwareSupported
-            ? 'Cable or camera — either way the key stays on the device'
-            : 'By camera — the key never leaves the device',
-        WizardQuestion.vault =>
-          AppLayout.isPhone(context) || Platform.isAndroid
-              ? 'Encrypts wallet storage on this device'
-              : 'Encrypts wallet storage on this computer',
-      };
+    WizardQuestion.structure =>
+      'One key, several keys that must agree, or no keys at all',
+    WizardQuestion.kind => 'This decides how you approve every payment',
+    WizardQuestion.coins => 'Both run on the same recovery phrase',
+    WizardQuestion.connection =>
+      _usbHardwareSupported
+          ? 'Cable or camera — either way the key stays on the device'
+          : 'By camera — the key never leaves the device',
+    WizardQuestion.vault =>
+      AppLayout.isPhone(context) || Platform.isAndroid
+          ? 'Encrypts wallet storage on this device'
+          : 'Encrypts wallet storage on this computer',
+  };
 
   String get _stepTitle => _titleOf(_question);
   String get _stepSubtitle => _subtitleOf(_question);
@@ -314,53 +320,53 @@ class _WalletTypeScreenState extends State<WalletTypeScreen> {
   /// lot: a two-line subtitle on one question must not shift the cards — or
   /// the Back arrow above them — on the way to the next.
   List<StepHeaderVariant> get _headerVariants => [
-        for (final q in WizardQuestion.values)
-          StepHeaderVariant(_titleOf(q), _subtitleOf(q)),
-      ];
+    for (final q in WizardQuestion.values)
+      StepHeaderVariant(_titleOf(q), _subtitleOf(q)),
+  ];
 
   Widget get _stepBody => switch (_question) {
-        WizardQuestion.structure => _StructureStep(
-            selected: _draft.path,
-            onSelect: (v) => setState(() {
-              _draft.path = v;
-              _clampStep();
-            }),
-          ),
-        WizardQuestion.kind => _KindStep(
-            selected: _draft.keyKind,
-            usbAvailable: _usbHardwareSupported,
-            onSelect: (v) => setState(() {
-              _draft.keyKind = v;
-              _clampStep();
-            }),
-          ),
-        WizardQuestion.coins => _CoinsStep(
-            liquidEnabled: _draft.liquidEnabled,
-            liquidSupported: _draft.liquidSupported,
-            kind: _draft.kind,
-            onSelect: (v) => setState(() => _draft.liquidEnabled = v),
-          ),
-        WizardQuestion.connection => _ConnectionStep(
-            selected: _draft.hwConnection,
-            liquidWanted: _draft.liquidActive,
-            usbAvailable: _usbHardwareSupported,
-            onSelect: (v) => setState(() => _draft.hwConnection = v),
-          ),
-        WizardQuestion.vault => VaultPassphraseStep(
-            passCtrl: _vaultPassCtrl,
-            confirmCtrl: _vaultConfirmCtrl,
-            declined: _declined,
-            done: _vaultDone,
-            error: _vaultError,
-            seedOnDisk: _draft.seedOnDisk,
-            onChanged: () => setState(() => _vaultError = null),
-            onDeclinedChanged: (v) => setState(() {
-              _vaultDeclined = v;
-              _vaultError = null;
-            }),
-            onSubmitted: _continuePressed,
-          ),
-      };
+    WizardQuestion.structure => _StructureStep(
+      selected: _draft.path,
+      onSelect: (v) => setState(() {
+        _draft.path = v;
+        _clampStep();
+      }),
+    ),
+    WizardQuestion.kind => _KindStep(
+      selected: _draft.keyKind,
+      usbAvailable: _usbHardwareSupported,
+      onSelect: (v) => setState(() {
+        _draft.keyKind = v;
+        _clampStep();
+      }),
+    ),
+    WizardQuestion.coins => _CoinsStep(
+      liquidEnabled: _draft.liquidEnabled,
+      liquidSupported: _draft.liquidSupported,
+      kind: _draft.kind,
+      onSelect: (v) => setState(() => _draft.liquidEnabled = v),
+    ),
+    WizardQuestion.connection => _ConnectionStep(
+      selected: _draft.hwConnection,
+      liquidWanted: _draft.liquidActive,
+      usbAvailable: _usbHardwareSupported,
+      onSelect: (v) => setState(() => _draft.hwConnection = v),
+    ),
+    WizardQuestion.vault => VaultPassphraseStep(
+      passCtrl: _vaultPassCtrl,
+      confirmCtrl: _vaultConfirmCtrl,
+      declined: _declined,
+      done: _vaultDone,
+      error: _vaultError,
+      seedOnDisk: _draft.seedOnDisk,
+      onChanged: () => setState(() => _vaultError = null),
+      onDeclinedChanged: (v) => setState(() {
+        _vaultDeclined = v;
+        _vaultError = null;
+      }),
+      onSubmitted: _continuePressed,
+    ),
+  };
 }
 
 // ── Structure — the first question ────────────────────────────────────────────
@@ -482,13 +488,15 @@ class _KindStep extends StatelessWidget {
           title: 'On a hardware wallet',
           description: usbAvailable
               ? 'Ledger, Trezor, Jade, Coldcard or SeedSigner. The key never '
-                  'leaves the device — Templar prepares the payment, the '
-                  'device approves it.'
+                    'leaves the device — Templar prepares the payment, the '
+                    'device approves it.'
               : 'Jade, Coldcard, SeedSigner or any signer that reads QR '
-                  'codes. The key never leaves the device — Templar shows the '
-                  'payment as a QR code, the device signs it offline.',
+                    'codes. The key never leaves the device — Templar shows the '
+                    'payment as a QR code, the device signs it offline.',
           isSelected: selected == WalletKind.hardware,
-          icon: usbAvailable ? Icons.usb_rounded : Icons.qr_code_scanner_rounded,
+          icon: usbAvailable
+              ? Icons.usb_rounded
+              : Icons.qr_code_scanner_rounded,
           badge: 'Safest',
           onTap: () => onSelect(WalletKind.hardware),
         ),
@@ -515,8 +523,10 @@ class _NetworkSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: AppSpacing.xxl),
-        Text('NETWORK',
-            style: AppTypography.navSection.copyWith(letterSpacing: 1.4)),
+        Text(
+          'NETWORK',
+          style: AppTypography.navSection.copyWith(letterSpacing: 1.4),
+        ),
         const SizedBox(height: AppSpacing.sm),
         const _NetworkChoice(),
       ],
@@ -691,7 +701,8 @@ class _CoinsStep extends StatelessWidget {
           const SizedBox(height: AppSpacing.xl),
           const InfoBanner(
             title: 'Bitcoin only, because of the spending policy you chose',
-            message: 'Liquid wallets are limited to single-key and M-of-N '
+            message:
+                'Liquid wallets are limited to single-key and M-of-N '
                 'multisig here — timelocks, hashlocks and the other policy '
                 'building blocks have no confidential-descriptor form. '
                 'Choose one key or multisig on the first step if you '
@@ -708,7 +719,7 @@ class _CoinsStep extends StatelessWidget {
         SelectableOptionCard(
           title: 'Bitcoin + Liquid',
           description:
-              'Adds a paired Liquid wallet for confidential L-BTC and other '
+              'Adds a paired Liquid wallet for confidential LBTC and other '
               'Liquid assets. Same recovery phrase, nothing extra to back up.',
           isSelected: liquidEnabled,
           icon: Icons.water_drop_outlined,
@@ -731,7 +742,8 @@ class _CoinsStep extends StatelessWidget {
           const SizedBox(height: AppSpacing.xl),
           const InfoBanner(
             title: 'For Liquid, the device must be a Blockstream Jade',
-            message: 'Jade is the only hardware wallet with Liquid in its '
+            message:
+                'Jade is the only hardware wallet with Liquid in its '
                 'firmware. With a Ledger, Trezor, Coldcard or KeepKey this '
                 'wallet is created Bitcoin-only — that is a limit of those '
                 'devices, not a missing feature here.',
@@ -796,7 +808,8 @@ class _ConnectionStep extends StatelessWidget {
           const SizedBox(height: AppSpacing.xl),
           const WarningBanner(
             title: 'Liquid needs the cable, and this build has no USB',
-            message: 'A Jade signs Liquid over USB only, and USB devices are '
+            message:
+                'A Jade signs Liquid over USB only, and USB devices are '
                 'not supported here — this wallet is created Bitcoin-only. '
                 'Open the same device from the desktop app for its Liquid '
                 'side.',
@@ -806,7 +819,8 @@ class _ConnectionStep extends StatelessWidget {
           const SizedBox(height: AppSpacing.xl),
           const WarningBanner(
             title: 'For Liquid, choose the cable',
-            message: 'A Jade in QR mode signs Bitcoin only — pick the camera '
+            message:
+                'A Jade in QR mode signs Bitcoin only — pick the camera '
                 'and this wallet is created Bitcoin-only. Over USB a Jade '
                 'gives you both. (Ledger, Trezor, Coldcard and KeepKey are '
                 'Bitcoin-only on either route: no Liquid in their firmware.)',

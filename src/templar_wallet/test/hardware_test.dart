@@ -90,7 +90,9 @@ void main() {
     // would nag every macOS and Windows user.
     test('only a positive false triggers the udev remedy', () {
       expect(
-        HwiStatus.fromJson(const {'udev_rules_installed': false}).needsUdevRules,
+        HwiStatus.fromJson(const {
+          'udev_rules_installed': false,
+        }).needsUdevRules,
         isTrue,
       );
       expect(
@@ -112,14 +114,18 @@ void main() {
         'LIQUID_HW_UNSUPPORTED: watch-only': HwErrorKind.liquidUnsupported,
       };
       cases.forEach((raw, kind) {
-        expect(classifyHwError('Exception: wallet-ffi: $raw').kind, kind,
-            reason: raw);
+        expect(
+          classifyHwError('Exception: wallet-ffi: $raw').kind,
+          kind,
+          reason: raw,
+        );
       });
     });
 
     test('strips the tag and the FFI wrapper from the displayed message', () {
       final f = classifyHwError(
-          'Exception: wallet-ffi: DEVICE_NOT_READY: Open the Bitcoin app');
+        'Exception: wallet-ffi: DEVICE_NOT_READY: Open the Bitcoin app',
+      );
       expect(f.message, 'Open the Bitcoin app');
       expect(f.message, isNot(contains('DEVICE_NOT_READY')));
       expect(f.message, isNot(contains('wallet-ffi')));
@@ -130,14 +136,17 @@ void main() {
       // Untagged form from an older backend must still reach the installer —
       // otherwise a fixable state reads as a dead end.
       expect(
-        classifyHwError('Exception: Could not run hwi (/x/hwi): No such file')
-            .remedy,
+        classifyHwError(
+          'Exception: Could not run hwi (/x/hwi): No such file',
+        ).remedy,
         HwRemedy.installHwi,
       );
     });
 
     test('unknown errors are passed through verbatim, not swallowed', () {
-      final f = classifyHwError('Exception: wallet-ffi: something odd happened');
+      final f = classifyHwError(
+        'Exception: wallet-ffi: something odd happened',
+      );
       expect(f.kind, HwErrorKind.unknown);
       expect(f.message, 'something odd happened');
       expect(f.remedy, HwRemedy.none);

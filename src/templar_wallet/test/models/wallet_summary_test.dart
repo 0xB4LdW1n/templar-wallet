@@ -13,7 +13,8 @@ Map<String, dynamic> decode(String raw) =>
 
 void main() {
   test('decodes a full singlesig summary as serialized by wallet-ffi', () {
-    final w = WalletSummary.fromJson(decode('''
+    final w = WalletSummary.fromJson(
+      decode('''
       {
         "id": "w-1",
         "name": "Contract Test",
@@ -30,15 +31,18 @@ void main() {
         "required_sigs": null,
         "total_signers": null
       }
-    '''));
+    '''),
+    );
 
     expect(w.id, 'w-1');
     expect(w.name, 'Contract Test');
     expect(w.type, WalletType.singlesig);
     expect(w.balanceSats, 12345);
     expect(w.txCount, 2);
-    expect(w.lastSyncAt,
-        DateTime.fromMillisecondsSinceEpoch(1722500000 * 1000));
+    expect(
+      w.lastSyncAt,
+      DateTime.fromMillisecondsSinceEpoch(1722500000 * 1000),
+    );
     expect(w.isWatchOnly, isFalse);
     expect(w.typeLabel, 'Software');
     expect(w.liquidEnabled, isTrue);
@@ -50,7 +54,8 @@ void main() {
   });
 
   test('decodes a multisig summary and derives the threshold label', () {
-    final w = WalletSummary.fromJson(decode('''
+    final w = WalletSummary.fromJson(
+      decode('''
       {
         "id": "w-2",
         "name": "Treasury",
@@ -67,7 +72,8 @@ void main() {
         "required_sigs": 2,
         "total_signers": 3
       }
-    '''));
+    '''),
+    );
 
     expect(w.type, WalletType.multisig);
     expect(w.xpub, isNull);
@@ -77,9 +83,11 @@ void main() {
   });
 
   test('decodes watch-only type and tolerates missing optional keys', () {
-    final w = WalletSummary.fromJson(decode('''
+    final w = WalletSummary.fromJson(
+      decode('''
       {"id": "w-3", "name": "Cold", "wallet_type": "watch_only"}
-    '''));
+    '''),
+    );
 
     expect(w.type, WalletType.watchOnly);
     expect(w.balanceSats, 0);
@@ -93,7 +101,8 @@ void main() {
 
   test('unknown wallet_type falls back to singlesig', () {
     final w = WalletSummary.fromJson(
-        decode('{"id": "w-4", "name": "Odd", "wallet_type": "policy"}'));
+      decode('{"id": "w-4", "name": "Odd", "wallet_type": "policy"}'),
+    );
     expect(w.type, WalletType.singlesig);
   });
 }

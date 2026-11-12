@@ -7,7 +7,11 @@ import 'package:provider/provider.dart';
 import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/shared/widgets/value_chart.dart';
 
-Widget host(Widget child, {Size size = const Size(400, 132), bool dark = false}) {
+Widget host(
+  Widget child, {
+  Size size = const Size(400, 132),
+  bool dark = false,
+}) {
   return MaterialApp(
     theme: ThemeData(brightness: dark ? Brightness.dark : Brightness.light),
     home: ChangeNotifierProvider<AppState>(
@@ -21,7 +25,10 @@ Widget host(Widget child, {Size size = const Size(400, 132), bool dark = false})
   );
 }
 
-List<ChartPoint> series(List<double> vs, {Duration step = const Duration(days: 1)}) {
+List<ChartPoint> series(
+  List<double> vs, {
+  Duration step = const Duration(days: 1),
+}) {
   final t0 = DateTime(2026, 1, 1);
   return [
     for (var i = 0; i < vs.length; i++) ChartPoint(t0.add(step * i), vs[i]),
@@ -32,83 +39,114 @@ void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
 
   testWidgets('empty', (t) async {
-    await t.pumpWidget(host(ValueChart(
-      points: const [],
-      formatValue: (v) => '$v',
-      emptyMessage: 'Not enough history yet',
-    )));
+    await t.pumpWidget(
+      host(
+        ValueChart(
+          points: const [],
+          formatValue: (v) => '$v',
+          emptyMessage: 'Not enough history yet',
+        ),
+      ),
+    );
     await t.pumpAndSettle();
     expect(find.text('Not enough history yet'), findsOneWidget);
   });
 
   testWidgets('empty without message', (t) async {
-    await t.pumpWidget(host(ValueChart(points: const [], formatValue: (v) => '$v')));
+    await t.pumpWidget(
+      host(ValueChart(points: const [], formatValue: (v) => '$v')),
+    );
     await t.pumpAndSettle();
   });
 
   testWidgets('single point', (t) async {
-    await t.pumpWidget(host(ValueChart(points: series([5]), formatValue: (v) => '$v')));
+    await t.pumpWidget(
+      host(ValueChart(points: series([5]), formatValue: (v) => '$v')),
+    );
     await t.pumpAndSettle();
   });
 
   testWidgets('all equal values', (t) async {
-    await t.pumpWidget(host(ValueChart(
-      points: series([7, 7, 7, 7]),
-      formatValue: (v) => '$v',
-    )));
+    await t.pumpWidget(
+      host(ValueChart(points: series([7, 7, 7, 7]), formatValue: (v) => '$v')),
+    );
     await t.pumpAndSettle();
   });
 
   testWidgets('zero width', (t) async {
-    await t.pumpWidget(host(
-      ValueChart(points: series([1, 2, 3]), formatValue: (v) => '$v'),
-      size: const Size(0, 132),
-    ));
+    await t.pumpWidget(
+      host(
+        ValueChart(points: series([1, 2, 3]), formatValue: (v) => '$v'),
+        size: const Size(0, 132),
+      ),
+    );
     await t.pumpAndSettle();
   });
 
   testWidgets('zero height', (t) async {
-    await t.pumpWidget(host(
-      ValueChart(points: series([1, 2, 3]), formatValue: (v) => '$v', height: 0),
-      size: const Size(300, 0),
-    ));
+    await t.pumpWidget(
+      host(
+        ValueChart(
+          points: series([1, 2, 3]),
+          formatValue: (v) => '$v',
+          height: 0,
+        ),
+        size: const Size(300, 0),
+      ),
+    );
     await t.pumpAndSettle();
   });
 
   testWidgets('non-finite values survive', (t) async {
-    await t.pumpWidget(host(ValueChart(
-      points: series([double.nan, 2, double.infinity, 4]),
-      formatValue: (v) => '$v',
-    )));
+    await t.pumpWidget(
+      host(
+        ValueChart(
+          points: series([double.nan, 2, double.infinity, 4]),
+          formatValue: (v) => '$v',
+        ),
+      ),
+    );
     await t.pumpAndSettle();
   });
 
   testWidgets('duplicate timestamps', (t) async {
     final t0 = DateTime(2026, 1, 1);
-    await t.pumpWidget(host(ValueChart(
-      points: [ChartPoint(t0, 1), ChartPoint(t0, 2), ChartPoint(t0, 3)],
-      formatValue: (v) => '$v',
-    )));
+    await t.pumpWidget(
+      host(
+        ValueChart(
+          points: [ChartPoint(t0, 1), ChartPoint(t0, 2), ChartPoint(t0, 3)],
+          formatValue: (v) => '$v',
+        ),
+      ),
+    );
     await t.pumpAndSettle();
   });
 
   testWidgets('large series down-samples and paints', (t) async {
-    await t.pumpWidget(host(ValueChart(
-      points: series(List<double>.generate(5000, (i) => (i % 97) * 3.0),
-          step: const Duration(minutes: 7)),
-      formatValue: (v) => '$v',
-    )));
+    await t.pumpWidget(
+      host(
+        ValueChart(
+          points: series(
+            List<double>.generate(5000, (i) => (i % 97) * 3.0),
+            step: const Duration(minutes: 7),
+          ),
+          formatValue: (v) => '$v',
+        ),
+      ),
+    );
     await t.pumpAndSettle();
   });
 
   testWidgets('hover drives cursor chip, dark theme', (t) async {
-    await t.pumpWidget(host(
-      ValueChart(
-        points: series(List<double>.generate(40, (i) => 100.0 + i * i)),
-        formatValue: (v) => '\$${v.toStringAsFixed(2)}',
+    await t.pumpWidget(
+      host(
+        ValueChart(
+          points: series(List<double>.generate(40, (i) => 100.0 + i * i)),
+          formatValue: (v) => '\$${v.toStringAsFixed(2)}',
+        ),
+        dark: true,
       ),
-      dark: true,
-    ));
+    );
     await t.pumpAndSettle();
 
     final g = await t.createGesture(kind: PointerDeviceKind.mouse);
@@ -117,8 +155,12 @@ void main() {
     final box = t.getRect(find.byType(ValueChart));
     // Sweep across, including the far right where the chip must flip side.
     dynamic painterNow() {
-      final cp = t.widgetList<CustomPaint>(find.descendant(
-          of: find.byType(ValueChart), matching: find.byType(CustomPaint)));
+      final cp = t.widgetList<CustomPaint>(
+        find.descendant(
+          of: find.byType(ValueChart),
+          matching: find.byType(CustomPaint),
+        ),
+      );
       return cp.last.painter;
     }
 
@@ -143,10 +185,14 @@ void main() {
   });
 
   testWidgets('horizontal drag drives cursor and clears', (t) async {
-    await t.pumpWidget(host(ValueChart(
-      points: series(List<double>.generate(30, (i) => 50.0 - i)),
-      formatValue: (v) => '${v.toStringAsFixed(0)} sats',
-    )));
+    await t.pumpWidget(
+      host(
+        ValueChart(
+          points: series(List<double>.generate(30, (i) => 50.0 - i)),
+          formatValue: (v) => '${v.toStringAsFixed(0)} sats',
+        ),
+      ),
+    );
     await t.pumpAndSettle();
     final box = t.getRect(find.byType(ValueChart));
     final g = await t.startGesture(Offset(box.left + 10, box.center.dy));
@@ -159,20 +205,27 @@ void main() {
   });
 
   testWidgets('points identity change restarts sweep', (t) async {
-    await t.pumpWidget(host(ValueChart(points: series([1, 2, 3]), formatValue: (v) => '$v')));
+    await t.pumpWidget(
+      host(ValueChart(points: series([1, 2, 3]), formatValue: (v) => '$v')),
+    );
     await t.pump(const Duration(milliseconds: 100));
-    await t.pumpWidget(host(ValueChart(
-      points: series([9, 4, 6, 2, 8]),
-      formatValue: (v) => '$v',
-    )));
+    await t.pumpWidget(
+      host(
+        ValueChart(points: series([9, 4, 6, 2, 8]), formatValue: (v) => '$v'),
+      ),
+    );
     await t.pumpAndSettle();
   });
 
   testWidgets('reduced motion skips sweep', (t) async {
-    await t.pumpWidget(MediaQuery(
-      data: const MediaQueryData(disableAnimations: true),
-      child: host(ValueChart(points: series([1, 5, 3]), formatValue: (v) => '$v')),
-    ));
+    await t.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: host(
+          ValueChart(points: series([1, 5, 3]), formatValue: (v) => '$v'),
+        ),
+      ),
+    );
     await t.pump();
     await t.pumpAndSettle();
   });

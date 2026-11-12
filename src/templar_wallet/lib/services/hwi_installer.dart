@@ -17,7 +17,13 @@ import 'package:http/http.dart' as http;
 import '../bridge/wallet_bridge.dart';
 
 /// Progress phases surfaced to the install UI.
-enum HwiInstallPhase { resolving, downloading, verifying, extracting, activating }
+enum HwiInstallPhase {
+  resolving,
+  downloading,
+  verifying,
+  extracting,
+  activating,
+}
 
 /// Metadata of the release asset that matches this machine.
 class HwiReleaseInfo {
@@ -64,15 +70,19 @@ class HwiInstaller {
 
   /// Query GitHub for the latest release and pick this machine's asset.
   Future<HwiReleaseInfo> resolveLatest() async {
-    final resp = await _client.get(
-      Uri.parse(_releaseApi),
-      headers: {
-        'Accept': 'application/vnd.github+json',
-        'User-Agent': 'templar-wallet',
-      },
-    ).timeout(const Duration(seconds: 20));
+    final resp = await _client
+        .get(
+          Uri.parse(_releaseApi),
+          headers: {
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': 'templar-wallet',
+          },
+        )
+        .timeout(const Duration(seconds: 20));
     if (resp.statusCode != 200) {
-      throw Exception('GitHub API error ${resp.statusCode} — check your connection');
+      throw Exception(
+        'GitHub API error ${resp.statusCode} — check your connection',
+      );
     }
     final json = jsonDecode(resp.body) as Map<String, dynamic>;
     final version = (json['tag_name'] as String?) ?? 'unknown';
@@ -84,8 +94,10 @@ class HwiInstaller {
       (a) => (a['name'] as String? ?? '').contains(tag),
       orElse: () => throw Exception('No HWI $version build for $tag'),
     );
-    final sums = assets.where((a) =>
-        (a['name'] as String? ?? '').toUpperCase().startsWith('SHA256SUMS'));
+    final sums = assets.where(
+      (a) =>
+          (a['name'] as String? ?? '').toUpperCase().startsWith('SHA256SUMS'),
+    );
 
     return HwiReleaseInfo(
       version: version,
@@ -114,8 +126,9 @@ class HwiInstaller {
     onProgress?.call(HwiInstallPhase.downloading, 0);
     final req = http.Request('GET', Uri.parse(release.assetUrl))
       ..headers['User-Agent'] = 'templar-wallet';
-    final streamed =
-        await _client.send(req).timeout(const Duration(seconds: 30));
+    final streamed = await _client
+        .send(req)
+        .timeout(const Duration(seconds: 30));
     if (streamed.statusCode != 200) {
       throw Exception('Download failed (HTTP ${streamed.statusCode})');
     }
@@ -123,8 +136,9 @@ class HwiInstaller {
     final bytes = <int>[];
     // Per-chunk timeout: a stalled connection must error out, not hang the
     // install dialog forever.
-    await for (final chunk in streamed.stream
-        .timeout(const Duration(seconds: 60))) {
+    await for (final chunk in streamed.stream.timeout(
+      const Duration(seconds: 60),
+    )) {
       bytes.addAll(chunk);
       if (total > 0) {
         onProgress?.call(HwiInstallPhase.downloading, bytes.length / total);
@@ -184,7 +198,8 @@ class HwiInstaller {
     final actual = sha256.convert(bytes).toString();
     if (actual != expected) {
       throw Exception(
-          'Checksum mismatch for ${release.assetName} — download corrupted or tampered');
+        'Checksum mismatch for ${release.assetName} — download corrupted or tampered',
+      );
     }
   }
 

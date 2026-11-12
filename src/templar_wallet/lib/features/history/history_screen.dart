@@ -4,16 +4,21 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
+import '../../bridge/wallet_bridge.dart';
+import '../../services/fee_bump_store.dart';
 import '../../shared/relative_time.dart';
+import '../../shared/widgets/app_password_gate.dart';
 import '../../shared/widgets/asset_logo.dart';
 import '../../shared/widgets/badges.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/chain_switch.dart';
 import '../../shared/widgets/code_box.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/glass_dialog.dart';
 import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/list_rows.dart';
 import '../../shared/widgets/page_header.dart';
+import '../../shared/widgets/psbt_sign_flow.dart';
 import '../../shared/widgets/privacy.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_scheme.dart';
@@ -21,24 +26,34 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import '../utxos/models/pending_consolidation.dart';
 import '../../services/pending_consolidation_store.dart';
+import '../hardware/hw_error.dart';
+import '../hardware/ledger_connect_dialog.dart';
+import '../hardware/ledger_signing_dialog.dart';
+import '../psbt/cosign_handoff.dart';
+import 'fee_bump_dialog.dart';
+import 'models/fee_bump_preview.dart';
 import 'models/transaction.dart';
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
+  const HistoryScreen({super.key, this.bridge});
+
+  /// Test seam; the app uses the global engine.
+  final WalletBridge? bridge;
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  final _bridge = walletBridge;
+  late final WalletBridge _bridge = widget.bridge ?? walletBridge;
   List<Transaction> _txs = [];
   bool _loading = true;
   String? _error;
   String _chainFilter = 'all';
   final _searchController = TextEditingController();
+  String? _feeBumpBusyTxid;
 
   @override
   void initState() {
@@ -67,7 +82,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
       txs = await _bridge.listActivity(walletId);
     } catch (e) {
       if (mounted && appState.cachedTransactions == null) {
-        setState(() { _loading = false; _error = e.toString(); });
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
       }
       return;
     }
@@ -75,18 +93,110 @@ class _HistoryScreenState extends State<HistoryScreen> {
     // learns about it on the next sync. Without this the coins vanish from
     // UTXOs while Activity shows nothing at all, which reads as a lost
     // transaction.
-    final merged = await _withPendingConsolidations(walletId, txs);
+    final withConsolidations = await _withPendingConsolidations(walletId, txs);
+    final merged = await _withFeeBumpLinks(walletId, withConsolidations);
     if (mounted) {
       appState.cachedTransactions = merged;
-      setState(() { _txs = merged; _loading = false; _error = null; });
+      setState(() {
+        _txs = merged;
+        _loading = false;
+        _error = null;
+      });
     }
   }
+
+  Future<List<Transaction>> _withFeeBumpLinks(
+    String walletId,
+    List<Transaction> txs,
+  ) async {
+    final List<FeeBumpRecord> records;
+    try {
+      records = await FeeBumpStore.instance.listFor(walletId);
+    } catch (_) {
+      return txs;
+    }
+    if (records.isEmpty) return txs;
+    final byOriginal = {for (final r in records) r.originalTxid: r};
+    final byReplacement = {for (final r in records) r.replacementTxid: r};
+    final known = txs.map((e) => e.txid).toSet();
+    final linked = txs.map((tx) {
+      final outgoing = byOriginal[tx.txid];
+      if (outgoing != null) {
+        final verb = outgoing.method == 'cpfp' ? 'CPFP child' : 'Replaced by';
+        return tx.withFeeBumpLink(
+          replacedByTxid: outgoing.replacementTxid,
+          feeBumpMethod: outgoing.method,
+          note: '$verb ${_shortId(outgoing.replacementTxid)}',
+        );
+      }
+      final incoming = byReplacement[tx.txid];
+      if (incoming != null) {
+        final label = switch (incoming.method) {
+          'cancel' => 'Cancellation attempt',
+          'cpfp' => 'CPFP child',
+          _ => 'RBF replacement',
+        };
+        return tx.withFeeBumpLink(
+          replacesTxid: incoming.originalTxid,
+          feeBumpMethod: incoming.method,
+          note: '$label · ${_shortId(incoming.originalTxid)}',
+        );
+      }
+      return tx;
+    }).toList();
+
+    // Broadcast succeeded but sync may still be offline. Keep the new tx
+    // visible immediately; the chain-backed row replaces this placeholder on
+    // the next successful load.
+    for (final r in records.where((r) => !known.contains(r.replacementTxid))) {
+      Transaction? original;
+      for (final tx in txs) {
+        if (tx.txid == r.originalTxid) {
+          original = tx;
+          break;
+        }
+      }
+      linked.insert(
+        0,
+        Transaction(
+          txid: r.replacementTxid,
+          direction: r.method == 'rbf'
+              ? (original?.direction ?? TxDirection.outgoing)
+              : TxDirection.self,
+          chain: TxChain.bitcoin,
+          amount: r.method == 'rbf' ? (original?.amount ?? '—') : '—',
+          ticker: 'BTC',
+          timestamp: r.createdAt,
+          confirmations: 0,
+          fee: '${r.newFeeSats} sats',
+          feeSats: r.newFeeSats,
+          feeRate: r.newFeeRate,
+          vsize: 0,
+          isReplaceable: true,
+          note: switch (r.method) {
+            'cancel' => 'Cancellation attempt · ${_shortId(r.originalTxid)}',
+            'cpfp' => 'CPFP child · ${_shortId(r.originalTxid)}',
+            _ => 'RBF replacement · ${_shortId(r.originalTxid)}',
+          },
+          replacesTxid: r.originalTxid,
+          feeBumpMethod: r.method,
+        ),
+      );
+    }
+    return linked;
+  }
+
+  static String _shortId(String txid) => txid.length <= 13
+      ? txid
+      : '${txid.substring(0, 6)}…${txid.substring(txid.length - 6)}';
 
   /// Prepends rows for consolidations the wallet engine has not caught up
   /// with. Once a sync returns the real transaction the placeholder is
   /// dropped, because the txid is then already in [txs].
   Future<List<Transaction>> _withPendingConsolidations(
-      String walletId, List<Transaction> txs) async {
+    String walletId,
+    List<Transaction> txs,
+  ) async {
     final List<PendingConsolidation> pending;
     try {
       pending = await PendingConsolidationStore.instance.listAllFor(walletId);
@@ -95,23 +205,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
     if (pending.isEmpty) return txs;
     final known = txs.map((t) => t.txid).toSet();
-    final extra = pending
-        .where((p) => !known.contains(p.txid))
-        .map((p) => Transaction(
-              txid: p.txid,
-              direction: TxDirection.self,
-              chain:
-                  p.chainKey == 'liquid' ? TxChain.liquid : TxChain.bitcoin,
-              // Approximate: the real output is the inputs minus the fee, and
-              // the exact figure only exists once the tx confirms.
-              amount: '~${p.displayAmount}',
-              ticker: p.ticker ?? 'BTC',
-              timestamp: p.startedAt,
-              confirmations: 0,
-              note: p.activityNote,
-            ))
-        .toList()
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final extra =
+        pending
+            .where((p) => !known.contains(p.txid))
+            .map(
+              (p) => Transaction(
+                txid: p.txid,
+                direction: TxDirection.self,
+                chain: p.chainKey == 'liquid'
+                    ? TxChain.liquid
+                    : TxChain.bitcoin,
+                // Approximate: the real output is the inputs minus the fee, and
+                // the exact figure only exists once the tx confirms.
+                amount: '~${p.displayAmount}',
+                ticker: p.ticker ?? 'BTC',
+                timestamp: p.startedAt,
+                confirmations: 0,
+                note: p.activityNote,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     return [...extra, ...txs];
   }
 
@@ -120,7 +234,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   List<Transaction> get _filtered {
     return _txs.where((tx) {
-      if (_chainFilter == 'bitcoin' && tx.chain != TxChain.bitcoin) return false;
+      if (_chainFilter == 'bitcoin' && tx.chain != TxChain.bitcoin) {
+        return false;
+      }
       if (_chainFilter == 'liquid' && tx.chain != TxChain.liquid) return false;
       final q = _searchController.text.trim().toLowerCase();
       if (q.isEmpty) return true;
@@ -159,8 +275,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
     if (tx.confirmations == 0) return 'PENDING';
     final dt = tx.timestamp;
     const months = [
-      'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-      'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'
+      'JAN',
+      'FEB',
+      'MAR',
+      'APR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AUG',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DEC',
     ];
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -168,6 +294,249 @@ class _HistoryScreenState extends State<HistoryScreen> {
     if (d == today) return 'TODAY';
     if (d == today.subtract(const Duration(days: 1))) return 'YESTERDAY';
     return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
+  }
+
+  Future<void> _startFeeBump(Transaction tx, {required bool cancel}) async {
+    final available = cancel ? tx.canCancel : tx.canSpeedUp;
+    if (!available) {
+      final reason =
+          tx.feeBumpUnavailableReason ??
+          (cancel
+              ? 'This transaction cannot be cancelled with RBF.'
+              : 'This transaction cannot be sped up with RBF or CPFP.');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(reason)));
+      return;
+    }
+    final appState = context.read<AppState>();
+    final walletId = appState.activeWalletId ?? 'wallet-1';
+    final preview = await showFeeBumpDialog(
+      context,
+      bridge: _bridge,
+      walletId: walletId,
+      transaction: tx,
+      cancel: cancel,
+    );
+    if (preview == null || !mounted) return;
+
+    final type = (appState.activeWalletType ?? '').toLowerCase();
+    if (type == 'watch-only') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This watch-only wallet cannot sign transactions.'),
+        ),
+      );
+      return;
+    }
+
+    if (type.contains('air-gap') || type.contains('airgap')) {
+      _showFeeBumpHandoff(walletId, preview, preview.psbtBase64);
+      return;
+    }
+    if (appState.isActiveWalletHardware) {
+      await _runHardwareFeeBump(walletId, tx, preview);
+      return;
+    }
+    if (type.contains('multisig') || type.contains('policy')) {
+      await _runCoordinatedFeeBump(walletId, tx, preview);
+      return;
+    }
+
+    final txid = await showPsbtSignFlow(
+      context,
+      walletId: walletId,
+      unsignedPsbt: preview.psbtBase64,
+      title: preview.isCancel ? 'Review cancellation' : 'Review fee bump',
+      summary: _feeBumpSummary(preview),
+      bridge: _bridge,
+    );
+    if (txid != null && mounted) {
+      await _finishFeeBump(walletId, tx, preview, txid);
+    }
+  }
+
+  Future<void> _runHardwareFeeBump(
+    String walletId,
+    Transaction tx,
+    FeeBumpPreview preview,
+  ) async {
+    final appState = context.read<AppState>();
+    final device = await showHwDevicePickerDialog(
+      context,
+      expectedFingerprint: fingerprintFromTypeLabel(appState.activeWalletType),
+      title: 'Connect your device to sign',
+      confirmLabel: 'Continue',
+    );
+    if (device == null || !mounted) return;
+    setState(() => _feeBumpBusyTxid = tx.txid);
+    final txid = await showLedgerSigningDialog(
+      context,
+      verifyTask: () => _bridge.verifyHwAddress(walletId),
+      task: () async {
+        final signed = await _bridge.signPsbtHw(
+          device.fingerprint,
+          preview.psbtBase64,
+        );
+        return _bridge.broadcastSignedPsbt(
+          walletId: walletId,
+          psbtBase64: signed,
+        );
+      },
+      formatError: friendlyHwError,
+    );
+    if (!mounted) return;
+    setState(() => _feeBumpBusyTxid = null);
+    if (txid != null) await _finishFeeBump(walletId, tx, preview, txid);
+  }
+
+  Future<void> _runCoordinatedFeeBump(
+    String walletId,
+    Transaction tx,
+    FeeBumpPreview preview,
+  ) async {
+    final allowed = await showSpendPasswordGate(
+      context,
+      message:
+          'Templar is about to add this wallet\'s signature to the '
+          'fee-bump PSBT. Nothing is broadcast until the policy is complete.',
+    );
+    if (!allowed || !mounted) return;
+    setState(() => _feeBumpBusyTxid = tx.txid);
+    try {
+      final signed = await _bridge.signPsbt(walletId, preview.psbtBase64);
+      final inspection = await _bridge.inspectPsbt(signed);
+      if (!mounted) return;
+      setState(() => _feeBumpBusyTxid = null);
+      _showFeeBumpHandoff(
+        walletId,
+        preview,
+        signed,
+        have: inspection.sigsPresent,
+        needed: inspection.sigsRequired,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _feeBumpBusyTxid = null);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  void _showFeeBumpHandoff(
+    String walletId,
+    FeeBumpPreview preview,
+    String psbt, {
+    int? have,
+    int? needed,
+  }) {
+    showAppDialog<void>(
+      context,
+      builder: (ctx) => PsbtHandoffSheet(
+        unsignedPsbt: psbt,
+        title: preview.isCancel ? 'Cancellation PSBT' : 'Fee-bump PSBT',
+        progressNote: have == null
+            ? _feeBumpSummary(preview)
+            : '${_feeBumpSummary(preview)} · $have of ${needed ?? '?'} signatures collected.',
+        quorumHave: have,
+        quorumNeeded: needed,
+        onBroadcast: (signed) =>
+            _broadcastFeeBump(ctx, walletId, preview, signed),
+      ),
+    );
+  }
+
+  Future<void> _broadcastFeeBump(
+    BuildContext dialogContext,
+    String walletId,
+    FeeBumpPreview preview,
+    String signedPsbt,
+  ) async {
+    Navigator.of(dialogContext).pop();
+    setState(() => _feeBumpBusyTxid = preview.originalTxid);
+    try {
+      final txid = await _bridge.broadcastSignedPsbt(
+        walletId: walletId,
+        psbtBase64: signedPsbt,
+      );
+      Transaction? original;
+      for (final tx in _txs) {
+        if (tx.txid == preview.originalTxid) {
+          original = tx;
+          break;
+        }
+      }
+      if (!mounted) return;
+      await _finishFeeBump(
+        walletId,
+        original ?? _fallbackOriginal(preview.originalTxid),
+        preview,
+        txid,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _feeBumpBusyTxid = null);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  Transaction _fallbackOriginal(String txid) => Transaction(
+    txid: txid,
+    direction: TxDirection.outgoing,
+    chain: TxChain.bitcoin,
+    amount: '—',
+    ticker: 'BTC',
+    timestamp: DateTime.now(),
+    confirmations: 0,
+  );
+
+  static String _feeBumpSummary(FeeBumpPreview p) =>
+      '${p.method.toUpperCase()} · ${p.oldFeeRate.toStringAsFixed(2)} → '
+      '${p.effectiveFeeRate.toStringAsFixed(2)} sat/vB · '
+      '+${p.extraFeeSats} sats';
+
+  Future<void> _finishFeeBump(
+    String walletId,
+    Transaction original,
+    FeeBumpPreview preview,
+    String replacementTxid,
+  ) async {
+    final appState = context.read<AppState>();
+    await FeeBumpStore.instance.add(
+      FeeBumpRecord(
+        walletId: walletId,
+        originalTxid: original.txid,
+        replacementTxid: replacementTxid,
+        method: preview.method,
+        targetFeeRate: preview.effectiveFeeRate,
+        newFeeSats: preview.newFeeSats,
+        newFeeRate: preview.newFeeRate,
+        createdAt: DateTime.now(),
+      ),
+    );
+    appState.cachedTransactions = null;
+    try {
+      await _bridge.syncWallet(walletId);
+    } catch (_) {
+      // Broadcast succeeded. The local relationship store keeps the new tx
+      // visible until a later sync can replace its placeholder with chain data.
+    }
+    if (!mounted) return;
+    setState(() => _feeBumpBusyTxid = null);
+    await _load();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          preview.isCancel
+              ? 'Cancellation replacement broadcast.'
+              : '${preview.method.toUpperCase()} transaction broadcast.',
+        ),
+      ),
+    );
   }
 
   @override
@@ -251,7 +620,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final s = grouped[i];
       final rows = [
         for (final tx in s.txs)
-          _TxRow(tx: tx, onTap: () => _showDetail(context, tx)),
+          _TxRow(
+            tx: tx,
+            onTap: () => _showDetail(context, tx),
+            showPendingActions: !tx.isConfirmed && tx.chain == TxChain.bitcoin,
+            onSpeedUp: tx.canSpeedUp
+                ? () => _startFeeBump(tx, cancel: false)
+                : null,
+            onCancel: tx.canCancel
+                ? () => _startFeeBump(tx, cancel: true)
+                : null,
+            unavailableReason: tx.feeBumpUnavailableReason,
+            busy: _feeBumpBusyTxid == tx.txid,
+          ),
       ];
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,7 +673,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
 
     void retry() {
-      setState(() { _loading = true; _error = null; });
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
       _load();
     }
 
@@ -360,16 +744,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
-                      ? _LoadError(message: _error!, onRetry: retry)
-                      : grouped.isEmpty
-                      ? Center(
-                          child: Text('No transactions found',
-                              style: AppTypography.caption))
-                      : ListView.builder(
-                          padding: EdgeInsets.fromLTRB(pad, 0, pad, AppSpacing.xl),
-                          itemCount: grouped.length,
-                          itemBuilder: (context, i) => section(i),
-                        ),
+                  ? _LoadError(message: _error!, onRetry: retry)
+                  : grouped.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No transactions found',
+                        style: AppTypography.caption,
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: EdgeInsets.fromLTRB(pad, 0, pad, AppSpacing.xl),
+                      itemCount: grouped.length,
+                      itemBuilder: (context, i) => section(i),
+                    ),
             ),
           ],
         ),
@@ -420,8 +807,10 @@ class _LoadError extends StatelessWidget {
             children: [
               Icon(Icons.error_outline_rounded, size: 40, color: s.danger),
               const SizedBox(height: AppSpacing.md),
-              Text('Could not load activity',
-                  style: AppTypography.sectionTitleOf(context)),
+              Text(
+                'Could not load activity',
+                style: AppTypography.sectionTitleOf(context),
+              ),
               const SizedBox(height: AppSpacing.sm),
               Text(
                 message,
@@ -434,7 +823,10 @@ class _LoadError extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.lg),
               PrimaryButton(
-                  label: 'Retry', onPressed: onRetry, isFullWidth: phone),
+                label: 'Retry',
+                onPressed: onRetry,
+                isFullWidth: phone,
+              ),
             ],
           ),
         ),
@@ -539,9 +931,22 @@ class _DateHeader extends StatelessWidget {
 // ── Transaction row ───────────────────────────────────────────────────────────
 
 class _TxRow extends StatelessWidget {
-  const _TxRow({required this.tx, required this.onTap});
+  const _TxRow({
+    required this.tx,
+    required this.onTap,
+    required this.showPendingActions,
+    required this.onSpeedUp,
+    required this.onCancel,
+    required this.unavailableReason,
+    required this.busy,
+  });
   final Transaction tx;
   final VoidCallback onTap;
+  final bool showPendingActions;
+  final VoidCallback? onSpeedUp;
+  final VoidCallback? onCancel;
+  final String? unavailableReason;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -555,39 +960,55 @@ class _TxRow extends StatelessWidget {
       // below, in the _rounded variants the phone list grammar uses.
       final isSelf = tx.direction == TxDirection.self;
       final masked = balancesHidden(context);
-      return ListRow(
-        icon: isSelf
-            ? Icons.autorenew_rounded
-            : isIn
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListRow(
+            icon: isSelf
+                ? Icons.autorenew_rounded
+                : isIn
                 ? Icons.south_west_rounded
                 : Icons.north_east_rounded,
-        tint: isIn ? s.success : s.inkSecondary,
-        title: tx.note ?? tx.directionLabel,
-        // Which chain, how far it has settled, how long ago — the three
-        // things a row of activity is asked, in that order.
-        subtitle: <String>[
-          tx.chain == TxChain.bitcoin ? 'Bitcoin' : 'Liquid',
-          if (tx.isConfirmed) '${tx.confirmations} conf.' else 'Unconfirmed',
-          // An unconfirmed transaction carries no block time — both engines
-          // report 0 — so its age would read '1 Jan 1970'. Same trap
-          // _dateKey guards against.
-          if (tx.isConfirmed) relativeTimeShort(tx.timestamp),
-        ].join(' · '),
-        subtitleColor: tx.isConfirmed ? null : s.warning,
-        onTap: onTap,
-        // ListAmount takes a plain String and masks nothing of its own, so
-        // the privacy eye has to be honoured here or it stops covering this
-        // screen.
-        trailing: ListAmount(
-          value: masked ? kMaskedAmount : tx.amount,
-          unit: masked ? null : tx.fiatEstimate,
-          valueColor: isIn ? s.success : s.ink,
-          maxWidth: 132,
-        ),
+            tint: tx.isConfirmed
+                ? (isIn ? s.success : s.inkSecondary)
+                : s.inkFaint,
+            title: tx.note ?? tx.directionLabel,
+            subtitle: <String>[
+              tx.chain == TxChain.bitcoin ? 'Bitcoin' : 'Liquid',
+              if (tx.isConfirmed) '${tx.confirmations} conf.' else 'Pending',
+              if (tx.isConfirmed) relativeTimeShort(tx.timestamp),
+            ].join(' · '),
+            subtitleColor: tx.isConfirmed ? null : s.inkFaint,
+            onTap: onTap,
+            trailing: ListAmount(
+              value: masked ? kMaskedAmount : tx.amount,
+              unit: masked ? null : tx.fiatEstimate,
+              valueColor: tx.isConfirmed
+                  ? (isIn ? s.success : s.ink)
+                  : s.inkSecondary,
+              maxWidth: 132,
+            ),
+          ),
+          if (showPendingActions)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                56,
+                0,
+                AppSpacing.sm,
+                AppSpacing.sm,
+              ),
+              child: _PendingActions(
+                onSpeedUp: busy ? null : onSpeedUp,
+                onCancel: busy ? null : onCancel,
+                unavailableReason: unavailableReason,
+                busy: busy,
+              ),
+            ),
+        ],
       );
     }
 
-    final color = isIn ? s.success : s.ink;
+    final color = tx.isConfirmed ? (isIn ? s.success : s.ink) : s.inkSecondary;
     final icon = isIn ? Icons.south_west : Icons.north_east;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -606,13 +1027,14 @@ class _TxRow extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(2),
               decoration: BoxDecoration(
-                color: isDark
-                    ? AppColors.surfaceDark
-                    : AppColors.surfaceLight,
+                color: isDark ? AppColors.surfaceDark : AppColors.surfaceLight,
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon,
-                  size: 11, color: isIn ? s.success : s.inkSecondary),
+              child: Icon(
+                icon,
+                size: 11,
+                color: isIn ? s.success : s.inkSecondary,
+              ),
             ),
           ),
         ],
@@ -625,9 +1047,9 @@ class _TxRow extends StatelessWidget {
           : BadgeVariant.warning,
     );
     final confStyle = AppTypography.caption.copyWith(
-      color: tx.isConfirmed ? AppColors.success : AppColors.warning,
+      color: tx.isConfirmed ? AppColors.success : s.inkFaint,
     );
-    final confText = tx.isConfirmed ? '${tx.confirmations} conf.' : 'Unconfirmed';
+    final confText = tx.isConfirmed ? '${tx.confirmations} conf.' : 'Pending';
 
     return InkWell(
       onTap: onTap,
@@ -645,10 +1067,12 @@ class _TxRow extends StatelessWidget {
                   Row(
                     children: [
                       Flexible(
-                        child: Text(tx.shortTxid,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.mono.copyWith(fontSize: 12)),
+                        child: Text(
+                          tx.shortTxid,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.mono.copyWith(fontSize: 12),
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       chainBadge,
@@ -660,9 +1084,11 @@ class _TxRow extends StatelessWidget {
                       if (tx.note != null) ...[
                         Text('  ·  ', style: AppTypography.caption),
                         Flexible(
-                          child: Text(tx.note!,
-                              style: AppTypography.caption,
-                              overflow: TextOverflow.ellipsis),
+                          child: Text(
+                            tx.note!,
+                            style: AppTypography.caption,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                     ],
@@ -673,17 +1099,33 @@ class _TxRow extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Amount(tx.amount,
-                    style: AppTypography.numeric.copyWith(
-                        fontSize: 14.5,
-                        color: color,
-                        fontWeight: FontWeight.w600)),
+                Amount(
+                  tx.amount,
+                  style: AppTypography.numeric.copyWith(
+                    fontSize: 14.5,
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 if (tx.fiatEstimate != null)
-                  Amount(tx.fiatEstimate!,
-                      style: AppTypography.numericSmall
-                          .copyWith(color: s.inkSecondary, fontSize: 12)),
+                  Amount(
+                    tx.fiatEstimate!,
+                    style: AppTypography.numericSmall.copyWith(
+                      color: s.inkSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
               ],
             ),
+            if (showPendingActions) ...[
+              const SizedBox(width: AppSpacing.md),
+              _PendingActions(
+                onSpeedUp: busy ? null : onSpeedUp,
+                onCancel: busy ? null : onCancel,
+                unavailableReason: unavailableReason,
+                busy: busy,
+              ),
+            ],
             const SizedBox(width: AppSpacing.sm),
             Icon(
               Icons.chevron_right,
@@ -693,6 +1135,91 @@ class _TxRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PendingActions extends StatelessWidget {
+  const _PendingActions({
+    required this.onSpeedUp,
+    required this.onCancel,
+    required this.unavailableReason,
+    required this.busy,
+  });
+
+  final VoidCallback? onSpeedUp;
+  final VoidCallback? onCancel;
+  final String? unavailableReason;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppSpacing.isPhone(context);
+    final speed = Tooltip(
+      message: onSpeedUp == null
+          ? (unavailableReason ?? 'RBF and CPFP are unavailable')
+          : 'Raise the confirmation fee with RBF or CPFP',
+      child: _PendingActionButton(
+        label: busy ? 'Working…' : 'Speed up',
+        icon: Icons.bolt_rounded,
+        onPressed: onSpeedUp,
+        color: s.ink,
+      ),
+    );
+    final cancel = Tooltip(
+      message: onCancel == null
+          ? (unavailableReason ??
+                'Only replaceable outgoing transactions can be cancelled')
+          : 'Attempt an RBF replacement back to your wallet',
+      child: _PendingActionButton(
+        label: 'Cancel',
+        icon: Icons.cancel_outlined,
+        onPressed: onCancel,
+        color: s.danger,
+      ),
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: phone
+          ? [
+              Expanded(child: speed),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: cancel),
+            ]
+          : [speed, const SizedBox(width: AppSpacing.sm), cancel],
+    );
+  }
+}
+
+class _PendingActionButton extends StatelessWidget {
+  const _PendingActionButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    required this.color,
+  });
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return TextButton.icon(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: color,
+        backgroundColor: s.panelInset,
+        minimumSize: Size(AppSpacing.isPhone(context) ? 0 : 102, 48),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        ),
+      ),
+      icon: Icon(icon, size: 18),
+      label: Text(label, maxLines: 1),
     );
   }
 }
@@ -710,8 +1237,12 @@ class _TxDetailSheet extends StatelessWidget {
   final String liquidExplorerUrl;
 
   String _explorerUrl() {
-    final base = tx.chain == TxChain.liquid ? liquidExplorerUrl : btcExplorerUrl;
-    final baseTrimmed = base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    final base = tx.chain == TxChain.liquid
+        ? liquidExplorerUrl
+        : btcExplorerUrl;
+    final baseTrimmed = base.endsWith('/')
+        ? base.substring(0, base.length - 1)
+        : base;
     return '$baseTrimmed/tx/${tx.txid}';
   }
 
@@ -731,9 +1262,11 @@ class _TxDetailSheet extends StatelessWidget {
     if (opened || !context.mounted) return;
     await Clipboard.setData(ClipboardData(text: url));
     if (!context.mounted) return;
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
-      content: Text("Couldn't open a browser — explorer link copied"),
-    ));
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(
+        content: Text("Couldn't open a browser — explorer link copied"),
+      ),
+    );
   }
 
   @override
@@ -816,8 +1349,9 @@ class _TxDetailSheet extends StatelessWidget {
                   child: Amount(
                     tx.amount,
                     maxLines: 1,
-                    style: AppTypography.numericLargeOf(context)
-                        .copyWith(color: amountColor),
+                    style: AppTypography.numericLargeOf(
+                      context,
+                    ).copyWith(color: amountColor),
                   ),
                 ),
               ),
@@ -846,8 +1380,7 @@ class _TxDetailSheet extends StatelessWidget {
             children: [
               Amount(
                 tx.amount,
-                style: AppTypography.numericLarge
-                    .copyWith(color: amountColor),
+                style: AppTypography.numericLarge.copyWith(color: amountColor),
               ),
               const SizedBox(width: AppSpacing.xs),
               const PrivacyToggle(size: 16),
@@ -877,10 +1410,18 @@ class _TxDetailSheet extends StatelessWidget {
           Flexible(
             child: SingleChildScrollView(
               padding: phone
-                  ? EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm,
-                      AppSpacing.lg, AppSpacing.lg + bottomInset)
-                  : const EdgeInsets.fromLTRB(AppSpacing.xxl, AppSpacing.sm,
-                      AppSpacing.xxl, AppSpacing.xxl),
+                  ? EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                      AppSpacing.lg,
+                      AppSpacing.lg + bottomInset,
+                    )
+                  : const EdgeInsets.fromLTRB(
+                      AppSpacing.xxl,
+                      AppSpacing.sm,
+                      AppSpacing.xxl,
+                      AppSpacing.xxl,
+                    ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -888,16 +1429,40 @@ class _TxDetailSheet extends StatelessWidget {
                   SizedBox(height: phone ? AppSpacing.lg : AppSpacing.xl),
 
                   // Details table
-                  _DetailRow(label: 'Status',
-                      value: tx.isConfirmed
-                          ? '${tx.confirmations} confirmations'
-                          : 'Unconfirmed',
-                      valueColor: tx.isConfirmed ? s.success : s.warning),
-                  _DetailRow(label: 'Date',
-                      value: _formatDate(tx.timestamp)),
+                  _DetailRow(
+                    label: 'Status',
+                    value: tx.isConfirmed
+                        ? '${tx.confirmations} confirmations'
+                        : 'Unconfirmed',
+                    valueColor: tx.isConfirmed ? s.success : s.warning,
+                  ),
+                  _DetailRow(
+                    label: 'Date',
+                    value: tx.isConfirmed
+                        ? _formatDate(tx.timestamp)
+                        : 'Pending',
+                  ),
                   _DetailRow(label: 'Ticker', value: tx.ticker),
-                  if (tx.fee != null)
-                    _DetailRow(label: 'Fee', value: tx.fee!),
+                  if (tx.fee != null) _DetailRow(label: 'Fee', value: tx.fee!),
+                  if (tx.feeRate != null)
+                    _DetailRow(
+                      label: 'Fee rate',
+                      value: '${tx.feeRate!.toStringAsFixed(2)} sat/vB',
+                    ),
+                  if (tx.replacesTxid != null)
+                    _DetailRow(
+                      label: tx.feeBumpMethod == 'cpfp'
+                          ? 'CPFP parent'
+                          : 'Replaces',
+                      value: tx.replacesTxid!,
+                    ),
+                  if (tx.replacedByTxid != null)
+                    _DetailRow(
+                      label: tx.feeBumpMethod == 'cpfp'
+                          ? 'CPFP child'
+                          : 'Replaced by',
+                      value: tx.replacedByTxid!,
+                    ),
                   if (tx.fiatEstimate != null)
                     _DetailRow(label: 'Est. value', value: tx.fiatEstimate!),
                   if (tx.note != null)
@@ -941,8 +1506,18 @@ class _TxDetailSheet extends StatelessWidget {
 
   static String _formatDate(DateTime dt) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     final h = dt.hour.toString().padLeft(2, '0');
     final m = dt.minute.toString().padLeft(2, '0');
@@ -961,8 +1536,9 @@ class _DetailRow extends StatelessWidget {
     final valueText = Text(
       value,
       style: AppTypography.bodySmall.copyWith(
-          fontWeight: FontWeight.w500,
-          color: valueColor),
+        fontWeight: FontWeight.w500,
+        color: valueColor,
+      ),
     );
     if (AppSpacing.isPhone(context)) {
       final s = AppScheme.of(context);
@@ -978,8 +1554,10 @@ class _DetailRow extends StatelessWidget {
           children: [
             Text(
               label.toUpperCase(),
-              style: AppTypography.navSection
-                  .copyWith(letterSpacing: 1.3, color: s.inkFaint),
+              style: AppTypography.navSection.copyWith(
+                letterSpacing: 1.3,
+                color: s.inkFaint,
+              ),
             ),
             const SizedBox(height: 3),
             valueText,
@@ -988,9 +1566,12 @@ class _DetailRow extends StatelessWidget {
       );
     }
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final labelText = Text(label,
-        style: AppTypography.caption.copyWith(
-            color: isDark ? AppColors.textMutedDark : AppColors.textMuted));
+    final labelText = Text(
+      label,
+      style: AppTypography.caption.copyWith(
+        color: isDark ? AppColors.textMutedDark : AppColors.textMuted,
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Row(

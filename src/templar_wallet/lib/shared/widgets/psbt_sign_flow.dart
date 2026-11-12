@@ -124,13 +124,16 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
     }
   }
 
-  static String _clean(Object e) =>
-      e.toString().replaceFirst('Exception: ', '').replaceFirst('wallet-ffi: ', '');
+  static String _clean(Object e) => e
+      .toString()
+      .replaceFirst('Exception: ', '')
+      .replaceFirst('wallet-ffi: ', '');
 
   Future<void> _sign() async {
     final ok = await showSpendPasswordGate(
       context,
-      message: 'Templar is about to sign this transaction with the key stored '
+      message:
+          'Templar is about to sign this transaction with the key stored '
           'on this device. Nothing is broadcast yet — you review the signed '
           'transaction next.',
     );
@@ -140,7 +143,10 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
       _error = null;
     });
     try {
-      final signed = await _bridge.signPsbt(widget.walletId, widget.unsignedPsbt);
+      final signed = await _bridge.signPsbt(
+        widget.walletId,
+        widget.unsignedPsbt,
+      );
       if (!mounted) return;
       setState(() {
         _signedPsbt = signed;
@@ -184,9 +190,9 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
   Future<void> _copy() async {
     await Clipboard.setData(ClipboardData(text: _psbt));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('PSBT copied to clipboard')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('PSBT copied to clipboard')));
   }
 
   /// Show the PSBT as an animated BC-UR QR — the air-gap hand-off. Off the
@@ -234,13 +240,16 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
       if (result == null || !mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result == 'shared' ? 'PSBT shared' : 'Saved to $result'),
+          content: Text(
+            result == 'shared' ? 'PSBT shared' : 'Saved to $result',
+          ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
     }
   }
 
@@ -265,16 +274,18 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (widget.summary != null) ...[
-          Text(widget.summary!,
-              style: AppTypography.bodySmall.copyWith(color: s.inkSecondary)),
+          Text(
+            widget.summary!,
+            style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+          ),
           const SizedBox(height: AppSpacing.lg),
         ],
         Text(
           _isSigned
               ? 'Signed and ready. Nothing has reached the network yet — '
-                  'check it once more, then broadcast.'
+                    'check it once more, then broadcast.'
               : 'Nothing has been signed yet. Check what this spends and '
-                  'where it goes; signing asks for your app password.',
+                    'where it goes; signing asks for your app password.',
           style: AppTypography.caption.copyWith(color: s.inkSecondary),
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -347,19 +358,25 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
             ),
             ElevatedButton.icon(
               onPressed: primary,
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accent,
+              ),
               icon: _busy
                   ? const SizedBox(
                       width: 14,
                       height: 14,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : Icon(primaryIcon, size: 16, color: Colors.white),
               label: Text(
                 primaryLabel,
                 style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600),
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ];
@@ -380,10 +397,7 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
         // and a scroll view of its own.
         content: phone
             ? body
-            : SizedBox(
-                width: 560,
-                child: SingleChildScrollView(child: body),
-              ),
+            : SizedBox(width: 560, child: SingleChildScrollView(child: body)),
         actions: actions,
       ),
     );
@@ -405,7 +419,10 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
           onPressed: _save,
         ),
         SecondaryButton(
-            label: 'QR code', icon: Icons.qr_code_2, onPressed: _showQr),
+          label: 'QR code',
+          icon: Icons.qr_code_2,
+          onPressed: _showQr,
+        ),
       ],
     );
   }
@@ -457,7 +474,9 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
         ],
         child: Container(
           padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
           decoration: BoxDecoration(
             border: Border.all(color: s.edge),
             borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
@@ -467,8 +486,10 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
             children: [
               Icon(Icons.ios_share, size: 16, color: s.inkSecondary),
               const SizedBox(width: AppSpacing.sm),
-              Text('Export',
-                  style: AppTypography.bodySmall.copyWith(color: s.ink)),
+              Text(
+                'Export',
+                style: AppTypography.bodySmall.copyWith(color: s.ink),
+              ),
               Icon(Icons.arrow_drop_down, size: 18, color: s.inkSecondary),
             ],
           ),
@@ -502,8 +523,9 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
         const SizedBox(height: AppSpacing.xs),
         Text(
           '${i.inputs.length} coin${i.inputs.length == 1 ? '' : 's'} · $inTotal',
-          style: AppTypography.bodySmall
-              .copyWith(color: priced ? null : AppColors.danger),
+          style: AppTypography.bodySmall.copyWith(
+            color: priced ? null : AppColors.danger,
+          ),
         ),
         const SizedBox(height: AppSpacing.lg),
         Text('PAYS', style: AppTypography.navSection),
@@ -513,7 +535,8 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
         ...i.outputs.map(
           (o) => Padding(
             padding: EdgeInsets.only(
-                bottom: phone ? AppSpacing.sm : AppSpacing.xs),
+              bottom: phone ? AppSpacing.sm : AppSpacing.xs,
+            ),
             child: phone
                 // The whole address, wrapped: the tail is the checksum, the
                 // part the user is asked to check before signing, and an
@@ -521,16 +544,21 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(o.address,
-                          style: AppTypography.monoSmall, softWrap: true),
+                      Text(
+                        o.address,
+                        style: AppTypography.monoSmall,
+                        softWrap: true,
+                      ),
                       const SizedBox(height: 2),
                       Row(
                         children: [
                           if (i.ownershipKnown && o.isMine == true) ownLabel,
                           const Spacer(),
-                          Text(o.displayAmount,
-                              style: AppTypography.bodySmall,
-                              textAlign: TextAlign.right),
+                          Text(
+                            o.displayAmount,
+                            style: AppTypography.bodySmall,
+                            textAlign: TextAlign.right,
+                          ),
                         ],
                       ),
                     ],
@@ -538,9 +566,11 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
                 : Row(
                     children: [
                       Expanded(
-                        child: Text(o.address,
-                            style: AppTypography.monoSmall,
-                            overflow: TextOverflow.ellipsis),
+                        child: Text(
+                          o.address,
+                          style: AppTypography.monoSmall,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       if (i.ownershipKnown && o.isMine == true) ...[
                         const SizedBox(width: AppSpacing.sm),
@@ -568,35 +598,39 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
   }
 
   Widget _row(String label, String value, AppScheme s, bool phone) => Padding(
-        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-        child: Row(
-          // Top-aligned only where the value can wrap to several lines.
-          crossAxisAlignment:
-              phone ? CrossAxisAlignment.start : CrossAxisAlignment.center,
-          children: [
-            Text(label,
-                style: AppTypography.label.copyWith(color: s.inkSecondary)),
-            if (phone) ...[
-              // A policy hint can be a sentence; let it wrap instead of
-              // ellipsising the part that says what the wallet requires.
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Text(value,
-                    style: AppTypography.bodySmall,
-                    textAlign: TextAlign.right,
-                    softWrap: true),
-              ),
-            ] else ...[
-              const Spacer(),
-              Flexible(
-                child: Text(value,
-                    style: AppTypography.bodySmall,
-                    overflow: TextOverflow.ellipsis),
-              ),
-            ],
-          ],
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+    child: Row(
+      // Top-aligned only where the value can wrap to several lines.
+      crossAxisAlignment: phone
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.center,
+      children: [
+        Text(label, style: AppTypography.label.copyWith(color: s.inkSecondary)),
+        if (phone) ...[
+          // A policy hint can be a sentence; let it wrap instead of
+          // ellipsising the part that says what the wallet requires.
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              value,
+              style: AppTypography.bodySmall,
+              textAlign: TextAlign.right,
+              softWrap: true,
+            ),
+          ),
+        ] else ...[
+          const Spacer(),
+          Flexible(
+            child: Text(
+              value,
+              style: AppTypography.bodySmall,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ],
+    ),
+  );
 }
 
 /// Which of the two passes the user is looking at. The QR alone cannot say —
@@ -610,14 +644,18 @@ class _PhaseBadge extends StatelessWidget {
     final color = signed ? AppColors.success : AppColors.warning;
     return Container(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm, vertical: 2),
+        horizontal: AppSpacing.sm,
+        vertical: 2,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
         border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
-      child: Text(signed ? 'SIGNED' : 'UNSIGNED',
-          style: AppTypography.label.copyWith(color: color)),
+      child: Text(
+        signed ? 'SIGNED' : 'UNSIGNED',
+        style: AppTypography.label.copyWith(color: color),
+      ),
     );
   }
 }
@@ -643,8 +681,10 @@ class _QrPanel extends StatelessWidget {
     if (error != null) {
       body = SizedBox(
         width: size,
-        child: Text('QR unavailable: $error',
-            style: AppTypography.caption.copyWith(color: AppColors.danger)),
+        child: Text(
+          'QR unavailable: $error',
+          style: AppTypography.caption.copyWith(color: AppColors.danger),
+        ),
       );
     } else if (parts == null) {
       body = SizedBox(

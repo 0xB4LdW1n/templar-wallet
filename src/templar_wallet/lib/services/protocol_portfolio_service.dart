@@ -74,28 +74,28 @@ class ProtocolPortfolioSnapshot {
     bool? loading,
     DateTime? fetchedAt,
     bool clearError = false,
-  }) =>
-      ProtocolPortfolioSnapshot(
-        siteKey: siteKey,
-        portfolio: portfolio ?? this.portfolio,
-        error: clearError ? null : (error ?? this.error),
-        loading: loading ?? this.loading,
-        fetchedAt: fetchedAt ?? this.fetchedAt,
-      );
+  }) => ProtocolPortfolioSnapshot(
+    siteKey: siteKey,
+    portfolio: portfolio ?? this.portfolio,
+    error: clearError ? null : (error ?? this.error),
+    loading: loading ?? this.loading,
+    fetchedAt: fetchedAt ?? this.fetchedAt,
+  );
 }
 
 class ProtocolPortfolioService extends ChangeNotifier {
   ProtocolPortfolioService._({http.Client? client, ProtocolStore? store})
-      : _client = client ?? http.Client(),
-        _store = store ?? ProtocolStore.instance;
+    : _client = client ?? http.Client(),
+      _store = store ?? ProtocolStore.instance;
 
   static final ProtocolPortfolioService instance = ProtocolPortfolioService._();
 
   /// A service over an injected client, for tests.
   @visibleForTesting
-  factory ProtocolPortfolioService.withClient(http.Client client,
-          {ProtocolStore? store}) =>
-      ProtocolPortfolioService._(client: client, store: store);
+  factory ProtocolPortfolioService.withClient(
+    http.Client client, {
+    ProtocolStore? store,
+  }) => ProtocolPortfolioService._(client: client, store: store);
 
   final http.Client _client;
   final ProtocolStore _store;
@@ -121,7 +121,8 @@ class ProtocolPortfolioService extends ChangeNotifier {
   }
 
   Future<ProtocolPortfolio> _refresh(ProtocolConnectedSite site) async {
-    final prev = _snapshots[site.key] ?? ProtocolPortfolioSnapshot(siteKey: site.key);
+    final prev =
+        _snapshots[site.key] ?? ProtocolPortfolioSnapshot(siteKey: site.key);
     _snapshots[site.key] = prev.copyWith(loading: true, clearError: true);
     notifyListeners();
     try {
@@ -134,7 +135,8 @@ class ProtocolPortfolioService extends ChangeNotifier {
       notifyListeners();
       return p;
     } on ProtocolPortfolioError catch (e) {
-      if (e.kind == ProtocolPortfolioErrorKind.needsReconnect && site.hasPortfolio) {
+      if (e.kind == ProtocolPortfolioErrorKind.needsReconnect &&
+          site.hasPortfolio) {
         // Dead on the site's side: keep no secret that opens nothing.
         await _store.clearPortfolio(site.key);
       }
@@ -156,23 +158,33 @@ class ProtocolPortfolioService extends ChangeNotifier {
       );
     }
     final uri = Uri.parse(url);
-    final resp = await _send(() => _client.get(uri, headers: _headers(token)), uri);
+    final resp = await _send(
+      () => _client.get(uri, headers: _headers(token)),
+      uri,
+    );
     _checkStatus(resp, site, uri);
     final Object? decoded;
     try {
       decoded = jsonDecode(utf8.decode(resp.bodyBytes));
     } catch (_) {
-      throw ProtocolPortfolioError(ProtocolPortfolioErrorKind.malformed,
-          '${site.site} did not answer with JSON.');
+      throw ProtocolPortfolioError(
+        ProtocolPortfolioErrorKind.malformed,
+        '${site.site} did not answer with JSON.',
+      );
     }
     if (decoded is! Map<String, dynamic>) {
-      throw ProtocolPortfolioError(ProtocolPortfolioErrorKind.malformed,
-          '${site.site} did not answer with a portfolio.');
+      throw ProtocolPortfolioError(
+        ProtocolPortfolioErrorKind.malformed,
+        '${site.site} did not answer with a portfolio.',
+      );
     }
     try {
       return ProtocolPortfolio.fromJson(decoded);
     } on FormatException catch (e) {
-      throw ProtocolPortfolioError(ProtocolPortfolioErrorKind.malformed, e.message);
+      throw ProtocolPortfolioError(
+        ProtocolPortfolioErrorKind.malformed,
+        e.message,
+      );
     }
   }
 
@@ -210,8 +222,10 @@ class ProtocolPortfolioService extends ChangeNotifier {
     final link = decoded is Map ? decoded['url'] : null;
     final parsed = link is String ? Uri.tryParse(link.trim()) : null;
     if (parsed == null || !parsed.hasScheme || parsed.host.isEmpty) {
-      throw ProtocolPortfolioError(ProtocolPortfolioErrorKind.malformed,
-          '${site.site} did not answer with a link.');
+      throw ProtocolPortfolioError(
+        ProtocolPortfolioErrorKind.malformed,
+        '${site.site} did not answer with a link.',
+      );
     }
     if (parsed.host.toLowerCase() != uri.host.toLowerCase() ||
         parsed.scheme != uri.scheme) {
@@ -293,22 +307,28 @@ class ProtocolPortfolioService extends ChangeNotifier {
   // ── Plumbing ────────────────────────────────────────────────────────────────
 
   Map<String, String> _headers(String token) => {
-        'Accept': 'application/json',
-        'Authorization': 'Bearer $token',
-      };
+    'Accept': 'application/json',
+    'Authorization': 'Bearer $token',
+  };
 
   Future<http.Response> _send(
-      Future<http.Response> Function() call, Uri uri) async {
+    Future<http.Response> Function() call,
+    Uri uri,
+  ) async {
     try {
       return await call().timeout(_timeout);
     } on TimeoutException {
-      throw ProtocolPortfolioError(ProtocolPortfolioErrorKind.offline,
-          '${uri.host} did not answer within ${_timeout.inSeconds} seconds.');
+      throw ProtocolPortfolioError(
+        ProtocolPortfolioErrorKind.offline,
+        '${uri.host} did not answer within ${_timeout.inSeconds} seconds.',
+      );
     } on ProtocolPortfolioError {
       rethrow;
     } catch (e) {
-      throw ProtocolPortfolioError(ProtocolPortfolioErrorKind.offline,
-          'Could not reach ${uri.host}: ${_clean(e)}');
+      throw ProtocolPortfolioError(
+        ProtocolPortfolioErrorKind.offline,
+        'Could not reach ${uri.host}: ${_clean(e)}',
+      );
     }
   }
 
@@ -347,6 +367,8 @@ class ProtocolPortfolioService extends ChangeNotifier {
     return '';
   }
 
-  static String _clean(Object e) =>
-      e.toString().replaceFirst('Exception: ', '').replaceFirst('ClientException: ', '');
+  static String _clean(Object e) => e
+      .toString()
+      .replaceFirst('Exception: ', '')
+      .replaceFirst('ClientException: ', '');
 }

@@ -104,8 +104,9 @@ class _VaultMigrationScreenState extends State<VaultMigrationScreen> {
                       height: 56,
                       decoration: BoxDecoration(
                         color: AppColors.danger.withValues(alpha: 0.16),
-                        borderRadius:
-                            BorderRadius.circular(AppSpacing.radiusMd),
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.radiusMd,
+                        ),
                         border: Border.all(
                           color: AppColors.danger.withValues(alpha: 0.5),
                         ),

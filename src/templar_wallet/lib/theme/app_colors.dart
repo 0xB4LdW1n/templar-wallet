@@ -9,8 +9,9 @@ abstract final class AppColors {
   static Color _accent = accentDefault;
 
   static Color get accent => _accent;
-  static Color get accentLight =>
-      HSLColor.fromColor(_accent).withSaturation(0.85).withLightness(0.93).toColor();
+  static Color get accentLight => HSLColor.fromColor(
+    _accent,
+  ).withSaturation(0.85).withLightness(0.93).toColor();
   static Color get accentMuted =>
       HSLColor.fromColor(_accent).withLightness(0.70).toColor();
   static Color get accentDark =>
@@ -88,8 +89,9 @@ abstract final class AppColors {
   static const Color sidebarBg = Color(0xFF08080A);
   static const Color sidebarBorder = Color(0xFF232329);
   static Color get sidebarActiveItem => _accent;
-  static Color get sidebarActiveItemBg =>
-      HSLColor.fromColor(_accent).withSaturation(0.55).withLightness(0.27).toColor();
+  static Color get sidebarActiveItemBg => HSLColor.fromColor(
+    _accent,
+  ).withSaturation(0.55).withLightness(0.27).toColor();
   static const Color sidebarText = Color(0xFF9CA3AF);
   static const Color sidebarTextActive = Color(0xFFFFFFFF);
 
@@ -100,10 +102,10 @@ abstract final class AppColors {
   static const Color codeBoxBorderDark = Color(0xFF2E2E35);
 
   // Glassmorphism surfaces
-  static const Color glassDark = Color(0x1AFFFFFF);   // 10% white
-  static const Color glassLight = Color(0xB3FFFFFF);  // 70% white
-  static const Color glassBorderDark = Color(0x33FFFFFF);   // 20% white
-  static const Color glassBorderLight = Color(0x80FFFFFF);  // 50% white
+  static const Color glassDark = Color(0x1AFFFFFF); // 10% white
+  static const Color glassLight = Color(0xB3FFFFFF); // 70% white
+  static const Color glassBorderDark = Color(0x33FFFFFF); // 20% white
+  static const Color glassBorderLight = Color(0x80FFFFFF); // 50% white
 
   // Gradient stops for the hero background — black in dark, neutral in light.
   static const List<Color> heroBgGradientDark = [

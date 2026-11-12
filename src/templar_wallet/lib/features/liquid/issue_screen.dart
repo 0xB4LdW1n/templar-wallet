@@ -126,7 +126,10 @@ class _IssueScreenState extends State<IssueScreen> {
     final supply = int.parse(_supplyController.text.trim());
     final precision = int.parse(_precisionController.text.trim());
 
-    setState(() { _error = null; _issuing = true; });
+    setState(() {
+      _error = null;
+      _issuing = true;
+    });
 
     try {
       final walletId = context.read<AppState>().activeWalletId ?? 'wallet-1';
@@ -142,15 +145,18 @@ class _IssueScreenState extends State<IssueScreen> {
       // Persist the full contract data locally (scoped to wallet) so the
       // registry submission can be rebuilt and retried later — e.g. from
       // Asset Operations — if the best-effort registration failed (offline).
-      IssuedAssetStore.instance.saveIssuedAsset(walletId, IssuedAssetEntry(
-        assetId: result.assetId,
-        name: name,
-        ticker: ticker,
-        tokenId: result.tokenId,
-        precision: precision,
-        domain: domain,
-        registered: result.registryRegistered,
-      ));
+      IssuedAssetStore.instance.saveIssuedAsset(
+        walletId,
+        IssuedAssetEntry(
+          assetId: result.assetId,
+          name: name,
+          ticker: ticker,
+          tokenId: result.tokenId,
+          precision: precision,
+          domain: domain,
+          registered: result.registryRegistered,
+        ),
+      );
       if (mounted) {
         setState(() {
           _result = result;
@@ -159,7 +165,12 @@ class _IssueScreenState extends State<IssueScreen> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() { _issuing = false; _error = e.toString(); });
+      if (mounted) {
+        setState(() {
+          _issuing = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -177,7 +188,10 @@ class _IssueScreenState extends State<IssueScreen> {
         domain: _domainController.text.trim(),
       );
       if (ok) {
-        await IssuedAssetStore.instance.markRegistered(walletId, result.assetId);
+        await IssuedAssetStore.instance.markRegistered(
+          walletId,
+          result.assetId,
+        );
       }
       if (mounted) {
         if (ok) {
@@ -195,9 +209,11 @@ class _IssueScreenState extends State<IssueScreen> {
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(ok
-                ? 'Registered successfully!'
-                : 'Registration failed — ensure domain proof file is live.'),
+            content: Text(
+              ok
+                  ? 'Registered successfully!'
+                  : 'Registration failed — ensure domain proof file is live.',
+            ),
             backgroundColor: ok ? AppColors.success : AppColors.danger,
           ),
         );
@@ -219,32 +235,34 @@ class _IssueScreenState extends State<IssueScreen> {
     return Scaffold(
       body: PageBackground.flat(
         child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: Padding(
-            padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_step < 4)
-                  StepHeader(
-                    currentStep: _step,
-                    totalSteps: _totalSteps,
-                    title: _stepTitle,
-                    subtitle: _stepSubtitle,
-                    onBack: _step > 1 ? () => setState(() => _step--) : null,
-                    onCancel: () => context.go(AppRoutes.liquid),
-                  )
-                else
-                  _ResultHeader(registered: _result?.registryRegistered ?? false),
-                const SizedBox(height: AppSpacing.xxl),
-                Expanded(child: _stepBody),
-                const SizedBox(height: AppSpacing.xl),
-                if (_step < 4) _buildNavButtons(),
-              ],
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Padding(
+              padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_step < 4)
+                    StepHeader(
+                      currentStep: _step,
+                      totalSteps: _totalSteps,
+                      title: _stepTitle,
+                      subtitle: _stepSubtitle,
+                      onBack: _step > 1 ? () => setState(() => _step--) : null,
+                      onCancel: () => context.go(AppRoutes.liquid),
+                    )
+                  else
+                    _ResultHeader(
+                      registered: _result?.registryRegistered ?? false,
+                    ),
+                  const SizedBox(height: AppSpacing.xxl),
+                  Expanded(child: _stepBody),
+                  const SizedBox(height: AppSpacing.xl),
+                  if (_step < 4) _buildNavButtons(),
+                ],
+              ),
             ),
           ),
-        ),
         ),
       ),
     );
@@ -255,7 +273,11 @@ class _IssueScreenState extends State<IssueScreen> {
       return Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          if (_step > 1) GhostButton(label: 'Back', onPressed: () => setState(() => _step--)),
+          if (_step > 1)
+            GhostButton(
+              label: 'Back',
+              onPressed: () => setState(() => _step--),
+            ),
           const SizedBox(width: AppSpacing.md),
           PrimaryButton(label: 'Continue', onPressed: _onNextStep),
         ],
@@ -268,11 +290,17 @@ class _IssueScreenState extends State<IssueScreen> {
         GhostButton(label: 'Back', onPressed: () => setState(() => _step--)),
         const SizedBox(width: AppSpacing.md),
         if (_issuing)
-          Row(children: [
-            const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-            const SizedBox(width: AppSpacing.md),
-            Text('Broadcasting…', style: AppTypography.caption),
-          ])
+          Row(
+            children: [
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Text('Broadcasting…', style: AppTypography.caption),
+            ],
+          )
         else
           PrimaryButton(label: 'Sign & Issue', onPressed: _onSignAndIssue),
       ],
@@ -289,52 +317,55 @@ class _IssueScreenState extends State<IssueScreen> {
       setState(() => _error = validationError);
       return;
     }
-    setState(() { _error = null; _step++; });
+    setState(() {
+      _error = null;
+      _step++;
+    });
   }
 
   String get _stepTitle => switch (_step) {
-        1 => 'Define asset',
-        2 => 'Initial supply',
-        3 => 'Review & sign',
-        _ => 'Asset issued',
-      };
+    1 => 'Define asset',
+    2 => 'Initial supply',
+    3 => 'Review & sign',
+    _ => 'Asset issued',
+  };
 
   String get _stepSubtitle => switch (_step) {
-        1 => 'Asset metadata is permanent and cannot be changed after issuance',
-        2 => 'Set the initial token supply delivered to this wallet',
-        3 => 'Review all details before broadcasting the issuance transaction',
-        _ => 'Asset has been issued on-chain',
-      };
+    1 => 'Asset metadata is permanent and cannot be changed after issuance',
+    2 => 'Set the initial token supply delivered to this wallet',
+    3 => 'Review all details before broadcasting the issuance transaction',
+    _ => 'Asset has been issued on-chain',
+  };
 
   Widget get _stepBody => switch (_step) {
-        1 => _Step1(
-            name: _nameController,
-            ticker: _tickerController,
-            precision: _precisionController,
-            domain: _domainController,
-            error: _error,
-          ),
-        2 => _Step2(
-            supply: _supplyController,
-            createToken: _createReissuanceToken,
-            onToggleToken: (v) => setState(() => _createReissuanceToken = v),
-            error: _error,
-          ),
-        3 => _Step3Review(
-            name: _nameController.text,
-            ticker: _tickerController.text,
-            precision: _precisionController.text,
-            domain: _domainController.text,
-            supply: _supplyController.text,
-            hasReissuanceToken: _createReissuanceToken,
-            error: _error,
-          ),
-        _ => _Step4Result(
-            result: _result!,
-            onReregister: _onReregister,
-            onDone: () => context.go(AppRoutes.liquid),
-          ),
-      };
+    1 => _Step1(
+      name: _nameController,
+      ticker: _tickerController,
+      precision: _precisionController,
+      domain: _domainController,
+      error: _error,
+    ),
+    2 => _Step2(
+      supply: _supplyController,
+      createToken: _createReissuanceToken,
+      onToggleToken: (v) => setState(() => _createReissuanceToken = v),
+      error: _error,
+    ),
+    3 => _Step3Review(
+      name: _nameController.text,
+      ticker: _tickerController.text,
+      precision: _precisionController.text,
+      domain: _domainController.text,
+      supply: _supplyController.text,
+      hasReissuanceToken: _createReissuanceToken,
+      error: _error,
+    ),
+    _ => _Step4Result(
+      result: _result!,
+      onReregister: _onReregister,
+      onDone: () => context.go(AppRoutes.liquid),
+    ),
+  };
 }
 
 class _ResultHeader extends StatelessWidget {
@@ -360,7 +391,10 @@ class _ResultHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Asset Issued', style: AppTypography.pageTitle),
-              Text('Asset has been broadcast on-chain', style: AppTypography.caption),
+              Text(
+                'Asset has been broadcast on-chain',
+                style: AppTypography.caption,
+              ),
             ],
           ),
         ),
@@ -399,18 +433,25 @@ class _Step1 extends StatelessWidget {
           title: 'Asset metadata',
           child: Column(
             children: [
-              TextField(controller: name, decoration: const InputDecoration(labelText: 'Token name')),
+              TextField(
+                controller: name,
+                decoration: const InputDecoration(labelText: 'Token name'),
+              ),
               const SizedBox(height: AppSpacing.lg),
               TextField(
                 controller: ticker,
                 decoration: const InputDecoration(
-                    labelText: 'Ticker symbol', hintText: 'e.g. MYTKN'),
+                  labelText: 'Ticker symbol',
+                  hintText: 'e.g. MYTKN',
+                ),
               ),
               const SizedBox(height: AppSpacing.lg),
               TextField(
                 controller: precision,
                 decoration: const InputDecoration(
-                    labelText: 'Precision', hintText: '0–8'),
+                  labelText: 'Precision',
+                  hintText: '0–8',
+                ),
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               ),
@@ -419,8 +460,10 @@ class _Step1 extends StatelessWidget {
                 controller: domain,
                 // The registry rejects uppercase domains — normalize as typed.
                 inputFormatters: [
-                  TextInputFormatter.withFunction((oldValue, newValue) =>
-                      newValue.copyWith(text: newValue.text.toLowerCase())),
+                  TextInputFormatter.withFunction(
+                    (oldValue, newValue) =>
+                        newValue.copyWith(text: newValue.text.toLowerCase()),
+                  ),
                 ],
                 decoration: const InputDecoration(
                   labelText: 'Domain',
@@ -463,7 +506,9 @@ class _Step2 extends StatelessWidget {
           title: 'Supply',
           child: TextField(
             controller: supply,
-            decoration: const InputDecoration(labelText: 'Initial supply (base units)'),
+            decoration: const InputDecoration(
+              labelText: 'Initial supply (base units)',
+            ),
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           ),
@@ -477,7 +522,8 @@ class _Step2 extends StatelessWidget {
               SwitchListTile(
                 title: const Text('Create reissuance token'),
                 subtitle: const Text(
-                    'Allows minting more supply in the future. Losing this token means no future reissuance.'),
+                  'Allows minting more supply in the future. Losing this token means no future reissuance.',
+                ),
                 value: createToken,
                 onChanged: onToggleToken,
                 contentPadding: EdgeInsets.zero,
@@ -485,8 +531,9 @@ class _Step2 extends StatelessWidget {
               ),
               if (!createToken)
                 const WarningBanner(
-                    message:
-                        'Without a reissuance token, the total supply is permanently fixed at issuance.'),
+                  message:
+                      'Without a reissuance token, the total supply is permanently fixed at issuance.',
+                ),
             ],
           ),
         ),
@@ -535,13 +582,33 @@ class _Step3Review extends StatelessWidget {
           rows: [
             (label: 'Operation', value: 'Issue', isMono: false),
             (label: 'Name', value: name.isEmpty ? '—' : name, isMono: false),
-            (label: 'Ticker', value: ticker.isEmpty ? '—' : ticker, isMono: false),
+            (
+              label: 'Ticker',
+              value: ticker.isEmpty ? '—' : ticker,
+              isMono: false,
+            ),
             (label: 'Precision', value: precision, isMono: false),
-            (label: 'Domain', value: domain.isEmpty ? '—' : domain, isMono: false),
-            (label: 'Initial supply', value: supply.isEmpty ? '—' : supply, isMono: false),
-            (label: 'Reissuance token', value: hasReissuanceToken ? 'Yes' : 'No', isMono: false),
+            (
+              label: 'Domain',
+              value: domain.isEmpty ? '—' : domain,
+              isMono: false,
+            ),
+            (
+              label: 'Initial supply',
+              value: supply.isEmpty ? '—' : supply,
+              isMono: false,
+            ),
+            (
+              label: 'Reissuance token',
+              value: hasReissuanceToken ? 'Yes' : 'No',
+              isMono: false,
+            ),
             (label: 'Contract hash', value: '(computed on sign)', isMono: true),
-            (label: 'Asset ID', value: '(derived after broadcast)', isMono: true),
+            (
+              label: 'Asset ID',
+              value: '(derived after broadcast)',
+              isMono: true,
+            ),
             (label: 'Network fee', value: '~500 sats', isMono: false),
           ],
         ),
@@ -568,8 +635,10 @@ class _InlineError extends StatelessWidget {
         color: AppColors.dangerLight,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
       ),
-      child: Text(message,
-          style: AppTypography.bodySmall.copyWith(color: AppColors.danger)),
+      child: Text(
+        message,
+        style: AppTypography.bodySmall.copyWith(color: AppColors.danger),
+      ),
     );
   }
 }
@@ -591,7 +660,9 @@ class _Step4Result extends StatelessWidget {
     return ListView(
       children: [
         if (result.registryRegistered)
-          const InfoBanner(message: 'Asset registered in the Liquid testnet explorer.')
+          const InfoBanner(
+            message: 'Asset registered in the Liquid testnet explorer.',
+          )
         else
           const WarningBanner(
             title: 'Domain proof required',
@@ -618,13 +689,17 @@ class _Step4Result extends StatelessWidget {
           const SizedBox(height: AppSpacing.xl),
           SectionCard(
             title: 'Domain proof',
-            subtitle: 'Create this file on your domain to register with the Liquid explorer',
+            subtitle:
+                'Create this file on your domain to register with the Liquid explorer',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 CodeBox(label: 'File URL', value: result.proofUrl),
                 const SizedBox(height: AppSpacing.lg),
-                CodeBox(label: 'File content (plain text, no extension)', value: result.proofContent),
+                CodeBox(
+                  label: 'File content (plain text, no extension)',
+                  value: result.proofContent,
+                ),
                 const SizedBox(height: AppSpacing.lg),
                 Text(
                   'GitHub Pages: add the file at .well-known/liquid-asset-proof-<asset_id> in your <username>.github.io repo. The registry verifies it automatically within ~5 minutes of the tx confirming.',
@@ -641,11 +716,7 @@ class _Step4Result extends StatelessWidget {
           ),
         ],
         const SizedBox(height: AppSpacing.xl),
-        PrimaryButton(
-          label: 'Done',
-          isFullWidth: true,
-          onPressed: onDone,
-        ),
+        PrimaryButton(label: 'Done', isFullWidth: true, onPressed: onDone),
       ],
     );
   }

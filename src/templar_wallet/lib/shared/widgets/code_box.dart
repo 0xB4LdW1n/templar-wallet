@@ -24,7 +24,8 @@ Future<void> showValueQr(
 }) {
   return showAppDialog<void>(
     context,
-    builder: (ctx) => ValueQrDialog(title: title, value: value, caption: caption),
+    builder: (ctx) =>
+        ValueQrDialog(title: title, value: value, caption: caption),
   );
 }
 
@@ -213,8 +214,9 @@ class _CodeBoxState extends State<CodeBox> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final phone = AppLayout.isPhone(context);
     final s = AppScheme.of(context);
-    final secondary =
-        isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
+    final secondary = isDark
+        ? AppColors.textSecondaryDark
+        : AppColors.textSecondary;
     final textStyle = AppTypography.monoSmall.copyWith(
       color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
     );
@@ -269,8 +271,9 @@ class _CodeBoxState extends State<CodeBox> {
                       alignment: Alignment.centerLeft,
                       child: Text(
                         _expanded ? 'Show less' : 'Show all',
-                        style: AppTypography.label
-                            .copyWith(color: AppColors.accent),
+                        style: AppTypography.label.copyWith(
+                          color: AppColors.accent,
+                        ),
                       ),
                     ),
                   ),
@@ -313,7 +316,11 @@ class _CodeBoxState extends State<CodeBox> {
           width: double.infinity,
           padding: phone
               ? const EdgeInsets.fromLTRB(
-                  AppSpacing.md, AppSpacing.md, AppSpacing.xs, AppSpacing.md)
+                  AppSpacing.md,
+                  AppSpacing.md,
+                  AppSpacing.xs,
+                  AppSpacing.md,
+                )
               : const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(
             // A phone reads a descriptor out of the same inset grey a field
@@ -418,8 +425,9 @@ class _CopyRowState extends State<CopyRow> {
     final labelStyle = AppTypography.bodySmall.copyWith(
       color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
     );
-    final valueStyle =
-        widget.mono ? AppTypography.monoSmall : AppTypography.bodySmall;
+    final valueStyle = widget.mono
+        ? AppTypography.monoSmall
+        : AppTypography.bodySmall;
     final iconColor = _copied
         ? AppColors.success
         : (isDark ? AppColors.textSecondaryDark : AppColors.textMuted);
@@ -433,8 +441,10 @@ class _CopyRowState extends State<CopyRow> {
           children: [
             Text(
               widget.label.toUpperCase(),
-              style: AppTypography.navSection
-                  .copyWith(letterSpacing: 1.3, color: s.inkFaint),
+              style: AppTypography.navSection.copyWith(
+                letterSpacing: 1.3,
+                color: s.inkFaint,
+              ),
             ),
             const SizedBox(height: 2),
             Row(
@@ -485,10 +495,7 @@ class _CopyRowState extends State<CopyRow> {
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Row(
         children: [
-          SizedBox(
-            width: 160,
-            child: Text(widget.label, style: labelStyle),
-          ),
+          SizedBox(width: 160, child: Text(widget.label, style: labelStyle)),
           Expanded(
             child: Text(
               widget.value,

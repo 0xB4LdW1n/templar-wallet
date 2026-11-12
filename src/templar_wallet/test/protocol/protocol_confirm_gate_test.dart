@@ -9,17 +9,22 @@ void main() {
   });
 
   Widget host(Widget child) => MaterialApp(
-        home: Scaffold(body: SizedBox(width: 600, child: child)),
-      );
+    home: Scaffold(body: SizedBox(width: 600, child: child)),
+  );
 
-  testWidgets('signing button stays disabled until the statement is ticked',
-      (tester) async {
+  testWidgets('signing button stays disabled until the statement is ticked', (
+    tester,
+  ) async {
     var confirmed = 0;
-    await tester.pumpWidget(host(ProtocolConfirmGate(
-      statement: 'I compared both views',
-      buttonLabel: 'Sign and send',
-      onConfirm: () => confirmed++,
-    )));
+    await tester.pumpWidget(
+      host(
+        ProtocolConfirmGate(
+          statement: 'I compared both views',
+          buttonLabel: 'Sign and send',
+          onConfirm: () => confirmed++,
+        ),
+      ),
+    );
 
     // Pressing the button before ticking does nothing.
     await tester.tap(find.byKey(const Key('protocol-confirm-button')));
@@ -42,12 +47,16 @@ void main() {
 
   testWidgets('a disabled gate never confirms', (tester) async {
     var confirmed = 0;
-    await tester.pumpWidget(host(ProtocolConfirmGate(
-      statement: 'Nothing to sign',
-      buttonLabel: 'Sign and send',
-      enabled: false,
-      onConfirm: () => confirmed++,
-    )));
+    await tester.pumpWidget(
+      host(
+        ProtocolConfirmGate(
+          statement: 'Nothing to sign',
+          buttonLabel: 'Sign and send',
+          enabled: false,
+          onConfirm: () => confirmed++,
+        ),
+      ),
+    );
     await tester.tap(find.byKey(const Key('protocol-confirm-checkbox')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('protocol-confirm-button')));
@@ -57,12 +66,16 @@ void main() {
 
   testWidgets('busy freezes the gate', (tester) async {
     var confirmed = 0;
-    await tester.pumpWidget(host(ProtocolConfirmGate(
-      statement: 'I compared both views',
-      buttonLabel: 'Sign and send',
-      busy: true,
-      onConfirm: () => confirmed++,
-    )));
+    await tester.pumpWidget(
+      host(
+        ProtocolConfirmGate(
+          statement: 'I compared both views',
+          buttonLabel: 'Sign and send',
+          busy: true,
+          onConfirm: () => confirmed++,
+        ),
+      ),
+    );
     await tester.tap(find.byKey(const Key('protocol-confirm-checkbox')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('protocol-confirm-button')));

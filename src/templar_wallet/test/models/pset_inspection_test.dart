@@ -38,8 +38,18 @@ void main() {
           },
         ],
         'outputs': [
-          {'index': 0, 'kind': 'escrow', 'script_type': 'p2wsh', 'amount_sats': 10},
-          {'index': 1, 'kind': 'own', 'script_type': 'p2wpkh', 'address': 'el1qq…'},
+          {
+            'index': 0,
+            'kind': 'escrow',
+            'script_type': 'p2wsh',
+            'amount_sats': 10,
+          },
+          {
+            'index': 1,
+            'kind': 'own',
+            'script_type': 'p2wpkh',
+            'address': 'el1qq…',
+          },
           {'index': 2, 'kind': 'fee', 'script_type': 'fee', 'amount_sats': 500},
         ],
       });
@@ -62,7 +72,12 @@ void main() {
         'fee_sats': 1,
         'fee_display': '1 sat',
         'recipients': [
-          {'address': 'tlq1…', 'asset_id': null, 'ticker': null, 'amount_sats': null}
+          {
+            'address': 'tlq1…',
+            'asset_id': null,
+            'ticker': null,
+            'amount_sats': null,
+          },
         ],
         'sigs_have': 1,
         'sigs_needed': 1,

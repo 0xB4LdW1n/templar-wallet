@@ -16,7 +16,8 @@ Map<String, dynamic> decode(String raw) =>
 
 void main() {
   test('decodes a two-chain history as serialized by wallet-ffi', () {
-    final h = BalanceHistory.fromJson(decode('''
+    final h = BalanceHistory.fromJson(
+      decode('''
       {
         "points": [
           {"ts": 1700000000, "btc_sats": 100000, "lbtc_sats": 0},
@@ -27,7 +28,8 @@ void main() {
         "has_bitcoin": true,
         "has_liquid": true
       }
-    '''));
+    '''),
+    );
 
     expect(h.points.length, 2);
     expect(h.btcSats, 100000);
@@ -37,8 +39,10 @@ void main() {
     expect(h.hasLiquid, isTrue);
 
     // `ts` is unix SECONDS on the wire; the model must widen it to millis.
-    expect(h.points.first.time,
-        DateTime.fromMillisecondsSinceEpoch(1700000000 * 1000));
+    expect(
+      h.points.first.time,
+      DateTime.fromMillisecondsSinceEpoch(1700000000 * 1000),
+    );
     expect(h.points.last.totalSats, 105000);
 
     // Ascending, and the last point agrees with the live balance — the two
@@ -51,10 +55,12 @@ void main() {
     // The handler emits this for a wallet whose tx listing failed or whose
     // transactions all net to zero. The chart must draw a flat line here, not
     // an empty state, so the balances have to survive the decode.
-    final h = BalanceHistory.fromJson(decode('''
+    final h = BalanceHistory.fromJson(
+      decode('''
       {"points": [], "btc_sats": 1234567, "lbtc_sats": 0,
        "has_bitcoin": true, "has_liquid": false}
-    '''));
+    '''),
+    );
 
     expect(h.points, isEmpty);
     expect(h.totalSats, 1234567);
@@ -63,11 +69,13 @@ void main() {
   });
 
   test('single point and single chain decode', () {
-    final h = BalanceHistory.fromJson(decode('''
+    final h = BalanceHistory.fromJson(
+      decode('''
       {"points": [{"ts": 1700000000, "btc_sats": 0, "lbtc_sats": 42}],
        "btc_sats": 0, "lbtc_sats": 42,
        "has_bitcoin": false, "has_liquid": true}
-    '''));
+    '''),
+    );
 
     expect(h.points.length, 1);
     expect(h.hasBitcoin, isFalse);
@@ -90,10 +98,12 @@ void main() {
 
   test('tolerates a negative or absent balance without throwing', () {
     // The handler floors at 0, but the model must not depend on that.
-    final h = BalanceHistory.fromJson(decode('''
+    final h = BalanceHistory.fromJson(
+      decode('''
       {"points": [{"ts": 0, "btc_sats": -1}],
        "btc_sats": -1, "has_liquid": true}
-    '''));
+    '''),
+    );
     expect(h.points.single.lbtcSats, 0);
     expect(h.lbtcSats, 0);
     expect(h.hasLiquid, isTrue);

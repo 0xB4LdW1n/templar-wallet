@@ -37,14 +37,20 @@ String swapError(Object e) =>
 
 /// Push the take flow for [proposalJson]. Resolves to the broadcast txid, or
 /// null when the user backed out.
-Future<String?> openTakeFlow(BuildContext context,
-    {required String proposalJson}) {
+Future<String?> openTakeFlow(
+  BuildContext context, {
+  required String proposalJson,
+}) {
   // Root navigator on a phone: the flow must cover the shell chrome.
-  return Navigator.of(context, rootNavigator: AppLayout.isPhone(context))
-      .push<String>(MaterialPageRoute(
-    fullscreenDialog: true,
-    builder: (_) => TakeFlowScreen(proposalJson: proposalJson),
-  ));
+  return Navigator.of(
+    context,
+    rootNavigator: AppLayout.isPhone(context),
+  ).push<String>(
+    MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => TakeFlowScreen(proposalJson: proposalJson),
+    ),
+  );
 }
 
 // ── Import proposal dialog (paste / file / scan) ──────────────────────────────
@@ -53,7 +59,8 @@ Future<String?> openTakeFlow(BuildContext context,
 /// QR. Returns the raw proposal JSON, or null when dismissed. Content is only
 /// sanity-checked here — the take flow's verify step does the real validation.
 Future<String?> showImportProposalDialog(BuildContext context) {
-  return showAppDialog<String>(context,
+  return showAppDialog<String>(
+    context,
     builder: (_) => const _ImportProposalDialog(),
   );
 }
@@ -81,8 +88,10 @@ class _ImportProposalDialogState extends State<_ImportProposalDialog> {
     try {
       final j = jsonDecode(trimmed);
       if (j is! Map<String, dynamic> || !j.containsKey('tx')) {
-        setState(() =>
-            _error = 'Not a LiquiDEX proposal (expected JSON with a "tx" field).');
+        setState(
+          () => _error =
+              'Not a LiquiDEX proposal (expected JSON with a "tx" field).',
+        );
         return;
       }
     } catch (_) {
@@ -175,7 +184,10 @@ class _ImportProposalDialogState extends State<_ImportProposalDialog> {
         ),
       ),
       actions: [
-        GhostButton(label: 'Cancel', onPressed: () => Navigator.of(context).pop()),
+        GhostButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
         PrimaryButton(
           label: 'Verify proposal',
           icon: Icons.arrow_forward,
@@ -226,8 +238,10 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
       _error = null;
     });
     try {
-      final analysis =
-          await _bridge.swapVerify(widget.proposalJson, deep: true);
+      final analysis = await _bridge.swapVerify(
+        widget.proposalJson,
+        deep: true,
+      );
       if (!mounted) return;
       setState(() {
         _analysis = analysis;
@@ -255,8 +269,10 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
       _error = null;
     });
     try {
-      final preview =
-          await _bridge.swapTakePreview(walletId, widget.proposalJson);
+      final preview = await _bridge.swapTakePreview(
+        walletId,
+        widget.proposalJson,
+      );
       if (!mounted) return;
       setState(() {
         _preview = preview;
@@ -276,7 +292,9 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
     final walletId = _walletId;
     if (preview == null || walletId == null) return;
 
-    final confirmed = await showAppDialog<bool>(context,
+    final confirmed =
+        await showAppDialog<bool>(
+          context,
           barrierDismissible: false,
           builder: (ctx) => _TakeConfirmDialog(preview: preview),
         ) ??
@@ -296,14 +314,16 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
       // post-broadcast background sync as the send flow.
       final appState = context.read<AppState>();
       appState.setSyncState(SyncState.syncing);
-      unawaited(_bridge
-          .syncWallet(walletId)
-          .then(appState.applySyncOutcomes)
-          .catchError((Object e) {
-        debugPrint('[swap] post-take sync failed: $e');
-        appState.setSyncState(SyncState.error);
-        appState.bumpSync();
-      }));
+      unawaited(
+        _bridge
+            .syncWallet(walletId)
+            .then(appState.applySyncOutcomes)
+            .catchError((Object e) {
+              debugPrint('[swap] post-take sync failed: $e');
+              appState.setSyncState(SyncState.error);
+              appState.bumpSync();
+            }),
+      );
 
       await showSwapSuccessDialog(
         context,
@@ -336,9 +356,9 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
       onBack: onVerify
           ? null
           : () => setState(() {
-                _step = 0;
-                _error = null;
-              }),
+              _step = 0;
+              _error = null;
+            }),
       onCancel: _taking ? null : () => Navigator.of(context).pop(),
       body: onVerify ? _verifyBody() : _previewBody(),
       actions: _actions(),
@@ -367,8 +387,9 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
           PrimaryButton(
             label: _taking ? 'Broadcasting…' : 'Take swap',
             icon: Icons.swap_horiz,
-            onPressed:
-                (_preview != null && !_previewing && !_taking) ? _confirmAndTake : null,
+            onPressed: (_preview != null && !_previewing && !_taking)
+                ? _confirmAndTake
+                : null,
           ),
       ],
     );
@@ -386,9 +407,10 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
             const Center(child: CircularProgressIndicator()),
             const SizedBox(height: AppSpacing.md),
             Center(
-              child: Text('Verifying proposal against Liquid testnet…',
-                  style:
-                      AppTypography.caption.copyWith(color: s.inkSecondary)),
+              child: Text(
+                'Verifying proposal against Liquid testnet…',
+                style: AppTypography.caption.copyWith(color: s.inkSecondary),
+              ),
             ),
           ],
         ),
@@ -404,7 +426,10 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: SecondaryButton(
-                label: 'Retry', icon: Icons.refresh, onPressed: _verify),
+              label: 'Retry',
+              icon: Icons.refresh,
+              onPressed: _verify,
+            ),
           ),
         ],
       );
@@ -416,7 +441,8 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
         if (!analysis.takeable) ...[
           DangerBanner(
             title: 'This order cannot be taken',
-            message: analysis.takeBlockReason ??
+            message:
+                analysis.takeBlockReason ??
                 'The proposal did not pass verification.',
           ),
           const SizedBox(height: AppSpacing.lg),
@@ -426,16 +452,22 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
           rail: s.liquid,
           child: Column(
             children: [
-              _legRow('Maker offers (you receive)', analysis.makerOffers,
-                  emphasize: true),
+              _legRow(
+                'Maker offers (you receive)',
+                analysis.makerOffers,
+                emphasize: true,
+              ),
               const SizedBox(height: AppSpacing.sm),
               _legRow('Maker wants (you pay)', analysis.makerWants),
               const SizedBox(height: AppSpacing.sm),
               Row(
                 children: [
-                  Text('Network',
-                      style: AppTypography.caption
-                          .copyWith(color: s.inkSecondary)),
+                  Text(
+                    'Network',
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
                   const Spacer(),
                   TagChip(
                     label: analysis.network,
@@ -484,19 +516,25 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
     final note = c.note ?? fallbackNote;
     return Container(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
       color: zebra ? s.zebra : Colors.transparent,
       child: Row(
         children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(width: AppSpacing.md),
           Expanded(
-            child: Text(c.displayName,
-                style: AppTypography.bodySmall.copyWith(color: s.ink)),
+            child: Text(
+              c.displayName,
+              style: AppTypography.bodySmall.copyWith(color: s.ink),
+            ),
           ),
           if (note != null)
-            Text(note,
-                style: AppTypography.caption.copyWith(color: s.inkSecondary)),
+            Text(
+              note,
+              style: AppTypography.caption.copyWith(color: s.inkSecondary),
+            ),
         ],
       ),
     );
@@ -514,9 +552,10 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
             const Center(child: CircularProgressIndicator()),
             const SizedBox(height: AppSpacing.md),
             Center(
-              child: Text('Building the taker transaction…',
-                  style:
-                      AppTypography.caption.copyWith(color: s.inkSecondary)),
+              child: Text(
+                'Building the taker transaction…',
+                style: AppTypography.caption.copyWith(color: s.inkSecondary),
+              ),
             ),
           ],
         ),
@@ -532,7 +571,10 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: SecondaryButton(
-                label: 'Retry', icon: Icons.refresh, onPressed: _loadPreview),
+              label: 'Retry',
+              icon: Icons.refresh,
+              onPressed: _loadPreview,
+            ),
           ),
         ],
       );
@@ -559,8 +601,10 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
               _kvLine('Network fee (paid by you)', preview.feeDisplay),
               for (final c in preview.change) ...[
                 const SizedBox(height: AppSpacing.xs),
-                _kvLine('Change (back to you)',
-                    '${c.displayAmount} ${c.ticker}'),
+                _kvLine(
+                  'Change (back to you)',
+                  '${c.displayAmount} ${c.ticker}',
+                ),
               ],
             ],
           ),
@@ -587,14 +631,18 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
         AssetLogo(ticker: leg.ticker, size: 22),
         const SizedBox(width: AppSpacing.sm),
         Expanded(
-          child: Text(label,
-              style: AppTypography.body.copyWith(color: s.inkSecondary)),
+          child: Text(
+            label,
+            style: AppTypography.body.copyWith(color: s.inkSecondary),
+          ),
         ),
         Text(
           '${leg.displayAmount} ${leg.ticker}',
           style: emphasize
-              ? AppTypography.numericLarge
-                  .copyWith(fontSize: 18, color: AppColors.accent)
+              ? AppTypography.numericLarge.copyWith(
+                  fontSize: 18,
+                  color: AppColors.accent,
+                )
               : AppTypography.numericSmall.copyWith(color: s.ink),
         ),
       ],
@@ -607,9 +655,13 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
       children: [
         Text(label, style: AppTypography.caption.copyWith(color: s.inkFaint)),
         const Spacer(),
-        Text(value,
-            style: AppTypography.monoSmall
-                .copyWith(color: s.ink, fontWeight: FontWeight.w600)),
+        Text(
+          value,
+          style: AppTypography.monoSmall.copyWith(
+            color: s.ink,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
     );
   }
@@ -642,11 +694,17 @@ class _TakeConfirmDialog extends StatelessWidget {
             DataWell(
               child: Column(
                 children: [
-                  _line(context, 'You receive',
-                      '${preview.youReceive.displayAmount} ${preview.youReceive.ticker}'),
+                  _line(
+                    context,
+                    'You receive',
+                    '${preview.youReceive.displayAmount} ${preview.youReceive.ticker}',
+                  ),
                   const SizedBox(height: AppSpacing.xs),
-                  _line(context, 'You pay',
-                      '${preview.youPay.displayAmount} ${preview.youPay.ticker}'),
+                  _line(
+                    context,
+                    'You pay',
+                    '${preview.youPay.displayAmount} ${preview.youPay.ticker}',
+                  ),
                   const SizedBox(height: AppSpacing.xs),
                   _line(context, 'Fee', preview.feeDisplay),
                 ],
@@ -664,7 +722,9 @@ class _TakeConfirmDialog extends StatelessWidget {
       ),
       actions: [
         GhostButton(
-            label: 'Back', onPressed: () => Navigator.of(context).pop(false)),
+          label: 'Back',
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
         PrimaryButton(
           label: 'Sign & broadcast swap',
           icon: Icons.send_rounded,
@@ -680,9 +740,13 @@ class _TakeConfirmDialog extends StatelessWidget {
       children: [
         Text(label, style: AppTypography.caption.copyWith(color: s.inkFaint)),
         const Spacer(),
-        Text(value,
-            style: AppTypography.monoSmall
-                .copyWith(color: s.ink, fontWeight: FontWeight.w600)),
+        Text(
+          value,
+          style: AppTypography.monoSmall.copyWith(
+            color: s.ink,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
     );
   }
@@ -698,7 +762,8 @@ Future<void> showSwapSuccessDialog(
   required SwapLeg youPay,
   required String feeDisplay,
 }) {
-  return showAppDialog<void>(context,
+  return showAppDialog<void>(
+    context,
     barrierDismissible: false,
     builder: (_) => _SwapSuccessDialog(
       txid: txid,
@@ -724,8 +789,9 @@ class _SwapSuccessDialog extends StatelessWidget {
 
   Future<void> _openExplorer(BuildContext context) async {
     final base = context.read<AppState>().liquidExplorerUrl;
-    final trimmed =
-        base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    final trimmed = base.endsWith('/')
+        ? base.substring(0, base.length - 1)
+        : base;
     final uri = Uri.parse('$trimmed/tx/$txid');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -758,17 +824,22 @@ class _SwapSuccessDialog extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: const Icon(Icons.swap_horiz_rounded,
-                        color: Colors.white, size: 32),
+                    child: const Icon(
+                      Icons.swap_horiz_rounded,
+                      color: Colors.white,
+                      size: 32,
+                    ),
                   ),
                 ),
               ),
               const SizedBox(height: AppSpacing.lg),
               Reveal(
                 delay: 1,
-                child: Text('Swap broadcast',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.pageTitle),
+                child: Text(
+                  'Swap broadcast',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.pageTitle,
+                ),
               ),
               const SizedBox(height: AppSpacing.xs),
               Reveal(
@@ -776,8 +847,9 @@ class _SwapSuccessDialog extends StatelessWidget {
                 child: Text(
                   'The atomic swap was signed and sent to the Liquid testnet.',
                   textAlign: TextAlign.center,
-                  style:
-                      AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+                  style: AppTypography.bodySmall.copyWith(
+                    color: s.inkSecondary,
+                  ),
                 ),
               ),
               const SizedBox(height: AppSpacing.xl),
@@ -786,11 +858,17 @@ class _SwapSuccessDialog extends StatelessWidget {
                 child: DataWell(
                   child: Column(
                     children: [
-                      _line(context, 'You receive',
-                          '${youReceive.displayAmount} ${youReceive.ticker}'),
+                      _line(
+                        context,
+                        'You receive',
+                        '${youReceive.displayAmount} ${youReceive.ticker}',
+                      ),
                       const SizedBox(height: AppSpacing.xs),
-                      _line(context, 'You pay',
-                          '${youPay.displayAmount} ${youPay.ticker}'),
+                      _line(
+                        context,
+                        'You pay',
+                        '${youPay.displayAmount} ${youPay.ticker}',
+                      ),
                       const SizedBox(height: AppSpacing.xs),
                       _line(context, 'Fee', feeDisplay),
                     ],
@@ -798,7 +876,10 @@ class _SwapSuccessDialog extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
-              Reveal(delay: 5, child: CodeBox(value: txid, label: 'TxID')),
+              Reveal(
+                delay: 5,
+                child: CodeBox(value: txid, label: 'TxID'),
+              ),
             ],
           ),
         ),
@@ -823,9 +904,13 @@ class _SwapSuccessDialog extends StatelessWidget {
       children: [
         Text(label, style: AppTypography.caption.copyWith(color: s.inkFaint)),
         const Spacer(),
-        Text(value,
-            style: AppTypography.monoSmall
-                .copyWith(color: s.ink, fontWeight: FontWeight.w600)),
+        Text(
+          value,
+          style: AppTypography.monoSmall.copyWith(
+            color: s.ink,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
     );
   }

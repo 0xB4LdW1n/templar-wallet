@@ -37,7 +37,7 @@ String liquidNetworkErrorText(Object e) =>
 
 /// Asks to move Liquid to [target] (`testnet` | `regtest`), then does it.
 ///
-/// [policyAsset] is the regtest L-BTC asset id and is ignored on testnet.
+/// [policyAsset] is the regtest LBTC asset id and is ignored on testnet.
 /// Returns null when the user cancels; otherwise the engine's new state and
 /// whether an open wallet was closed by the switch — the caller navigates on
 /// that, since a shell screen cannot keep showing another chain's balances.
@@ -57,16 +57,22 @@ Future<({LiquidNetworkInfo info, bool walletClosed})?> switchLiquidNetwork(
       title: 'Switch Liquid network to $target?',
       icon: Icons.swap_horiz,
       actions: [
-        SecondaryButton(label: 'Cancel', onPressed: () => Navigator.pop(ctx, false)),
-        PrimaryButton(label: 'Switch', onPressed: () => Navigator.pop(ctx, true)),
+        SecondaryButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.pop(ctx, false),
+        ),
+        PrimaryButton(
+          label: 'Switch',
+          onPressed: () => Navigator.pop(ctx, true),
+        ),
       ],
       child: Text(
         hasWallet
             ? 'The open wallet will be closed. Open it again and sync: its '
-                'Liquid balance and addresses belong to the $target chain from '
-                'then on. Bitcoin is not affected.'
+                  'Liquid balance and addresses belong to the $target chain from '
+                  'then on. Bitcoin is not affected.'
             : 'Every wallet you open will use the $target chain for Liquid '
-                'until you switch back. Bitcoin is not affected.',
+                  'until you switch back. Bitcoin is not affected.',
         style: AppTypography.body,
       ),
     ),
@@ -90,9 +96,11 @@ Future<({LiquidNetworkInfo info, bool walletClosed})?> switchLiquidNetwork(
   if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(hasWallet
-            ? 'Liquid network is now ${next.shortName}. Open your wallet and sync.'
-            : 'Liquid network is now ${next.shortName}.'),
+        content: Text(
+          hasWallet
+              ? 'Liquid network is now ${next.shortName}. Open your wallet and sync.'
+              : 'Liquid network is now ${next.shortName}.',
+        ),
         duration: const Duration(seconds: 4),
       ),
     );

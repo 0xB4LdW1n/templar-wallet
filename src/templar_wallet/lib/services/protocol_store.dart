@@ -43,8 +43,9 @@ class ProtocolStore {
     if (cached != null) return cached;
     final prefs = await SharedPreferences.getInstance();
     final out = _newestFirst(
-        _decode(prefs.getString(_sitesKey), ProtocolConnectedSite.fromJson),
-        (s) => s.connectedAt);
+      _decode(prefs.getString(_sitesKey), ProtocolConnectedSite.fromJson),
+      (s) => s.connectedAt,
+    );
     _sites = out;
     return out;
   }
@@ -77,8 +78,11 @@ class ProtocolStore {
   /// Stores (or replaces) the portfolio URL and token of a connected site —
   /// the `portfolio` object of a connect answer, or of the signed callback of
   /// a proof request (§7). A site that is not recorded is left alone.
-  Future<void> setPortfolio(String key,
-      {required String url, required String token}) async {
+  Future<void> setPortfolio(
+    String key, {
+    required String url,
+    required String token,
+  }) async {
     final all = [...await sites()];
     final i = all.indexWhere((s) => s.key == key);
     if (i < 0) return;
@@ -104,7 +108,9 @@ class ProtocolStore {
       return;
     }
     await prefs.setString(
-        _sitesKey, jsonEncode(all.map((s) => s.toJson()).toList()));
+      _sitesKey,
+      jsonEncode(all.map((s) => s.toJson()).toList()),
+    );
   }
 
   // ── Signing history ─────────────────────────────────────────────────────────
@@ -114,8 +120,9 @@ class ProtocolStore {
     if (cached != null) return cached;
     final prefs = await SharedPreferences.getInstance();
     final out = _newestFirst(
-        _decode(prefs.getString(_historyKey), ProtocolSignRecord.fromJson),
-        (r) => r.at);
+      _decode(prefs.getString(_historyKey), ProtocolSignRecord.fromJson),
+      (r) => r.at,
+    );
     _history = out.take(historyLimit).toList();
     return _history!;
   }
@@ -127,7 +134,9 @@ class ProtocolStore {
     _history = all;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-        _historyKey, jsonEncode(all.map((r) => r.toJson()).toList()));
+      _historyKey,
+      jsonEncode(all.map((r) => r.toJson()).toList()),
+    );
   }
 
   Future<void> clearHistory() async {
@@ -183,7 +192,10 @@ class ProtocolStore {
     return [for (final e in indexed) e.$2];
   }
 
-  static List<T> _decode<T>(String? raw, T? Function(Map<String, dynamic>) one) {
+  static List<T> _decode<T>(
+    String? raw,
+    T? Function(Map<String, dynamic>) one,
+  ) {
     if (raw == null || raw.isEmpty) return <T>[];
     try {
       final list = jsonDecode(raw);

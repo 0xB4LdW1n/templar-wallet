@@ -122,9 +122,12 @@ class AppState extends ChangeNotifier {
   static const _kFiatCurrency = 'pref_fiat_currency';
   static const _kBitcoinUnit = 'pref_bitcoin_unit';
   static const _kBalancesHidden = 'pref_balances_hidden';
-  static const _kLoansInMenu = 'pref_protocol_loans_in_menu';
+  static const _kLiquidDexEnabled = 'pref_advanced_liquiddex_enabled';
+  static const _kPegEnabled = 'pref_advanced_peg_enabled';
+  static const _kLoansEnabled = 'pref_advanced_loans_enabled';
   static const _kBtcExplorerDefault = 'https://mempool.space/testnet';
-  static const _kLiquidExplorerDefault = 'https://blockstream.info/liquidtestnet';
+  static const _kLiquidExplorerDefault =
+      'https://blockstream.info/liquidtestnet';
 
   /// Fiat currency used for value estimates (ISO code, e.g. 'USD', 'EUR').
   String _fiatCurrency = 'USD';
@@ -175,26 +178,46 @@ class AppState extends ChangeNotifier {
     await prefs.setBool(_kReduceEffects, value);
   }
 
-  /// Whether the Templar Protocol Loans page sits in the main navigation
-  /// (the sidebar, the phone carousel). Off by default: a wallet that takes
-  /// no part in loans has no use for the entry. Switched on from Settings ›
-  /// Templar Protocol, or with the checkbox a `templar://connect` offers.
-  /// The page itself stays reachable from Settings either way.
-  bool _loansInMenu = false;
-  bool get loansInMenu => _loansInMenu;
+  /// Optional wallet modules. They are deliberately off in a fresh install:
+  /// enabling one only reveals its UI; it never moves funds or changes keys.
+  bool _liquidDexEnabled = false;
+  bool get liquidDexEnabled => _liquidDexEnabled;
 
-  Future<void> setLoansInMenu(bool value) async {
-    if (_loansInMenu == value) return;
-    _loansInMenu = value;
+  bool _pegEnabled = false;
+  bool get pegEnabled => _pegEnabled;
+
+  bool _loansEnabled = false;
+  bool get loansEnabled => _loansEnabled;
+
+  Future<void> setLiquidDexEnabled(bool value) async {
+    if (_liquidDexEnabled == value) return;
+    _liquidDexEnabled = value;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kLoansInMenu, value);
+    await prefs.setBool(_kLiquidDexEnabled, value);
+  }
+
+  Future<void> setPegEnabled(bool value) async {
+    if (_pegEnabled == value) return;
+    _pegEnabled = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kPegEnabled, value);
+  }
+
+  Future<void> setLoansEnabled(bool value) async {
+    if (_loansEnabled == value) return;
+    _loansEnabled = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kLoansEnabled, value);
   }
 
   Future<void> loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     _btcExplorerUrl = prefs.getString(_kBtcExplorer) ?? _kBtcExplorerDefault;
-    _liquidExplorerUrl = prefs.getString(_kLiquidExplorer) ?? _kLiquidExplorerDefault;
+    _liquidExplorerUrl =
+        prefs.getString(_kLiquidExplorer) ?? _kLiquidExplorerDefault;
     // One-time migration: earlier builds saved mainnet explorer URLs. This build
     // is testnet-locked, so rewrite the stale defaults to their testnet paths.
     if (_btcExplorerUrl == 'https://mempool.space') {
@@ -211,7 +234,9 @@ class AppState extends ChangeNotifier {
     _fiatCurrency = prefs.getString(_kFiatCurrency) ?? 'USD';
     _bitcoinUnit = prefs.getString(_kBitcoinUnit) ?? 'btc';
     _balancesHidden = prefs.getBool(_kBalancesHidden) ?? false;
-    _loansInMenu = prefs.getBool(_kLoansInMenu) ?? false;
+    _liquidDexEnabled = prefs.getBool(_kLiquidDexEnabled) ?? false;
+    _pegEnabled = prefs.getBool(_kPegEnabled) ?? false;
+    _loansEnabled = prefs.getBool(_kLoansEnabled) ?? false;
     // Keep the price feed aligned with the saved currency.
     PriceService.instance.setCurrency(_fiatCurrency);
     notifyListeners();
@@ -261,16 +286,20 @@ class AppState extends ChangeNotifier {
   }
 
   void toggleTheme() {
-    _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    _themeMode = _themeMode == ThemeMode.dark
+        ? ThemeMode.light
+        : ThemeMode.dark;
     notifyListeners();
   }
 
-  void setActiveWallet(String? id,
-      {String? name,
-      String? type,
-      bool hwWatchOnly = false,
-      bool liquid = false,
-      bool bitcoin = true}) {
+  void setActiveWallet(
+    String? id, {
+    String? name,
+    String? type,
+    bool hwWatchOnly = false,
+    bool liquid = false,
+    bool bitcoin = true,
+  }) {
     if (_activeWalletId != id) {
       cachedDashboard = null;
       cachedTransactions = null;
@@ -297,14 +326,16 @@ class AppState extends ChangeNotifier {
   /// sync version either way so screens refresh. Shared by the shell footer
   /// and the post-broadcast background sync.
   void applySyncOutcomes(Map<String, String> outcomes) {
-    final attempted =
-        outcomes.entries.where((e) => e.value != 'skipped').toList();
+    final attempted = outcomes.entries
+        .where((e) => e.value != 'skipped')
+        .toList();
     final failed = attempted.where((e) => e.value != 'ok').toList();
     if (failed.isEmpty) {
       setSyncState(SyncState.synced);
     } else {
-      final detail =
-          failed.map((e) => '${_chainLabel(e.key)} sync failed').join(', ');
+      final detail = failed
+          .map((e) => '${_chainLabel(e.key)} sync failed')
+          .join(', ');
       setSyncState(
         failed.length < attempted.length ? SyncState.warning : SyncState.error,
         detail: detail,
@@ -314,10 +345,10 @@ class AppState extends ChangeNotifier {
   }
 
   static String _chainLabel(String key) => switch (key) {
-        'btc' => 'Bitcoin',
-        'liquid' => 'Liquid',
-        _ => key,
-      };
+    'btc' => 'Bitcoin',
+    'liquid' => 'Liquid',
+    _ => key,
+  };
 
   void bumpSync() {
     _syncVersion++;

@@ -13,6 +13,7 @@ import '../features/dashboard/models/balance_history.dart';
 import '../features/dashboard/models/dashboard_data.dart';
 import '../features/receive/models/address_info.dart';
 import '../features/history/models/transaction.dart';
+import '../features/history/models/fee_bump_preview.dart';
 import '../features/utxos/models/utxo.dart';
 import '../features/wallet_info/models/wallet_info.dart';
 import '../features/send/models/tx_preview.dart';
@@ -24,15 +25,41 @@ class MockWalletBridge implements WalletBridge {
   @override
   Future<List<String>> generateMnemonic(int wordCount) async {
     await Future.delayed(const Duration(milliseconds: 200));
-    const words = ['abandon', 'ability', 'able', 'about', 'above', 'absent',
-      'absorb', 'abstract', 'absurd', 'abuse', 'access', 'accident',
-      'account', 'accuse', 'achieve', 'acid', 'acoustic', 'acquire',
-      'across', 'act', 'action', 'actor', 'actress', 'actual'];
+    const words = [
+      'abandon',
+      'ability',
+      'able',
+      'about',
+      'above',
+      'absent',
+      'absorb',
+      'abstract',
+      'absurd',
+      'abuse',
+      'access',
+      'accident',
+      'account',
+      'accuse',
+      'achieve',
+      'acid',
+      'acoustic',
+      'acquire',
+      'across',
+      'act',
+      'action',
+      'actor',
+      'actress',
+      'actual',
+    ];
     return words.sublist(0, wordCount);
   }
 
   @override
-  Future<String> createWallet(String name, List<String> mnemonic, {bool liquid = false}) async {
+  Future<String> createWallet(
+    String name,
+    List<String> mnemonic, {
+    bool liquid = false,
+  }) async {
     await Future.delayed(const Duration(milliseconds: 300));
     return 'mock-wallet-${DateTime.now().millisecondsSinceEpoch}';
   }
@@ -99,7 +126,8 @@ class MockWalletBridge implements WalletBridge {
           isNative: true,
         ),
         AssetBalance(
-          assetId: '144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49',
+          assetId:
+              '144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49',
           ticker: 'LBTC',
           name: 'Liquid Bitcoin',
           amount: 500000,
@@ -110,7 +138,8 @@ class MockWalletBridge implements WalletBridge {
           isNative: false,
         ),
         AssetBalance(
-          assetId: 'b612eb46313a2cd6ebabd8b7a8eed5696e29898b87a43bff41c94f51acef9d73',
+          assetId:
+              'b612eb46313a2cd6ebabd8b7a8eed5696e29898b87a43bff41c94f51acef9d73',
           ticker: 'USDT',
           name: 'Tether USD (Liquid)',
           amount: 100000000,
@@ -123,7 +152,8 @@ class MockWalletBridge implements WalletBridge {
       ],
       recentActivity: [
         RecentActivityItem(
-          txid: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+          txid:
+              'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
           direction: 'incoming',
           chain: 'bitcoin',
           amount: '+0.005 BTC',
@@ -133,7 +163,8 @@ class MockWalletBridge implements WalletBridge {
           counterparty: 'tb1q…4x2p',
         ),
         RecentActivityItem(
-          txid: '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+          txid:
+              '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
           direction: 'outgoing',
           chain: 'bitcoin',
           amount: '-0.001 BTC',
@@ -143,7 +174,8 @@ class MockWalletBridge implements WalletBridge {
           note: 'Coffee',
         ),
         RecentActivityItem(
-          txid: 'fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321',
+          txid:
+              'fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321',
           direction: 'incoming',
           chain: 'liquid',
           amount: '+100 USDT',
@@ -159,8 +191,11 @@ class MockWalletBridge implements WalletBridge {
   int _mockAddressIndex = 5;
 
   @override
-  Future<AddressInfo> generateReceiveAddress(String walletId, String asset,
-      {bool fresh = false}) async {
+  Future<AddressInfo> generateReceiveAddress(
+    String walletId,
+    String asset, {
+    bool fresh = false,
+  }) async {
     await Future.delayed(const Duration(milliseconds: 300));
     final isLiquid = asset == 'LBTC' || asset == 'L-BTC' || asset == 'liquid';
     if (isLiquid) {
@@ -176,7 +211,8 @@ class MockWalletBridge implements WalletBridge {
     if (fresh) _mockAddressIndex++;
     final i = _mockAddressIndex;
     return AddressInfo(
-      address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjz${i.toString().padLeft(2, '0')}',
+      address:
+          'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjz${i.toString().padLeft(2, '0')}',
       index: i,
       asset: 'BTC',
       derivationPath: "m/84'/1'/0'/0/$i",
@@ -184,7 +220,10 @@ class MockWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<List<AddressInfo>> listPreviousAddresses(String walletId, String asset) async {
+  Future<List<AddressInfo>> listPreviousAddresses(
+    String walletId,
+    String asset,
+  ) async {
     await Future.delayed(const Duration(milliseconds: 300));
     return [
       AddressInfo(
@@ -211,11 +250,34 @@ class MockWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<List<Transaction>> listActivity(String walletId, {String? chain, String? asset}) async {
+  Future<List<Transaction>> listActivity(
+    String walletId, {
+    String? chain,
+    String? asset,
+  }) async {
     await Future.delayed(const Duration(milliseconds: 400));
     return [
       Transaction(
-        txid: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+        txid:
+            '9999999999999999999999999999999999999999999999999999999999999999',
+        direction: TxDirection.outgoing,
+        chain: TxChain.bitcoin,
+        amount: '-0.0004 BTC',
+        ticker: 'BTC',
+        timestamp: DateTime.now(),
+        confirmations: 0,
+        fee: '141 sats',
+        feeSats: 141,
+        feeRate: 1,
+        vsize: 141,
+        isReplaceable: true,
+        canRbf: true,
+        canCpfp: true,
+        canCancel: true,
+      ),
+      Transaction(
+        txid:
+            'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
         direction: TxDirection.incoming,
         chain: TxChain.bitcoin,
         amount: '+0.005 BTC',
@@ -227,7 +289,8 @@ class MockWalletBridge implements WalletBridge {
         fiatEstimate: '+\$485.00',
       ),
       Transaction(
-        txid: '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+        txid:
+            '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
         direction: TxDirection.outgoing,
         chain: TxChain.bitcoin,
         amount: '-0.001 BTC',
@@ -239,7 +302,8 @@ class MockWalletBridge implements WalletBridge {
         fiatEstimate: '-\$97.00',
       ),
       Transaction(
-        txid: 'fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321',
+        txid:
+            'fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321',
         direction: TxDirection.incoming,
         chain: TxChain.liquid,
         amount: '+100 USDT',
@@ -249,6 +313,37 @@ class MockWalletBridge implements WalletBridge {
         fee: '100 sats',
       ),
     ];
+  }
+
+  @override
+  Future<FeeBumpPreview> previewFeeBump({
+    required String walletId,
+    required String txid,
+    required String action,
+    required String method,
+    required double feeRate,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 250));
+    final resolved = action == 'cancel'
+        ? 'cancel'
+        : method == 'cpfp'
+        ? 'cpfp'
+        : 'rbf';
+    final cpfp = resolved == 'cpfp';
+    return FeeBumpPreview(
+      method: resolved,
+      originalTxid: txid,
+      psbtBase64: 'cHNidP8BAAoCAAAAAQ==',
+      oldFeeSats: 141,
+      oldFeeRate: 1,
+      oldVsize: 141,
+      newFeeSats: cpfp ? 1000 : 1128,
+      newFeeRate: 8,
+      newVsize: cpfp ? 125 : 141,
+      extraFeeSats: cpfp ? 1000 : 987,
+      effectiveFeeRate: 8,
+      totalFeeSats: cpfp ? 1141 : 1128,
+    );
   }
 
   /// Coins frozen in this session — the engine keeps them on the registry
@@ -277,7 +372,8 @@ class MockWalletBridge implements WalletBridge {
 
   static const List<Utxo> _mockUtxos = [
     Utxo(
-      outpoint: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890:0',
+      outpoint:
+          'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890:0',
       amount: 900000,
       displayAmount: '0.009 BTC',
       confirmations: 6,
@@ -285,7 +381,8 @@ class MockWalletBridge implements WalletBridge {
       address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
     ),
     Utxo(
-      outpoint: '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef:1',
+      outpoint:
+          '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef:1',
       amount: 334567,
       displayAmount: '0.00334567 BTC',
       confirmations: 144,
@@ -294,7 +391,8 @@ class MockWalletBridge implements WalletBridge {
       address: 'tb1qrp33g0q5c5txsp9arfj2k5eer7t5d5uu9r6zx3',
     ),
     Utxo(
-      outpoint: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef:0',
+      outpoint:
+          'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef:0',
       amount: 546,
       displayAmount: '546 sats',
       confirmations: 12,
@@ -304,7 +402,8 @@ class MockWalletBridge implements WalletBridge {
     // A payment still in the mempool: the grey provisional note, so the
     // pending shape can be checked without waiting on a faucet.
     Utxo(
-      outpoint: 'cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe:1',
+      outpoint:
+          'cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe:1',
       amount: 150000,
       displayAmount: '0.0015 BTC',
       confirmations: 0,
@@ -348,10 +447,14 @@ class MockWalletBridge implements WalletBridge {
       masterFingerprint: 'deadbeef',
       derivationPath: "m/84'/1'/0'",
       scriptType: 'P2WPKH (Native SegWit)',
-      xpub: 'tpubDC7KMhGhFE2MhAJXrWMxumRnpFDqgtQQiQSFLGCaAk5CW8BQBuNr7PKRqNGV1ZB6qKP3zERkHV7DGUzPMDQc2y4kF7K8UrHeRfFXWkHPPjE',
-      receiveDescriptor: 'wpkh([deadbeef/84h/1h/0h]tpubDC7KMhGhFE2MhAJXrWMxumRnpFDqgtQQiQSFLGCaAk5CW8BQBuNr7PKRqNGV1ZB6qKP3zERkHV7DGUzPMDQc2y4kF7K8UrHeRfFXWkHPPjE/0/*)',
-      changeDescriptor: 'wpkh([deadbeef/84h/1h/0h]tpubDC7KMhGhFE2MhAJXrWMxumRnpFDqgtQQiQSFLGCaAk5CW8BQBuNr7PKRqNGV1ZB6qKP3zERkHV7DGUzPMDQc2y4kF7K8UrHeRfFXWkHPPjE/1/*)',
-      multipathDescriptor: 'wpkh([deadbeef/84h/1h/0h]tpubDC7KMhGhFE2MhAJXrWMxumRnpFDqgtQQiQSFLGCaAk5CW8BQBuNr7PKRqNGV1ZB6qKP3zERkHV7DGUzPMDQc2y4kF7K8UrHeRfFXWkHPPjE/<0;1>/*)',
+      xpub:
+          'tpubDC7KMhGhFE2MhAJXrWMxumRnpFDqgtQQiQSFLGCaAk5CW8BQBuNr7PKRqNGV1ZB6qKP3zERkHV7DGUzPMDQc2y4kF7K8UrHeRfFXWkHPPjE',
+      receiveDescriptor:
+          'wpkh([deadbeef/84h/1h/0h]tpubDC7KMhGhFE2MhAJXrWMxumRnpFDqgtQQiQSFLGCaAk5CW8BQBuNr7PKRqNGV1ZB6qKP3zERkHV7DGUzPMDQc2y4kF7K8UrHeRfFXWkHPPjE/0/*)',
+      changeDescriptor:
+          'wpkh([deadbeef/84h/1h/0h]tpubDC7KMhGhFE2MhAJXrWMxumRnpFDqgtQQiQSFLGCaAk5CW8BQBuNr7PKRqNGV1ZB6qKP3zERkHV7DGUzPMDQc2y4kF7K8UrHeRfFXWkHPPjE/1/*)',
+      multipathDescriptor:
+          'wpkh([deadbeef/84h/1h/0h]tpubDC7KMhGhFE2MhAJXrWMxumRnpFDqgtQQiQSFLGCaAk5CW8BQBuNr7PKRqNGV1ZB6qKP3zERkHV7DGUzPMDQc2y4kF7K8UrHeRfFXWkHPPjE/<0;1>/*)',
       hasSeed: true,
       hasPassphrase: false,
       lastBackupAt: DateTime.now().subtract(const Duration(days: 5)),
@@ -367,8 +470,15 @@ class MockWalletBridge implements WalletBridge {
     const days = 60;
     const btcNow = 1234567;
     const lbtcNow = 500000;
-    final btcWalk = _mockWalk(walletId.hashCode ^ 0xB7C, days + 1, const [11, 29, 47]);
-    final lbtcWalk = _mockWalk(walletId.hashCode ^ 0x1B7C, days + 1, const [19, 44]);
+    final btcWalk = _mockWalk(walletId.hashCode ^ 0xB7C, days + 1, const [
+      11,
+      29,
+      47,
+    ]);
+    final lbtcWalk = _mockWalk(walletId.hashCode ^ 0x1B7C, days + 1, const [
+      19,
+      44,
+    ]);
     final now = DateTime.now();
     return BalanceHistory(
       points: [
@@ -511,7 +621,8 @@ class MockWalletBridge implements WalletBridge {
     required int reissuanceTokens,
   }) async {
     await Future.delayed(const Duration(seconds: 2));
-    const assetId = 'abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234';
+    const assetId =
+        'abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234';
     return IssueResult(
       assetId: assetId,
       tokenId: reissuanceTokens > 0
@@ -578,13 +689,12 @@ class MockWalletBridge implements WalletBridge {
     String ticker,
     int amountSats,
     String displayAmount,
-  ) =>
-      {
-        'asset_id': assetId,
-        'ticker': ticker,
-        'amount_sats': amountSats,
-        'display_amount': displayAmount,
-      };
+  ) => {
+    'asset_id': assetId,
+    'ticker': ticker,
+    'amount_sats': amountSats,
+    'display_amount': displayAmount,
+  };
 
   static Map<String, dynamic> _cannedAnalysisJson({required bool deep}) {
     final chainOk = deep ? true : null;
@@ -600,12 +710,13 @@ class MockWalletBridge implements WalletBridge {
         {'name': 'signature', 'ok': chainOk, 'note': chainNote},
       ],
       'maker_offers': _leg(_usdtTestnet, 'USDT', 500000000, '5.00'),
-      'maker_wants': _leg(_lbtcTestnet, 'L-BTC', 5000, '0.00005000'),
+      'maker_wants': _leg(_lbtcTestnet, 'LBTC', 5000, '0.00005000'),
       'network': 'testnet',
       // The engine only grants takeability after deep (chain) verification.
       'takeable': deep,
-      'take_block_reason':
-          deep ? null : 'deep (chain) verification required before taking',
+      'take_block_reason': deep
+          ? null
+          : 'deep (chain) verification required before taking',
     };
   }
 
@@ -617,9 +728,9 @@ class MockWalletBridge implements WalletBridge {
         'id': 101,
         'available': true,
         'receive': _leg(_usdtTestnet, 'USDT', 500000000, '5.00'),
-        'pay': _leg(_lbtcTestnet, 'L-BTC', 5000, '0.00005000'),
+        'pay': _leg(_lbtcTestnet, 'LBTC', 5000, '0.00005000'),
         'price': 0.00001,
-        'price_display': '0.00001000 L-BTC/USDT',
+        'price_display': '0.00001000 LBTC/USDT',
         'created': 'Mon, 03 Aug 2026 10:15:00 GMT',
         'verified': true,
         'verify_note': null,
@@ -632,13 +743,14 @@ class MockWalletBridge implements WalletBridge {
         'id': 13,
         'available': true,
         'receive': _leg(_dbeerMainnet, 'DBEER', 1000, '10.00'),
-        'pay': _leg(_lbtcMainnet, 'L-BTC', 1000, '0.00001000'),
+        'pay': _leg(_lbtcMainnet, 'LBTC', 1000, '0.00001000'),
         'price': 1.0,
-        'price_display': '1.00000000 L-BTC/DBEER',
+        'price_display': '1.00000000 LBTC/DBEER',
         'created': 'Wed, 09 Jun 2021 16:37:38 GMT',
         'verified': true,
         'verify_note': null,
-        'proposal_json': '{"version":0,"tx":"0200…mock","inputs":[],"outputs":[]}',
+        'proposal_json':
+            '{"version":0,"tx":"0200…mock","inputs":[],"outputs":[]}',
         'network': 'mainnet',
         'takeable': false,
         'kind': 'swap',
@@ -646,14 +758,15 @@ class MockWalletBridge implements WalletBridge {
       SwapOffer.fromJson({
         'id': 12,
         'available': false,
-        'receive': _leg(_lbtcMainnet, 'L-BTC', 50000, '0.00050000'),
+        'receive': _leg(_lbtcMainnet, 'LBTC', 50000, '0.00050000'),
         'pay': _leg(_dbeerMainnet, 'DBEER', 5200, '52.00'),
         'price': 9.6,
-        'price_display': '9.60 DBEER/L-BTC',
+        'price_display': '9.60 DBEER/LBTC',
         'created': 'Sun, 14 Jun 2026 09:30:00 GMT',
         'verified': true,
         'verify_note': null,
-        'proposal_json': '{"version":0,"tx":"0200…mock2","inputs":[],"outputs":[]}',
+        'proposal_json':
+            '{"version":0,"tx":"0200…mock2","inputs":[],"outputs":[]}',
         'network': 'mainnet',
         'takeable': false,
         'kind': 'swap',
@@ -665,38 +778,163 @@ class MockWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<SwapAnalysis> swapVerify(String proposalJson, {bool deep = false}) async {
+  Future<List<MarketOffer>> listMarkets({
+    bool includeUnavailable = false,
+  }) async {
+    await Future.delayed(const Duration(milliseconds: 350));
+    final offers = [
+      MarketOffer.fromJson({
+        'id': 'liquid:101',
+        'source_id': 101,
+        'status': 'open',
+        'settlement': 'liquidex-v0',
+        'demo': false,
+        'available': true,
+        'maker_gives': {
+          'chain': 'liquid',
+          'network': 'liquid-testnet',
+          'asset_id': _usdtTestnet,
+          'ticker': 'USDT',
+          'name': 'Tether USD',
+          'precision': 8,
+          'amount_sats': 500000000,
+          'display_amount': '5.00',
+        },
+        'maker_wants': {
+          'chain': 'liquid',
+          'network': 'liquid-testnet',
+          'asset_id': _lbtcTestnet,
+          'ticker': 'LBTC',
+          'name': 'Liquid Bitcoin',
+          'precision': 8,
+          'amount_sats': 5000,
+          'display_amount': '0.00005000',
+        },
+        'price_display': '0.00001000 LBTC/USDT',
+        'note': 'Verified local LiquiDEX offer',
+        'created_at': 1785752100,
+        'proposal_json': _testnetProposalJson,
+        'verified': true,
+        'takeable': true,
+        'block_reason': null,
+      }),
+      MarketOffer.fromJson({
+        'id': 'demo:1',
+        'source_id': 1,
+        'status': 'open',
+        'settlement': 'htlc-demo',
+        'demo': true,
+        'available': true,
+        'maker_gives': {
+          'chain': 'bitcoin',
+          'network': 'bitcoin-testnet',
+          'asset_id': 'btc',
+          'ticker': 'BTC',
+          'name': 'Bitcoin',
+          'precision': 8,
+          'amount_sats': 120000,
+          'display_amount': '0.00120000',
+        },
+        'maker_wants': {
+          'chain': 'liquid',
+          'network': 'liquid-testnet',
+          'asset_id': _usdtTestnet,
+          'ticker': 'USDT',
+          'name': 'Tether USD',
+          'precision': 8,
+          'amount_sats': 12000000000,
+          'display_amount': '120.00',
+        },
+        'price_display': '100000.00 USDT/BTC',
+        'note': 'Cross-chain experience preview',
+        'created_at': 1785753100,
+        'proposal_json': '',
+        'verified': false,
+        'takeable': false,
+        'block_reason':
+            'HTLC settlement is intentionally disabled in this UI/UX demo build',
+      }),
+      MarketOffer.fromJson({
+        'id': 'demo:2',
+        'source_id': 2,
+        'status': 'open',
+        'settlement': 'htlc-demo',
+        'demo': true,
+        'available': true,
+        'maker_gives': {
+          'chain': 'liquid',
+          'network': 'liquid-testnet',
+          'asset_id': _lbtcTestnet,
+          'ticker': 'LBTC',
+          'name': 'Liquid Bitcoin',
+          'precision': 8,
+          'amount_sats': 250000,
+          'display_amount': '0.00250000',
+        },
+        'maker_wants': {
+          'chain': 'bitcoin',
+          'network': 'bitcoin-testnet',
+          'asset_id': 'btc',
+          'ticker': 'BTC',
+          'name': 'Bitcoin',
+          'precision': 8,
+          'amount_sats': 245000,
+          'display_amount': '0.00245000',
+        },
+        'price_display': '0.98 BTC/LBTC',
+        'note': 'Two-chain atomic path preview',
+        'created_at': 1785754100,
+        'proposal_json': '',
+        'verified': false,
+        'takeable': false,
+        'block_reason':
+            'HTLC settlement is intentionally disabled in this UI/UX demo build',
+      }),
+    ];
+    return includeUnavailable
+        ? offers
+        : offers.where((offer) => offer.available).toList();
+  }
+
+  @override
+  Future<SwapAnalysis> swapVerify(
+    String proposalJson, {
+    bool deep = false,
+  }) async {
     await Future.delayed(Duration(milliseconds: deep ? 900 : 250));
     return SwapAnalysis.fromJson(_cannedAnalysisJson(deep: deep));
   }
 
   @override
-  Future<SwapTakePreview> swapTakePreview(String walletId, String proposalJson,
-      {double? feeRate}) async {
+  Future<SwapTakePreview> swapTakePreview(
+    String walletId,
+    String proposalJson, {
+    double? feeRate,
+  }) async {
     await Future.delayed(const Duration(milliseconds: 900));
     return SwapTakePreview.fromJson({
       'you_receive': _leg(_usdtTestnet, 'USDT', 500000000, '5.00'),
-      'you_pay': _leg(_lbtcTestnet, 'L-BTC', 5000, '0.00005000'),
+      'you_pay': _leg(_lbtcTestnet, 'LBTC', 5000, '0.00005000'),
       'fee_sats': 273,
       'fee_display': '273 sats',
-      'change': [
-        _leg(_lbtcTestnet, 'L-BTC', 94727, '0.00094727'),
-      ],
+      'change': [_leg(_lbtcTestnet, 'LBTC', 94727, '0.00094727')],
       'analysis': _cannedAnalysisJson(deep: true),
     });
   }
 
   @override
-  Future<String> swapTake(String walletId, String proposalJson,
-      {double? feeRate}) async {
+  Future<String> swapTake(
+    String walletId,
+    String proposalJson, {
+    double? feeRate,
+  }) async {
     await Future.delayed(const Duration(seconds: 1));
     return 'mock_swap_txid_${DateTime.now().millisecondsSinceEpoch}';
   }
 
-  static String _hex8() =>
-      (DateTime.now().microsecondsSinceEpoch & 0xffffffff)
-          .toRadixString(16)
-          .padLeft(8, '0');
+  static String _hex8() => (DateTime.now().microsecondsSinceEpoch & 0xffffffff)
+      .toRadixString(16)
+      .padLeft(8, '0');
 
   static int _nowSecs() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
@@ -706,7 +944,7 @@ class MockWalletBridge implements WalletBridge {
       'kind': 'swap',
       'status': 'open',
       'created_at': _nowSecs() - 10800,
-      'offers': _leg(_lbtcTestnet, 'L-BTC', 25000, '0.00025000'),
+      'offers': _leg(_lbtcTestnet, 'LBTC', 25000, '0.00025000'),
       'wants': _leg(_usdtTestnet, 'USDT', 2500000000, '25.00'),
       'proposal_json': _testnetProposalJson,
       'utxo':
@@ -715,10 +953,14 @@ class MockWalletBridge implements WalletBridge {
   ];
 
   @override
-  Future<MyOffer> swapMake(String walletId, String utxo, String wantAssetId,
-      int wantAmountSats) async {
+  Future<MyOffer> swapMake(
+    String walletId,
+    String utxo,
+    String wantAssetId,
+    int wantAmountSats,
+  ) async {
     await Future.delayed(const Duration(milliseconds: 700));
-    final wantTicker = wantAssetId == _lbtcTestnet ? 'L-BTC' : 'USDT';
+    final wantTicker = wantAssetId == _lbtcTestnet ? 'LBTC' : 'USDT';
     final wantDisplay = wantAssetId == _lbtcTestnet
         ? (wantAmountSats / 1e8).toStringAsFixed(8)
         : (wantAmountSats / 1e8).toStringAsFixed(2);
@@ -727,7 +969,7 @@ class MockWalletBridge implements WalletBridge {
       'kind': 'swap',
       'status': 'open',
       'created_at': _nowSecs(),
-      'offers': _leg(_lbtcTestnet, 'L-BTC', 10000, '0.00010000'),
+      'offers': _leg(_lbtcTestnet, 'LBTC', 10000, '0.00010000'),
       'wants': _leg(wantAssetId, wantTicker, wantAmountSats, wantDisplay),
       'proposal_json': _testnetProposalJson,
       'utxo': utxo,
@@ -737,10 +979,20 @@ class MockWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<String> swapMakePrepare(String walletId, String assetId, int amountSats,
-      {double? feeRate}) async {
+  Future<String> swapMakePrepare(
+    String walletId,
+    String assetId,
+    int amountSats, {
+    double? feeRate,
+  }) async {
     await Future.delayed(const Duration(seconds: 1));
     return 'mock_prepare_txid_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  @override
+  Future<int> swapPublish(String proposalJson, {String note = ''}) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    return 1;
   }
 
   @override
@@ -762,6 +1014,34 @@ class MockWalletBridge implements WalletBridge {
     offer['status'] = 'cancelled';
     return 'mock_cancel_txid_${DateTime.now().millisecondsSinceEpoch}';
   }
+
+  @override
+  Future<AtomicSwap> atomicSwapCreate({
+    required String walletId,
+    required String direction,
+    required int btcAmountSats,
+    required String liquidAssetId,
+    required String liquidTicker,
+    required String liquidName,
+    required int liquidPrecision,
+    required int liquidAmountSats,
+    String note = '',
+  }) async =>
+      throw UnimplementedError('Atomic swaps require the native engine');
+  @override
+  Future<AtomicSwap> atomicSwapJoin(String walletId, int offerId) async =>
+      throw UnimplementedError('Atomic swaps require the native engine');
+  @override
+  Future<List<AtomicSwap>> atomicSwapList(String walletId) async => const [];
+  @override
+  Future<AtomicSwap> atomicSwapFund(String walletId, int offerId) async =>
+      throw UnimplementedError('Atomic swaps require the native engine');
+  @override
+  Future<AtomicSwap> atomicSwapClaim(String walletId, int offerId) async =>
+      throw UnimplementedError('Atomic swaps require the native engine');
+  @override
+  Future<AtomicSwap> atomicSwapRefund(String walletId, int offerId) async =>
+      throw UnimplementedError('Atomic swaps require the native engine');
 
   // ── Peg (mock, simulated provider) ────────────────────────────────────────
 
@@ -807,8 +1087,12 @@ class MockWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<PegOrder> pegStart(String walletId, String direction, int amountSats,
-      String payoutAddress) async {
+  Future<PegOrder> pegStart(
+    String walletId,
+    String direction,
+    int amountSats,
+    String payoutAddress,
+  ) async {
     await Future.delayed(const Duration(milliseconds: 500));
     // Same limit checks the Rust provider applies via quote().
     if (amountSats < _pegMinSats) {
@@ -825,8 +1109,9 @@ class MockWalletBridge implements WalletBridge {
       'wallet_id': walletId,
       'direction': direction,
       'status': 'awaiting_deposit',
-      'deposit_address':
-          direction == 'in' ? _pegInDepositAddr : _pegOutDepositAddr,
+      'deposit_address': direction == 'in'
+          ? _pegInDepositAddr
+          : _pegOutDepositAddr,
       'deposit_expected_sats': amountSats,
       'payout_address': payoutAddress,
       'payout_expected_sats': receive,
@@ -857,8 +1142,8 @@ class MockWalletBridge implements WalletBridge {
     if (status == 'cancelled' || status == 'completed') return;
     final created = order['created_at'] as int;
     final elapsed = _nowSecs() - created;
-    final history =
-        (order['status_history'] as List).cast<Map<String, dynamic>>();
+    final history = (order['status_history'] as List)
+        .cast<Map<String, dynamic>>();
     for (final (threshold, stage) in _pegStages) {
       if (elapsed < threshold) break;
       if (history.any((h) => h['status'] == stage)) continue;
@@ -866,8 +1151,7 @@ class MockWalletBridge implements WalletBridge {
       order['status'] = stage;
       order['updated_at'] = created + threshold;
       if (stage == 'deposit_seen') {
-        order['txid_deposit'] =
-            'mock_peg_deposit_txid_${order['order_id']}';
+        order['txid_deposit'] = 'mock_peg_deposit_txid_${order['order_id']}';
       } else if (stage == 'completed') {
         order['txid_payout'] = 'mock_peg_payout_txid_${order['order_id']}';
       }
@@ -878,7 +1162,9 @@ class MockWalletBridge implements WalletBridge {
   Future<PegOrder> pegStatus(String orderId) async {
     await Future.delayed(const Duration(milliseconds: 200));
     final order = _pegOrders[orderId];
-    if (order == null) throw Exception('wallet-ffi: unknown peg order $orderId');
+    if (order == null) {
+      throw Exception('wallet-ffi: unknown peg order $orderId');
+    }
     _advancePegOrder(order);
     return PegOrder.fromJson(order);
   }
@@ -886,10 +1172,12 @@ class MockWalletBridge implements WalletBridge {
   @override
   Future<List<PegOrder>> pegList(String walletId) async {
     await Future.delayed(const Duration(milliseconds: 300));
-    final orders = _pegOrders.values
-        .where((o) => o['wallet_id'] == walletId)
-        .toList()
-      ..sort((a, b) => (b['created_at'] as int).compareTo(a['created_at'] as int));
+    final orders =
+        _pegOrders.values.where((o) => o['wallet_id'] == walletId).toList()
+          ..sort(
+            (a, b) =>
+                (b['created_at'] as int).compareTo(a['created_at'] as int),
+          );
     for (final o in orders) {
       _advancePegOrder(o);
     }
@@ -900,18 +1188,22 @@ class MockWalletBridge implements WalletBridge {
   Future<PegOrder> pegCancel(String orderId) async {
     await Future.delayed(const Duration(milliseconds: 400));
     final order = _pegOrders[orderId];
-    if (order == null) throw Exception('wallet-ffi: unknown peg order $orderId');
+    if (order == null) {
+      throw Exception('wallet-ffi: unknown peg order $orderId');
+    }
     _advancePegOrder(order);
     if (order['status'] != 'awaiting_deposit') {
       throw Exception(
-          'wallet-ffi: order can only be cancelled while awaiting deposit');
+        'wallet-ffi: order can only be cancelled while awaiting deposit',
+      );
     }
     final now = _nowSecs();
     order['status'] = 'cancelled';
     order['updated_at'] = now;
-    (order['status_history'] as List)
-        .cast<Map<String, dynamic>>()
-        .add({'status': 'cancelled', 'at': now});
+    (order['status_history'] as List).cast<Map<String, dynamic>>().add({
+      'status': 'cancelled',
+      'at': now,
+    });
     return PegOrder.fromJson(order);
   }
 
@@ -932,7 +1224,11 @@ class MockWalletBridge implements WalletBridge {
   Future<List<HwDevice>> enumerateHwDevices() async {
     await Future.delayed(const Duration(seconds: 2));
     return [
-      const HwDevice(model: 'Ledger Nano S', fingerprint: 'deadbeef', path: 'hid:/0001:0002:00'),
+      const HwDevice(
+        model: 'Ledger Nano S',
+        fingerprint: 'deadbeef',
+        path: 'hid:/0001:0002:00',
+      ),
     ];
   }
 
@@ -972,7 +1268,11 @@ class MockWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<HwImportResult> importHwWallet(String name, String fingerprint, {bool liquid = false}) async {
+  Future<HwImportResult> importHwWallet(
+    String name,
+    String fingerprint, {
+    bool liquid = false,
+  }) async {
     await Future.delayed(const Duration(seconds: 2));
     final wallet = WalletSummary(
       id: 'hw_${fingerprint.substring(0, 6)}',
@@ -993,8 +1293,9 @@ class MockWalletBridge implements WalletBridge {
       deviceModel: 'Blockstream Jade',
       bitcoinDescriptor:
           "wpkh([$fingerprint/84'/1'/0']tpubDMockReceiveDescriptorForUiWork/0/*)",
-      liquidDescriptor:
-          liquid ? 'ct(slip77(mock),elwpkh([$fingerprint/84h/1h/0h]tpubDMock/<0;1>/*))' : null,
+      liquidDescriptor: liquid
+          ? 'ct(slip77(mock),elwpkh([$fingerprint/84h/1h/0h]tpubDMock/<0;1>/*))'
+          : null,
       liquidRequested: liquid,
     );
   }
@@ -1019,10 +1320,15 @@ class MockWalletBridge implements WalletBridge {
 
   @override
   Future<WalletSummary> createWatchOnlyWallet(
-      String name, String recvDesc, String changeDesc,
-      {String? liquidCtDescriptor, bool airgap = false}) async {
+    String name,
+    String recvDesc,
+    String changeDesc, {
+    String? liquidCtDescriptor,
+    bool airgap = false,
+  }) async {
     await Future.delayed(const Duration(milliseconds: 500));
-    final liquid = liquidCtDescriptor != null && liquidCtDescriptor.trim().isNotEmpty;
+    final liquid =
+        liquidCtDescriptor != null && liquidCtDescriptor.trim().isNotEmpty;
     return WalletSummary(
       id: 'watch_${DateTime.now().millisecondsSinceEpoch}',
       name: name,
@@ -1082,18 +1388,20 @@ class MockWalletBridge implements WalletBridge {
     await Future.delayed(const Duration(milliseconds: 200));
     final key = btcDescriptor.contains('(')
         ? btcDescriptor.substring(
-            btcDescriptor.indexOf('(') + 1, btcDescriptor.lastIndexOf(')'))
+            btcDescriptor.indexOf('(') + 1,
+            btcDescriptor.lastIndexOf(')'),
+          )
         : "[00000000/84'/1'/0']$btcDescriptor/<0;1>/*";
     return 'ct(elip151,wpkh($key))';
   }
 
   @override
   Future<HwiStatus> hwiStatus() async => const HwiStatus(
-        resolvedBin: '/mock/data/hwi/hwi',
-        version: '3.2.0',
-        platform: 'mock',
-        udevRulesInstalled: null,
-      );
+    resolvedBin: '/mock/data/hwi/hwi',
+    version: '3.2.0',
+    platform: 'mock',
+    udevRulesInstalled: null,
+  );
 
   @override
   Future<void> setHwiPath(String path) async {}
@@ -1140,15 +1448,19 @@ class MockWalletBridge implements WalletBridge {
   /// exercised without the dylib: reduces a scanned descriptor to its key,
   /// refuses a key with no origin, warns on a singlesig account path.
   @override
-  Future<CosignerKeyInfo> validateCosignerKey(String key,
-      {bool liquid = false}) async {
+  Future<CosignerKeyInfo> validateCosignerKey(
+    String key, {
+    bool liquid = false,
+  }) async {
     await Future.delayed(const Duration(milliseconds: 60));
     final compact = key.replaceAll(RegExp(r'\s'), '').split('#').first;
     final open = compact.indexOf('[');
     final close = compact.indexOf(']');
     if (open < 0 || close < open + 2) {
-      throw Exception('wallet-ffi: This key has no origin. A cosigner key must '
-          'carry the fingerprint and the path it was derived at.');
+      throw Exception(
+        'wallet-ffi: This key has no origin. A cosigner key must '
+        'carry the fingerprint and the path it was derived at.',
+      );
     }
     final origin = compact.substring(open + 1, close);
     final marker = liquid ? 'h' : "'";
@@ -1175,8 +1487,18 @@ class MockWalletBridge implements WalletBridge {
   Future<List<String>> getMnemonic(String walletId) async {
     await Future.delayed(const Duration(milliseconds: 200));
     return const [
-      'abandon', 'ability', 'able', 'about', 'above', 'absent',
-      'absorb', 'abstract', 'absurd', 'abuse', 'access', 'accident',
+      'abandon',
+      'ability',
+      'able',
+      'about',
+      'above',
+      'absent',
+      'absorb',
+      'abstract',
+      'absurd',
+      'abuse',
+      'access',
+      'accident',
     ];
   }
 
@@ -1196,7 +1518,9 @@ class MockWalletBridge implements WalletBridge {
     // from a co-signer reads as one more signature than the copy that went
     // out — the whole point of the chart on the co-signature sheet.
     const fingerprints = ['deadbeef', 'cafebabe'];
-    final signed = _mockSigMarker.allMatches(psbtBase64).length
+    final signed = _mockSigMarker
+        .allMatches(psbtBase64)
+        .length
         .clamp(0, fingerprints.length);
     // The shape a current engine answers with a wallet open: every input
     // priced and owned, the recipient not ours, the change ours — so the
@@ -1287,9 +1611,9 @@ class MockWalletBridge implements WalletBridge {
           address: 'tlq1qqmockrecipient…',
           assetId:
               '144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49',
-          ticker: 'L-BTC',
+          ticker: 'LBTC',
           amountSats: 100000,
-          displayAmount: '0.00100000 L-BTC',
+          displayAmount: '0.00100000 LBTC',
         ),
       ],
       sigsHave: 1,
@@ -1410,22 +1734,25 @@ class MockWalletBridge implements WalletBridge {
       '144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49';
 
   LiquidNetworkInfo _liquidNetworkInfo() => LiquidNetworkInfo(
-        network: 'liquid-$_liquidNetwork',
-        shortName: _liquidNetwork,
-        policyAsset: _liquidPolicyAsset,
-        backend: _liquidNetwork == 'regtest' ? 'elements_rpc' : 'electrum',
-        backendDescription: _liquidNetwork == 'regtest'
-            ? 'elements-rpc http://127.0.0.1:18884'
-            : 'electrum ssl://elements-testnet.blockstream.info:50002',
-        regtestDefaultPolicyAsset:
-            '5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225',
-      );
+    network: 'liquid-$_liquidNetwork',
+    shortName: _liquidNetwork,
+    policyAsset: _liquidPolicyAsset,
+    backend: _liquidNetwork == 'regtest' ? 'elements_rpc' : 'electrum',
+    backendDescription: _liquidNetwork == 'regtest'
+        ? 'elements-rpc http://127.0.0.1:18884'
+        : 'electrum ssl://elements-testnet.blockstream.info:50002',
+    regtestDefaultPolicyAsset:
+        '5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225',
+  );
 
   @override
   Future<LiquidNetworkInfo> getLiquidNetwork() async => _liquidNetworkInfo();
 
   @override
-  Future<LiquidNetworkInfo> setLiquidNetwork(String network, {String? policyAsset}) async {
+  Future<LiquidNetworkInfo> setLiquidNetwork(
+    String network, {
+    String? policyAsset,
+  }) async {
     await Future.delayed(const Duration(milliseconds: 200));
     final name = network.replaceFirst('liquid-', '');
     if (name != 'testnet' && name != 'regtest') {
@@ -1434,8 +1761,8 @@ class MockWalletBridge implements WalletBridge {
     _liquidNetwork = name;
     _liquidPolicyAsset = name == 'regtest'
         ? ((policyAsset ?? '').trim().isEmpty
-            ? '5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225'
-            : policyAsset!.trim())
+              ? '5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225'
+              : policyAsset!.trim())
         : '144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49';
     return _liquidNetworkInfo();
   }
@@ -1447,7 +1774,10 @@ class MockWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<ProtocolCheck> protocolCheckPset(String walletId, String challenge) async {
+  Future<ProtocolCheck> protocolCheckPset(
+    String walletId,
+    String challenge,
+  ) async {
     await Future.delayed(const Duration(milliseconds: 150));
     return ProtocolCheck(
       psetBase64: 'cHNldP8BAgQCAAAAMOCK${base64Encode(utf8.encode(challenge))}',
@@ -1458,16 +1788,23 @@ class MockWalletBridge implements WalletBridge {
 
   @override
   Future<ProtocolCheckVerdict> protocolIsCheckPset(
-      String walletId, String challenge, String psetBase64) async {
+    String walletId,
+    String challenge,
+    String psetBase64,
+  ) async {
     await Future.delayed(const Duration(milliseconds: 150));
     // The mock has no key to recompute with: a PSET it built itself for the
     // same challenge is the check, anything else is not.
     final expected = (await protocolCheckPset(walletId, challenge)).psetBase64;
     return psetBase64.trim() == expected
-        ? const ProtocolCheckVerdict(isCheck: true, loanKeyFingerprint: 'deadbeef')
+        ? const ProtocolCheckVerdict(
+            isCheck: true,
+            loanKeyFingerprint: 'deadbeef',
+          )
         : const ProtocolCheckVerdict(
             isCheck: false,
-            reason: 'not a check PSET: the mock bridge recognises only the '
+            reason:
+                'not a check PSET: the mock bridge recognises only the '
                 'check it built for this challenge',
             loanKeyFingerprint: 'deadbeef',
           );
@@ -1544,7 +1881,10 @@ class MockWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<BackupVerification> verifyBackup(String walletId, String mnemonic) async {
+  Future<BackupVerification> verifyBackup(
+    String walletId,
+    String mnemonic,
+  ) async {
     await Future.delayed(const Duration(milliseconds: 200));
     final matched = mnemonic.trim().split(RegExp(r'\s+')).length >= 12;
     return BackupVerification(
@@ -1557,13 +1897,19 @@ class MockWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<List<String>> urPsbtEncode(String psbtBase64, {int maxFragmentLen = 100}) async {
+  Future<List<String>> urPsbtEncode(
+    String psbtBase64, {
+    int maxFragmentLen = 100,
+  }) async {
     await Future.delayed(const Duration(milliseconds: 80));
     return ['ur:crypto-psbt/mock-part-1', 'ur:crypto-psbt/mock-part-2'];
   }
 
   @override
-  Future<List<String>> urPsetEncode(String psetBase64, {int maxFragmentLen = 100}) async {
+  Future<List<String>> urPsetEncode(
+    String psetBase64, {
+    int maxFragmentLen = 100,
+  }) async {
     await Future.delayed(const Duration(milliseconds: 80));
     return ['ur:bytes/mock-part-1', 'ur:bytes/mock-part-2'];
   }

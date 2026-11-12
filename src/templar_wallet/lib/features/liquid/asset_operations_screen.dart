@@ -43,8 +43,7 @@ class _AssetOperationsScreenState extends State<AssetOperationsScreen> {
     final issued = await IssuedAssetStore.instance.getIssuedAssets(walletId);
     if (mounted) {
       setState(() {
-        _unregistered =
-            issued.values.where((e) => e.canReregister).toList();
+        _unregistered = issued.values.where((e) => e.canReregister).toList();
       });
     }
   }
@@ -80,12 +79,14 @@ class _AssetOperationsScreenState extends State<AssetOperationsScreen> {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok
-            ? '${entry.ticker} registered successfully!'
-            : failure != null
-                ? 'Registration error: $failure'
-                : 'Registration failed — ensure the domain proof file on '
-                    '${entry.domain} is live, then try again.'),
+        content: Text(
+          ok
+              ? '${entry.ticker} registered successfully!'
+              : failure != null
+              ? 'Registration error: $failure'
+              : 'Registration failed — ensure the domain proof file on '
+                    '${entry.domain} is live, then try again.',
+        ),
         backgroundColor: ok ? AppColors.success : AppColors.danger,
       ),
     );
@@ -99,98 +100,106 @@ class _AssetOperationsScreenState extends State<AssetOperationsScreen> {
     // card, so only one border is ever crossed.
     final phone = AppLayout.isPhone(context);
     return Scaffold(
-      body: PageBackground.flat(child: ListView(
-        padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-        children: [
-          const PageHeader(
-            title: 'Asset Operations',
-            subtitle: 'Issue, reissue, or burn Liquid assets',
-          ),
-          if (phone) ...[
-            const ListSectionLabel(label: 'Manage assets'),
-            const AssetOpsRows(),
-          ] else
-            SectionCard(
-              title: 'Manage Assets',
-              child: Column(
-                children: [
-                  _OperationCard(
-                    icon: Icons.add_circle_outline,
-                    title: 'Issue Asset',
-                    description: 'Create a new Liquid asset with custom parameters.',
-                    color: AppColors.liquid,
-                    onTap: () => context.go(AppRoutes.issueAsset),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _OperationCard(
-                    icon: Icons.refresh,
-                    title: 'Reissue',
-                    description: 'Mint additional supply of an existing asset you control.',
-                    color: AppColors.success,
-                    onTap: () => context.go(AppRoutes.reissueAsset),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  _OperationCard(
-                    icon: Icons.local_fire_department_outlined,
-                    title: 'Burn',
-                    description: 'Permanently destroy asset supply. This is irreversible.',
-                    color: AppColors.danger,
-                    onTap: () => context.go(AppRoutes.burnAsset),
-                  ),
-                ],
-              ),
+      body: PageBackground.flat(
+        child: ListView(
+          padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+          children: [
+            const PageHeader(
+              title: 'Asset Operations',
+              subtitle: 'Issue, reissue, or burn Liquid assets',
             ),
-          if (_unregistered.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.xl),
             if (phone) ...[
-              const ListSectionLabel(label: 'Asset registry'),
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                child: Text(
-                  'Assets issued from this wallet that are not yet in the '
-                  'Liquid asset registry. Make sure the domain proof file is '
-                  'live before registering.',
-                  style:
-                      AppTypography.caption.copyWith(color: s.inkSecondary),
-                ),
-              ),
-              for (final entry in _unregistered) ...[
-                if (entry != _unregistered.first)
-                  const SizedBox(height: AppSpacing.md),
-                _RegistryRow(
-                  entry: entry,
-                  busy: _registering == entry.assetId,
-                  // Serialize submissions — one at a time.
-                  onRegister:
-                      _registering == null ? () => _onRegister(entry) : null,
-                ),
-              ],
+              const ListSectionLabel(label: 'Manage assets'),
+              const AssetOpsRows(),
             ] else
               SectionCard(
-                title: 'Asset Registry',
-                subtitle:
-                    'Assets issued from this wallet that are not yet in the '
-                    'Liquid asset registry. Make sure the domain proof file is '
-                    'live before registering.',
+                title: 'Manage Assets',
                 child: Column(
                   children: [
-                    for (final entry in _unregistered) ...[
-                      if (entry != _unregistered.first)
-                        const SizedBox(height: AppSpacing.md),
-                      _RegistryRow(
-                        entry: entry,
-                        busy: _registering == entry.assetId,
-                        // Serialize submissions — one at a time.
-                        onRegister:
-                            _registering == null ? () => _onRegister(entry) : null,
-                      ),
-                    ],
+                    _OperationCard(
+                      icon: Icons.add_circle_outline,
+                      title: 'Issue Asset',
+                      description:
+                          'Create a new Liquid asset with custom parameters.',
+                      color: AppColors.liquid,
+                      onTap: () => context.go(AppRoutes.issueAsset),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _OperationCard(
+                      icon: Icons.refresh,
+                      title: 'Reissue',
+                      description:
+                          'Mint additional supply of an existing asset you control.',
+                      color: AppColors.success,
+                      onTap: () => context.go(AppRoutes.reissueAsset),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _OperationCard(
+                      icon: Icons.local_fire_department_outlined,
+                      title: 'Burn',
+                      description:
+                          'Permanently destroy asset supply. This is irreversible.',
+                      color: AppColors.danger,
+                      onTap: () => context.go(AppRoutes.burnAsset),
+                    ),
                   ],
                 ),
               ),
+            if (_unregistered.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.xl),
+              if (phone) ...[
+                const ListSectionLabel(label: 'Asset registry'),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                  child: Text(
+                    'Assets issued from this wallet that are not yet in the '
+                    'Liquid asset registry. Make sure the domain proof file is '
+                    'live before registering.',
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
+                ),
+                for (final entry in _unregistered) ...[
+                  if (entry != _unregistered.first)
+                    const SizedBox(height: AppSpacing.md),
+                  _RegistryRow(
+                    entry: entry,
+                    busy: _registering == entry.assetId,
+                    // Serialize submissions — one at a time.
+                    onRegister: _registering == null
+                        ? () => _onRegister(entry)
+                        : null,
+                  ),
+                ],
+              ] else
+                SectionCard(
+                  title: 'Asset Registry',
+                  subtitle:
+                      'Assets issued from this wallet that are not yet in the '
+                      'Liquid asset registry. Make sure the domain proof file is '
+                      'live before registering.',
+                  child: Column(
+                    children: [
+                      for (final entry in _unregistered) ...[
+                        if (entry != _unregistered.first)
+                          const SizedBox(height: AppSpacing.md),
+                        _RegistryRow(
+                          entry: entry,
+                          busy: _registering == entry.assetId,
+                          // Serialize submissions — one at a time.
+                          onRegister: _registering == null
+                              ? () => _onRegister(entry)
+                              : null,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
           ],
-        ],
-      )),
+        ),
+      ),
     );
   }
 }
@@ -292,8 +301,9 @@ class _RegistryRow extends StatelessWidget {
                       // asset ID gives up its half of this line.
                       Text(
                         entry.domain,
-                        style: AppTypography.caption
-                            .copyWith(color: s.inkSecondary),
+                        style: AppTypography.caption.copyWith(
+                          color: s.inkSecondary,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -306,9 +316,10 @@ class _RegistryRow extends StatelessWidget {
             if (busy)
               const Center(
                 child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2)),
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
               )
             else
               SecondaryButton(
@@ -329,7 +340,8 @@ class _RegistryRow extends StatelessWidget {
         color: isDark ? AppColors.surfaceDark2 : AppColors.backgroundLight,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         border: Border.all(
-            color: isDark ? AppColors.borderDark : AppColors.borderLight),
+          color: isDark ? AppColors.borderDark : AppColors.borderLight,
+        ),
       ),
       child: Row(
         children: [
@@ -337,8 +349,10 @@ class _RegistryRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${entry.ticker} — ${entry.name}',
-                    style: AppTypography.sectionTitle),
+                Text(
+                  '${entry.ticker} — ${entry.name}',
+                  style: AppTypography.sectionTitle,
+                ),
                 const SizedBox(height: 2),
                 Text(
                   entry.assetId.length > 16
@@ -352,9 +366,10 @@ class _RegistryRow extends StatelessWidget {
           const SizedBox(width: AppSpacing.lg),
           if (busy)
             const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2))
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
           else
             SecondaryButton(
               label: 'Register in asset registry',
@@ -394,7 +409,8 @@ class _OperationCard extends StatelessWidget {
           color: isDark ? AppColors.surfaceDark2 : AppColors.backgroundLight,
           borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
           border: Border.all(
-              color: isDark ? AppColors.borderDark : AppColors.borderLight),
+            color: isDark ? AppColors.borderDark : AppColors.borderLight,
+          ),
         ),
         child: Row(
           children: [
@@ -420,7 +436,9 @@ class _OperationCard extends StatelessWidget {
             ),
             Icon(
               Icons.chevron_right,
-              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondary,
             ),
           ],
         ),

@@ -13,11 +13,7 @@ import 'hybrid_kit.dart';
 /// Shown twice in the send flow — once to confirm before signing, once after
 /// the broadcast — so both read exactly the same.
 class TxRecapPanel extends StatelessWidget {
-  const TxRecapPanel({
-    required this.preview,
-    required this.ticker,
-    super.key,
-  });
+  const TxRecapPanel({required this.preview, required this.ticker, super.key});
 
   final TxPreview preview;
 
@@ -46,8 +42,10 @@ class TxRecapPanel extends StatelessWidget {
     final recipients = preview.outputs.where((o) => !o.isChange).toList();
     final change = preview.outputs.where((o) => o.isChange).toList();
 
-    final amountStyle = AppTypography.monoSmall
-        .copyWith(color: s.ink, fontWeight: FontWeight.w600);
+    final amountStyle = AppTypography.monoSmall.copyWith(
+      color: s.ink,
+      fontWeight: FontWeight.w600,
+    );
     final changeStyle = AppTypography.monoSmall.copyWith(color: s.inkSecondary);
 
     return Column(
@@ -75,17 +73,22 @@ class TxRecapPanel extends StatelessWidget {
                         children: [
                           HexText(recipients[i].address, truncate: true),
                           const SizedBox(height: 2),
-                          Text(amountOf(recipients[i]),
-                              style: amountStyle,
-                              textAlign: TextAlign.right),
+                          Text(
+                            amountOf(recipients[i]),
+                            style: amountStyle,
+                            textAlign: TextAlign.right,
+                          ),
                         ],
                       )
                     else
                       Row(
                         children: [
                           Expanded(
-                              child: HexText(recipients[i].address,
-                                  truncate: true)),
+                            child: HexText(
+                              recipients[i].address,
+                              truncate: true,
+                            ),
+                          ),
                           const SizedBox(width: AppSpacing.md),
                           Text(amountOf(recipients[i]), style: amountStyle),
                         ],
@@ -148,8 +151,10 @@ class TxKvLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final valueStyle = AppTypography.monoSmall
-        .copyWith(color: s.ink, fontWeight: FontWeight.w600);
+    final valueStyle = AppTypography.monoSmall.copyWith(
+      color: s.ink,
+      fontWeight: FontWeight.w600,
+    );
     final labelStyle = AppTypography.caption.copyWith(color: s.inkFaint);
     final phone = AppLayout.isPhone(context);
     return LayoutBuilder(
@@ -165,8 +170,11 @@ class TxKvLine extends StatelessWidget {
               Text(label, style: labelStyle),
               const SizedBox(width: AppSpacing.md),
               Expanded(
-                child: Text(value,
-                    textAlign: TextAlign.right, style: valueStyle),
+                child: Text(
+                  value,
+                  textAlign: TextAlign.right,
+                  style: valueStyle,
+                ),
               ),
             ],
           );

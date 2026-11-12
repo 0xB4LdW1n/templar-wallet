@@ -23,7 +23,7 @@ Two independent flows exist. Test both.
    ```
    This creates the venv where the app looks for it (inside the app's data dir). Smoke-test with the `hwi enumerate` line the script prints — Jade must be connected, unlocked, and **not** open in Green at the same time (one app per serial port).
 4. **Jade unlock needs internet** on the host: the PIN flow talks to Blockstream's blind pinserver. Enter the PIN on the device when it asks.
-5. Testnet coins: https://coinfaucet.eu/en/btc-testnet/ (BTC), https://liquidtestnet.com/faucet (L-BTC).
+5. Testnet coins: https://coinfaucet.eu/en/btc-testnet/ (BTC), https://liquidtestnet.com/faucet (LBTC).
 
 ## A. USB flow (HWI)
 

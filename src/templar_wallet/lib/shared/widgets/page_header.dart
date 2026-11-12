@@ -33,10 +33,10 @@ class PageHeader extends StatelessWidget {
               subtitle!,
               style: (phone ? AppTypography.bodySmall : AppTypography.body)
                   .copyWith(
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFF9CA3AF)
-                    : const Color(0xFF6B7280),
-              ),
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF9CA3AF)
+                        : const Color(0xFF6B7280),
+                  ),
             ),
           ),
       ],
@@ -46,10 +46,12 @@ class PageHeader extends StatelessWidget {
         : Row(
             mainAxisSize: MainAxisSize.min,
             children: actions
-                .map((a) => Padding(
-                      padding: const EdgeInsets.only(left: AppSpacing.sm),
-                      child: a,
-                    ))
+                .map(
+                  (a) => Padding(
+                    padding: const EdgeInsets.only(left: AppSpacing.sm),
+                    child: a,
+                  ),
+                )
                 .toList(),
           );
 
@@ -61,7 +63,8 @@ class PageHeader extends StatelessWidget {
           // the title a few dozen pixels, so they move under it instead.
           // A single small action (the privacy eye, one icon button) stays
           // on the title row even on a phone; only a real toolbar stacks.
-          final stacked = actionRow != null &&
+          final stacked =
+              actionRow != null &&
               constraints.maxWidth < 520 &&
               actions.length > 1;
           if (stacked) {

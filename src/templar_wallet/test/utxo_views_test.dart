@@ -59,12 +59,11 @@ void main() {
 
   testWidgets('compact CoinRow fits 337 dp and toggles on tap', (t) async {
     var taps = 0;
-    await t.pumpWidget(host(CoinRow(
-      utxo: _coin,
-      share: 0.42,
-      compact: true,
-      onTap: () => taps++,
-    )));
+    await t.pumpWidget(
+      host(
+        CoinRow(utxo: _coin, share: 0.42, compact: true, onTap: () => taps++),
+      ),
+    );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(find.text('12345.67890000 USDT'), findsOneWidget);
@@ -78,27 +77,36 @@ void main() {
   });
 
   testWidgets('compact CoinRow without share hides the meter', (t) async {
-    await t.pumpWidget(host(CoinRow(
-      utxo: _coin,
-      share: 0.42,
-      compact: true,
-      showShare: false,
-      onTap: () {},
-    )));
+    await t.pumpWidget(
+      host(
+        CoinRow(
+          utxo: _coin,
+          share: 0.42,
+          compact: true,
+          showShare: false,
+          onTap: () {},
+        ),
+      ),
+    );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(find.text('42%'), findsNothing);
   });
 
-  testWidgets('compact banknote is full width and fits a long amount',
-      (t) async {
+  testWidgets('compact banknote is full width and fits a long amount', (
+    t,
+  ) async {
     var taps = 0;
-    await t.pumpWidget(host(UtxoBanknote(
-      utxo: _coin,
-      tier: BanknoteTier.whale,
-      compact: true,
-      onTap: () => taps++,
-    )));
+    await t.pumpWidget(
+      host(
+        UtxoBanknote(
+          utxo: _coin,
+          tier: BanknoteTier.whale,
+          compact: true,
+          onTap: () => taps++,
+        ),
+      ),
+    );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(t.getSize(find.byType(UtxoBanknote)).width, 337);
@@ -109,12 +117,15 @@ void main() {
     expect(taps, 1);
   });
 
-  testWidgets('desktop CoinRow keeps the short outpoint at desktop width',
-      (t) async {
-    await t.pumpWidget(host(
-      CoinRow(utxo: _coin, share: 0.42, compact: false, onTap: () {}),
-      width: 900,
-    ));
+  testWidgets('desktop CoinRow keeps the short outpoint at desktop width', (
+    t,
+  ) async {
+    await t.pumpWidget(
+      host(
+        CoinRow(utxo: _coin, share: 0.42, compact: false, onTap: () {}),
+        width: 900,
+      ),
+    );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(find.text(_coin.shortOutpoint), findsOneWidget);
@@ -125,13 +136,13 @@ void main() {
   // ── Tiers ────────────────────────────────────────────────────────────────
 
   Utxo btc(int sats) => Utxo(
-        outpoint: '$_txid:0',
-        amount: sats,
-        displayAmount: '$sats sats',
-        confirmations: 1,
-        state: UtxoState.available,
-        ticker: 'BTC',
-      );
+    outpoint: '$_txid:0',
+    amount: sats,
+    displayAmount: '$sats sats',
+    confirmations: 1,
+    state: UtxoState.available,
+    ticker: 'BTC',
+  );
 
   test('dust and whale are fixed amounts, whatever the share', () {
     expect(utxoTier(btc(546), 1.0), BanknoteTier.dust);
@@ -185,14 +196,24 @@ void main() {
     ticker: 'BTC',
   );
 
-  testWidgets('a pending coin row cannot be selected and says it is incoming',
-      (t) async {
+  testWidgets('a pending coin row cannot be selected and says it is incoming', (
+    t,
+  ) async {
     var taps = 0;
-    await t.pumpWidget(host(
-      CoinListCard(children: [
-        CoinRow(utxo: pendingCoin, share: 0.3, compact: true, onTap: () => taps++),
-      ]),
-    ));
+    await t.pumpWidget(
+      host(
+        CoinListCard(
+          children: [
+            CoinRow(
+              utxo: pendingCoin,
+              share: 0.3,
+              compact: true,
+              onTap: () => taps++,
+            ),
+          ],
+        ),
+      ),
+    );
     // A spinner never settles; one frame is enough to lay the row out.
     await t.pump();
     expect(t.takeException(), isNull);
@@ -205,11 +226,12 @@ void main() {
     expect(taps, 0);
   });
 
-  testWidgets('a pending coin on the wall is the grey provisional note',
-      (t) async {
-    await t.pumpWidget(host(
-      const PendingCoinNote(utxo: pendingCoin, share: 0.3, compact: true),
-    ));
+  testWidgets('a pending coin on the wall is the grey provisional note', (
+    t,
+  ) async {
+    await t.pumpWidget(
+      host(const PendingCoinNote(utxo: pendingCoin, share: 0.3, compact: true)),
+    );
     await t.pump();
     expect(t.takeException(), isNull);
     expect(find.byType(ProvisionalNote), findsOneWidget);
@@ -220,16 +242,19 @@ void main() {
     expect(find.byType(UtxoBanknote), findsNothing);
   });
 
-  testWidgets('the consolidating placeholder is the same provisional note',
-      (t) async {
-    await t.pumpWidget(host(
-      const ConsolidatingNote(
-        count: 3,
-        displayAmount: '0.005 BTC',
-        txid: _txid,
-        size: Size(double.infinity, 84),
+  testWidgets('the consolidating placeholder is the same provisional note', (
+    t,
+  ) async {
+    await t.pumpWidget(
+      host(
+        const ConsolidatingNote(
+          count: 3,
+          displayAmount: '0.005 BTC',
+          txid: _txid,
+          size: Size(double.infinity, 84),
+        ),
       ),
-    ));
+    );
     await t.pump();
     expect(find.byType(ProvisionalNote), findsOneWidget);
     expect(find.text('3 coins → 1 · waiting for confirmation'), findsOneWidget);
@@ -237,12 +262,15 @@ void main() {
 
   // ── Details ──────────────────────────────────────────────────────────────
 
-  testWidgets('the info button opens the details sheet without toggling',
-      (t) async {
+  testWidgets('the info button opens the details sheet without toggling', (
+    t,
+  ) async {
     var taps = 0;
-    await t.pumpWidget(host(
-      CoinRow(utxo: _coin, share: 0.42, compact: true, onTap: () => taps++),
-    ));
+    await t.pumpWidget(
+      host(
+        CoinRow(utxo: _coin, share: 0.42, compact: true, onTap: () => taps++),
+      ),
+    );
     await t.pumpAndSettle();
     await t.tap(find.byIcon(Icons.info_outline_rounded));
     await t.pumpAndSettle();
@@ -256,15 +284,17 @@ void main() {
   });
 
   testWidgets('a banknote carries its share and an info button', (t) async {
-    await t.pumpWidget(host(
-      UtxoBanknote(
-        utxo: _coin,
-        tier: BanknoteTier.big,
-        share: 0.12,
-        onTap: () {},
+    await t.pumpWidget(
+      host(
+        UtxoBanknote(
+          utxo: _coin,
+          tier: BanknoteTier.big,
+          share: 0.12,
+          onTap: () {},
+        ),
+        width: 900,
       ),
-      width: 900,
-    ));
+    );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(find.textContaining('BIG'), findsOneWidget);

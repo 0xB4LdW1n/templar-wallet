@@ -69,7 +69,8 @@ Future<String> readPsbtLikeFile(XFile file) async {
   final hexLike = RegExp(r'^[0-9a-fA-F\s]+$');
   if (!base64Like.hasMatch(text) && !hexLike.hasMatch(text)) {
     throw const FormatException(
-        'That file does not look like a PSBT/PSET (expected base64 or hex).');
+      'That file does not look like a PSBT/PSET (expected base64 or hex).',
+    );
   }
   return text.replaceAll(RegExp(r'\s+'), '');
 }
@@ -78,9 +79,9 @@ Future<String> readPsbtLikeFile(XFile file) async {
 /// on a phone (the share sheet was the feedback), nothing when cancelled.
 void reportSaved(BuildContext context, String? outcome) {
   if (outcome == null || outcome == 'shared') return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('Saved to $outcome')),
-  );
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text('Saved to $outcome')));
 }
 
 /// Whether a clipboard's text could be a transaction worth reading: base64
@@ -108,8 +109,12 @@ typedef HandoffQuorum = ({
 /// Uppercase section label. Two sections here — the copy going out and the
 /// copy coming back — and an eyebrow names each without a second headline.
 class HandoffEyebrow extends StatelessWidget {
-  const HandoffEyebrow(this.label,
-      {super.key, this.trailing, this.trailingColor});
+  const HandoffEyebrow(
+    this.label, {
+    super.key,
+    this.trailing,
+    this.trailingColor,
+  });
   final String label;
   final String? trailing;
   final Color? trailingColor;
@@ -119,14 +124,18 @@ class HandoffEyebrow extends StatelessWidget {
     final s = AppScheme.of(context);
     return Row(
       children: [
-        Text(label,
-            style: AppTypography.navSection.copyWith(color: s.inkFaint)),
+        Text(
+          label,
+          style: AppTypography.navSection.copyWith(color: s.inkFaint),
+        ),
         if (trailing != null) ...[
           const Spacer(),
           Text(
             trailing!,
-            style: AppTypography.navSection
-                .copyWith(color: trailingColor ?? s.accent, fontSize: 10.5),
+            style: AppTypography.navSection.copyWith(
+              color: trailingColor ?? s.accent,
+              fontSize: 10.5,
+            ),
           ),
         ],
       ],
@@ -199,7 +208,9 @@ mixin _HandoffCommon<T extends StatefulWidget> on State<T> {
   /// the transaction names nobody (the ring then draws required-signature
   /// slots from the counts).
   List<SignerSlot>? slotsFor(
-      Iterable<String> signerFingerprints, Iterable<String> signed) {
+    Iterable<String> signerFingerprints,
+    Iterable<String> signed,
+  ) {
     if (signerFingerprints.isEmpty) return null;
     return signerSlotsFor(
       entries: cosigners,
@@ -294,8 +305,8 @@ mixin _HandoffCommon<T extends StatefulWidget> on State<T> {
     final who = names.isEmpty
         ? 'Signature added'
         : names.length == 1
-            ? 'Signature from ${names.single} added'
-            : 'Signatures from ${names.join(', ')} added';
+        ? 'Signature from ${names.single} added'
+        : 'Signatures from ${names.join(', ')} added';
     if (needed == null) return '$who · $have collected';
     final left = needed - have;
     return left <= 0
@@ -342,11 +353,13 @@ class PsbtHandoffSheet extends StatefulWidget {
     this.bridge,
     this.title = 'Air-gap Signing',
     this.exportEyebrow = 'EXPORT THE TRANSACTION',
-    this.intro = 'Scan this QR with your signer (Jade: QR mode) — it carries '
+    this.intro =
+        'Scan this QR with your signer (Jade: QR mode) — it carries '
         'the unsigned transaction. Copy or save the file instead if your '
         'signer takes one.',
     this.returnEyebrow = 'BRING IT BACK',
-    this.returnLabel = 'Paste the signed transaction with the button above, '
+    this.returnLabel =
+        'Paste the signed transaction with the button above, '
         'or scan or load it here. Nothing reaches the network before you '
         'have reviewed what it pays.',
     this.progressNote,
@@ -430,8 +443,10 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
       setState(() => _urParts = parts);
     } catch (e) {
       if (!mounted || psbt != _artifact) return;
-      setState(() =>
-          _urError = e.toString().replaceFirst('Exception: wallet-ffi: ', ''));
+      setState(
+        () =>
+            _urError = e.toString().replaceFirst('Exception: wallet-ffi: ', ''),
+      );
     }
   }
 
@@ -468,9 +483,9 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
       reportSaved(context, outcome);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
     }
   }
 
@@ -511,10 +526,10 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
       _takeReturned(text, advanceWhenComplete: false);
 
   static Set<String> _signedSet(PsbtInspection? i) => {
-        if (i != null)
-          for (final s in i.signers)
-            if (s.hasSigned) s.fingerprint.toLowerCase(),
-      };
+    if (i != null)
+      for (final s in i.signers)
+        if (s.hasSigned) s.fingerprint.toLowerCase(),
+  };
 
   /// A copy came back. Read it, fold its signatures into the copy being
   /// handed out, move the chart, and say what arrived.
@@ -523,8 +538,10 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
   /// that completes the quorum goes straight to the broadcast review, exactly
   /// as it did before this screen had a chart. A paste never advances on its
   /// own — the note says the quorum is met and the button is right there.
-  Future<void> _takeReturned(String text,
-      {required bool advanceWhenComplete}) async {
+  Future<void> _takeReturned(
+    String text, {
+    required bool advanceWhenComplete,
+  }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
     setState(() {
@@ -558,7 +575,8 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
     final newSigs = returned.signers.isEmpty
         ? const <String>{}
         : _signedSet(returned).difference(before);
-    final unnamedGain = returned.signers.isEmpty &&
+    final unnamedGain =
+        returned.signers.isEmpty &&
         current != null &&
         returned.sigsPresent > current.sigsPresent;
     final finalizedGain =
@@ -568,12 +586,12 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
         checking = false;
         importError = trimmed == _artifact
             ? 'That is the copy you are handing out — it carries nothing '
-                'new. Give it to a co-signer and bring back the copy they '
-                'signed.'
+                  'new. Give it to a co-signer and bring back the copy they '
+                  'signed.'
             : 'No new signature in that copy: it has '
-                '${returned.sigsPresent} of ${returned.sigsRequired ?? '?'}, '
-                'the same as the one going out. Bring back a copy a '
-                'co-signer has signed.';
+                  '${returned.sigsPresent} of ${returned.sigsRequired ?? '?'}, '
+                  'the same as the one going out. Bring back a copy a '
+                  'co-signer has signed.';
       });
       return;
     }
@@ -613,13 +631,15 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
       _artifact = adopted;
       _inspection = merged;
     });
-    signatureLanded(finalizedGain && newSigs.isEmpty
-        ? 'Finalized copy received · ready to broadcast'
-        : landedNote(
-            newSigs.isEmpty ? const <String>[] : newSigs,
-            merged.sigsPresent,
-            merged.sigsRequired,
-          ));
+    signatureLanded(
+      finalizedGain && newSigs.isEmpty
+          ? 'Finalized copy received · ready to broadcast'
+          : landedNote(
+              newSigs.isEmpty ? const <String>[] : newSigs,
+              merged.sigsPresent,
+              merged.sigsRequired,
+            ),
+    );
     // The copy going out is now this one: the QR has to say so too.
     unawaited(_loadQr(adopted));
     if (advanceWhenComplete && _complete) {
@@ -647,8 +667,12 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
       inspection = await bridge.inspectPsbt(signedPsbt);
     } catch (e) {
       if (mounted) {
-        setState(() => importError =
-            e.toString().replaceFirst('Exception: wallet-ffi: ', ''));
+        setState(
+          () => importError = e.toString().replaceFirst(
+            'Exception: wallet-ffi: ',
+            '',
+          ),
+        );
       }
       return;
     }
@@ -688,7 +712,8 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
       total: needed,
       needed: needed,
       collected: have,
-      caption: '$have of $needed required signature'
+      caption:
+          '$have of $needed required signature'
           '${needed == 1 ? '' : 's'} collected',
     );
   }
@@ -713,8 +738,8 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
     final remaining = q == null
         ? null
         : (i?.finalized ?? false)
-            ? 'QUORUM MET'
-            : _remaining(q);
+        ? 'QUORUM MET'
+        : _remaining(q);
     final met = remaining == 'QUORUM MET';
     final signedFps = _signedSet(i);
     final slots = i == null
@@ -780,8 +805,9 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
               PrimaryButton(
                 label: 'Review & Broadcast',
                 isFullWidth: true,
-                onPressed:
-                    canBroadcast ? () => _reviewThenBroadcast(_artifact) : null,
+                onPressed: canBroadcast
+                    ? () => _reviewThenBroadcast(_artifact)
+                    : null,
               ),
               GhostButton(
                 label: 'Cancel',
@@ -795,13 +821,19 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
-                onPressed:
-                    canBroadcast ? () => _reviewThenBroadcast(_artifact) : null,
-                style:
-                    ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
-                child: const Text('Review & Broadcast',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w600)),
+                onPressed: canBroadcast
+                    ? () => _reviewThenBroadcast(_artifact)
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                ),
+                child: const Text(
+                  'Review & Broadcast',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
     );
@@ -914,8 +946,10 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
       setState(() => _urParts = parts);
     } catch (e) {
       if (!mounted || pset != _artifact) return;
-      setState(() =>
-          _urError = e.toString().replaceFirst('Exception: wallet-ffi: ', ''));
+      setState(
+        () =>
+            _urError = e.toString().replaceFirst('Exception: wallet-ffi: ', ''),
+      );
     }
   }
 
@@ -969,9 +1003,9 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
       reportSaved(context, outcome);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
     }
   }
 
@@ -993,8 +1027,9 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
   }
 
   static Set<String> _signedSet(PsetInspection? i) => {
-        if (i != null) for (final f in i.signersPresent) f.toLowerCase(),
-      };
+    if (i != null)
+      for (final f in i.signersPresent) f.toLowerCase(),
+  };
 
   /// A copy came back: read it, fold it into the copy being handed out,
   /// move the chart, and say what arrived. Nothing is broadcast from here —
@@ -1027,9 +1062,12 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
 
     final current = _inspection;
     final before = _signedSet(current);
-    final named = returned.signersPresent.isNotEmpty ||
+    final named =
+        returned.signersPresent.isNotEmpty ||
         returned.signersMissing.isNotEmpty;
-    final newSigs = named ? _signedSet(returned).difference(before) : <String>{};
+    final newSigs = named
+        ? _signedSet(returned).difference(before)
+        : <String>{};
     final unnamedGain =
         !named && current != null && returned.sigsHave > current.sigsHave;
     if (current != null && newSigs.isEmpty && !unnamedGain) {
@@ -1037,11 +1075,11 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
         checking = false;
         importError = trimmed == _artifact
             ? 'That is the copy you are handing out — it carries nothing '
-                'new. Give it to a co-signer and bring back the copy they '
-                'signed.'
+                  'new. Give it to a co-signer and bring back the copy they '
+                  'signed.'
             : 'No new signature in that copy: it has ${returned.sigsHave} '
-                'of ${returned.sigsNeeded}, the same as the one going out. '
-                'Bring back a copy a co-signer has signed.';
+                  'of ${returned.sigsNeeded}, the same as the one going out. '
+                  'Bring back a copy a co-signer has signed.';
       });
       return;
     }
@@ -1076,11 +1114,13 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
       _artifact = adopted;
       _inspection = merged;
     });
-    signatureLanded(landedNote(
-      newSigs.isEmpty ? const <String>[] : newSigs,
-      merged.sigsHave,
-      merged.sigsNeeded,
-    ));
+    signatureLanded(
+      landedNote(
+        newSigs.isEmpty ? const <String>[] : newSigs,
+        merged.sigsHave,
+        merged.sigsNeeded,
+      ),
+    );
     // The copy going out is now this one: the QR has to say so too.
     unawaited(_loadQr(adopted));
   }
@@ -1104,10 +1144,12 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
         _inspection = info;
       });
       if (!info.canFinalize) {
-        setState(() => importError =
-            'Still ${info.sigsRemaining} signature(s) short — this copy has '
-            '${info.sigsHave} of ${info.sigsNeeded}. Send it to the remaining '
-            'co-signer(s) before broadcasting.');
+        setState(
+          () => importError =
+              'Still ${info.sigsRemaining} signature(s) short — this copy has '
+              '${info.sigsHave} of ${info.sigsNeeded}. Send it to the remaining '
+              'co-signer(s) before broadcasting.',
+        );
         return;
       }
       widget.onBroadcast(signed);
@@ -1115,7 +1157,10 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
       if (mounted) {
         setState(() {
           checking = false;
-          importError = e.toString().replaceFirst('Exception: wallet-ffi: ', '');
+          importError = e.toString().replaceFirst(
+            'Exception: wallet-ffi: ',
+            '',
+          );
         });
       }
     }
@@ -1126,7 +1171,8 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
   /// engine gave us.
   HandoffQuorum get _quorum {
     final i = _inspection;
-    if (i != null && (i.signersPresent.isNotEmpty || i.signersMissing.isNotEmpty)) {
+    if (i != null &&
+        (i.signersPresent.isNotEmpty || i.signersMissing.isNotEmpty)) {
       return (
         signed: i.signersPresent.length,
         total: i.signersPresent.length + i.signersMissing.length,
@@ -1142,7 +1188,8 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
       total: needed,
       needed: needed,
       collected: have,
-      caption: '$have of $needed required signature'
+      caption:
+          '$have of $needed required signature'
           '${needed == 1 ? '' : 's'} collected',
     );
   }
@@ -1169,14 +1216,17 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
       remaining: remaining,
       met: met,
       slots: slots,
-      progressNote: 'Partially signed — ${widget.have} of ${widget.needed} '
+      progressNote:
+          'Partially signed — ${widget.have} of ${widget.needed} '
           'signatures collected. Nothing was broadcast.',
       exportEyebrow: 'HAND IT TO YOUR CO-SIGNERS',
-      intro: 'Send them this PSET — let them scan the QR from their Templar, '
+      intro:
+          'Send them this PSET — let them scan the QR from their Templar, '
           'or pass it by clipboard or file. Each one loads it under Send › '
           'Cosign a transaction, signs, and returns it.',
       returnEyebrow: 'COLLECT THE SIGNATURES',
-      returnLabel: 'Paste each signed copy with the button above, or scan or '
+      returnLabel:
+          'Paste each signed copy with the button above, or scan or '
           'load it here. Its signatures join the copy you hand out, and the '
           'chart follows.',
       urParts: _urParts,
@@ -1232,12 +1282,15 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
               ),
               ElevatedButton(
                 onPressed: canBroadcast ? _reviewThenBroadcast : null,
-                style:
-                    ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                ),
                 child: Text(
                   checking ? 'Checking…' : 'Review & Broadcast',
                   style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w600),
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -1399,13 +1452,16 @@ class _HandoffBody extends StatelessWidget {
                   size: phone ? AppLayout.qrSide(context, max: 300) : 260,
                 )
               : urError != null
-                  ? Text(urError!,
-                      style: AppTypography.bodySmall
-                          .copyWith(color: AppColors.danger))
-                  : const Padding(
-                      padding: EdgeInsets.all(AppSpacing.xl),
-                      child: CircularProgressIndicator(),
-                    ),
+              ? Text(
+                  urError!,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.danger,
+                  ),
+                )
+              : const Padding(
+                  padding: EdgeInsets.all(AppSpacing.xl),
+                  child: CircularProgressIndicator(),
+                ),
         ),
         const SizedBox(height: AppSpacing.lg),
         CodeBox(value: artifact, maxLines: 4),
@@ -1423,7 +1479,9 @@ class _HandoffBody extends StatelessWidget {
           ),
           SecondaryButton(
             label: saveLabel,
-            icon: FileExport.sharesInsteadOfSaves ? Icons.ios_share : Icons.save_alt,
+            icon: FileExport.sharesInsteadOfSaves
+                ? Icons.ios_share
+                : Icons.save_alt,
             isFullWidth: phone,
             onPressed: onSave,
           ),
@@ -1479,14 +1537,17 @@ class _HandoffBody extends StatelessWidget {
         ]),
         if (checking && !pasteOpen) ...[
           const SizedBox(height: AppSpacing.sm),
-          Text('Reading the transaction…',
-              style: AppTypography.caption.copyWith(color: s.inkSecondary)),
+          Text(
+            'Reading the transaction…',
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
+          ),
         ],
         if (errorBelowRoutes) ...[
           const SizedBox(height: AppSpacing.sm),
-          Text(importError!,
-              style:
-                  AppTypography.bodySmall.copyWith(color: AppColors.danger)),
+          Text(
+            importError!,
+            style: AppTypography.bodySmall.copyWith(color: AppColors.danger),
+          ),
         ],
       ],
     );
@@ -1558,16 +1619,22 @@ class _PasteBox extends StatelessWidget {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                           const SizedBox(width: AppSpacing.sm),
-                          Text('Reading the transaction…',
-                              style: AppTypography.caption
-                                  .copyWith(color: s.inkSecondary)),
+                          Text(
+                            'Reading the transaction…',
+                            style: AppTypography.caption.copyWith(
+                              color: s.inkSecondary,
+                            ),
+                          ),
                         ],
                       )
                     : error != null
-                        ? Text(error!,
-                            style: AppTypography.bodySmall
-                                .copyWith(color: AppColors.danger))
-                        : const SizedBox.shrink(),
+                    ? Text(
+                        error!,
+                        style: AppTypography.bodySmall.copyWith(
+                          color: AppColors.danger,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
               const SizedBox(width: AppSpacing.sm),
               PrimaryButton(
@@ -1595,7 +1662,9 @@ class _CollectedNote extends StatelessWidget {
     final reduced = AppMotion.reduced(context);
     final note = Container(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
       decoration: BoxDecoration(
         color: s.success.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
@@ -1608,8 +1677,10 @@ class _CollectedNote extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: AppTypography.bodySmall
-                  .copyWith(color: s.ink, fontWeight: FontWeight.w600),
+              style: AppTypography.bodySmall.copyWith(
+                color: s.ink,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -1642,8 +1713,8 @@ class SignedPsbtReviewDialog extends StatelessWidget {
     final sigs = i.finalized
         ? 'finalized'
         : i.sigsRequired != null
-            ? '${i.sigsPresent} of ${i.sigsRequired}'
-            : '${i.sigsPresent}';
+        ? '${i.sigsPresent} of ${i.sigsRequired}'
+        : '${i.sigsPresent}';
     final phone = AppLayout.isPhone(context);
     // A copy whose inputs cannot be priced has no fee to review. This
     // dialog exists to show what the transaction pays before it leaves; a
@@ -1655,8 +1726,10 @@ class SignedPsbtReviewDialog extends StatelessWidget {
     Widget ownTag(PsbtOutput o) => i.ownershipKnown && o.isMine == true
         ? Padding(
             padding: const EdgeInsets.only(right: AppSpacing.sm),
-            child: Text('CHANGE',
-                style: AppTypography.label.copyWith(color: s.inkSecondary)),
+            child: Text(
+              'CHANGE',
+              style: AppTypography.label.copyWith(color: s.inkSecondary),
+            ),
           )
         : const SizedBox.shrink();
     return AppDialog(
@@ -1684,26 +1757,28 @@ class SignedPsbtReviewDialog extends StatelessWidget {
                           Row(
                             children: [
                               ownTag(o),
-                              Text(o.displayAmount,
-                                  style: AppTypography.bodySmall),
+                              Text(
+                                o.displayAmount,
+                                style: AppTypography.bodySmall,
+                              ),
                             ],
                           ),
                         ],
                       )
                     : Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        o.address,
-                        style: AppTypography.monoSmall,
-                        overflow: TextOverflow.ellipsis,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              o.address,
+                              style: AppTypography.monoSmall,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.md),
+                          ownTag(o),
+                          Text(o.displayAmount, style: AppTypography.bodySmall),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    ownTag(o),
-                    Text(o.displayAmount, style: AppTypography.bodySmall),
-                  ],
-                ),
               ),
             ),
             const Divider(height: AppSpacing.xl),
@@ -1711,9 +1786,12 @@ class SignedPsbtReviewDialog extends StatelessWidget {
               children: [
                 Text('Fee', style: AppTypography.label),
                 const Spacer(),
-                Text(i.feeLabel,
-                    style: AppTypography.bodySmall.copyWith(
-                        color: i.feeSats == null ? AppColors.danger : null)),
+                Text(
+                  i.feeLabel,
+                  style: AppTypography.bodySmall.copyWith(
+                    color: i.feeSats == null ? AppColors.danger : null,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -1731,7 +1809,9 @@ class SignedPsbtReviewDialog extends StatelessWidget {
                 'Its previous outputs are '
                 '${i.utxoCheck == PsbtUtxoStatus.conflicting ? 'inconsistent' : 'missing'}, '
                 'so the fee cannot be checked.',
-                style: AppTypography.bodySmall.copyWith(color: AppColors.danger),
+                style: AppTypography.bodySmall.copyWith(
+                  color: AppColors.danger,
+                ),
               ),
             ],
             if (unsigned) ...[
@@ -1739,7 +1819,9 @@ class SignedPsbtReviewDialog extends StatelessWidget {
               Text(
                 'No signatures detected — this looks like the unsigned PSBT. '
                 'Broadcasting it will fail.',
-                style: AppTypography.bodySmall.copyWith(color: AppColors.danger),
+                style: AppTypography.bodySmall.copyWith(
+                  color: AppColors.danger,
+                ),
               ),
             ],
           ],
@@ -1753,8 +1835,9 @@ class SignedPsbtReviewDialog extends StatelessWidget {
               PrimaryButton(
                 label: 'Broadcast',
                 isFullWidth: true,
-                onPressed:
-                    hidesSpend ? null : () => Navigator.of(context).pop(true),
+                onPressed: hidesSpend
+                    ? null
+                    : () => Navigator.of(context).pop(true),
               ),
               GhostButton(
                 label: 'Cancel',
@@ -1768,13 +1851,19 @@ class SignedPsbtReviewDialog extends StatelessWidget {
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
-                onPressed:
-                    hidesSpend ? null : () => Navigator.of(context).pop(true),
-                style:
-                    ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
-                child: const Text('Broadcast',
-                    style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w600)),
+                onPressed: hidesSpend
+                    ? null
+                    : () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                ),
+                child: const Text(
+                  'Broadcast',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
     );
