@@ -9,9 +9,9 @@ testnet, Liquid testnet, a local Liquid regtest. No mainnet path, ever.
 
 This repository is the wallet's two clients and the adapter between them and
 the engine. The engine (`templar-core`, `templarlib`: BDK, LWK, Miniscript,
-vault, devices, every JSON method) is the sibling repository
-`../templarlib`, with its own `CLAUDE.md` — engine work happens there, not
-here.
+vault, devices, every JSON method) is its own repository,
+[templarlib](https://github.com/0xB4LdW1n/templarlib), with its own
+`CLAUDE.md` — engine work happens there, not here.
 
 ## Layout
 
@@ -38,10 +38,14 @@ design.md            the design rules
 ## The engine dependency
 
 `apps/tui/Cargo.toml` and `crates/wallet-ffi/Cargo.toml` depend on templarlib
-**by path** (`../templarlib/crates/templarlib` from the repo root) until the
-library's first tag; the TODO there switches to `git` + `tag`. Until then the
-GitHub workflows cannot build. Never vendor or copy engine code into this
-repository.
+**by git tag** (`git = "https://github.com/0xB4LdW1n/templarlib"`,
+`tag = "v0.1.0"`); `Cargo.lock` pins the commit. Cargo fetches it, so no
+sibling checkout is needed. Bumping the engine: tag templarlib, change `tag`
+in both manifests, `cargo update -p templarlib`, commit manifests and lock
+together. To build against a local templarlib working copy, pass a Cargo
+`[patch."https://github.com/0xB4LdW1n/templarlib"]` (recipe in
+`docs/build/README.md`); it rewrites `Cargo.lock`, which must never be
+committed that way. Never vendor or copy engine code into this repository.
 
 `crates/wallet-ffi` takes templarlib with `default-features = false` and:
 

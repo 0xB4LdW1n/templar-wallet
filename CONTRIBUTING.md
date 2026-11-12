@@ -9,14 +9,16 @@ Miniscript, the JSON methods) belong in
 
 ## Set up
 
-Until templarlib publishes its first tag, the manifests read it from a
-sibling checkout named `templarlib`:
+One clone is enough: the manifests pin templarlib by git tag and Cargo
+fetches it.
 
 ```bash
-git clone https://github.com/0xB4LdW1n/templarlib.git
-git clone https://github.com/0xB4LdW1n/TemplarWallet.git
-cd TemplarWallet
+git clone https://github.com/0xB4LdW1n/templar-wallet.git
+cd templar-wallet
 ```
+
+Working on the engine and the wallet together, or bumping the engine's tag:
+[`docs/build/README.md`](docs/build/README.md#the-checkout).
 
 Toolchains: Rust and Flutter at the versions `.github/workflows/ci.yml` pins
 (`RUST_TOOLCHAIN`, `FLUTTER_VERSION`), with the `clippy` and `rustfmt`
@@ -67,8 +69,11 @@ The tree is kept at zero analyzer issues of any level. `--locked` and
 `--enforce-lockfile` mean `Cargo.lock` and `pubspec.lock` decide every
 dependency version: update them on purpose, in their own commit.
 
-Until the library is consumed by tag, the GitHub workflows cannot build (they
-check out this repository alone), so run the gate locally.
+`.github/workflows/ci.yml` runs the same gate on pull requests and pushes to
+`main`, except the golden tests: their images are rendered on macOS, so CI
+(Ubuntu) passes `--exclude-tags golden`. On a Mac, `flutter test` runs them
+too (`flutter test --tags golden` runs only them). A `Cargo.lock` rewritten by
+a local templarlib override fails `--locked`; never commit it.
 
 ## Conventions
 
