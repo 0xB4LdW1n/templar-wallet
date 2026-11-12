@@ -236,7 +236,7 @@ jobs:
           (umask 077 && printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > "$keydir/upload.jks")
           chmod 755 "$keydir"
           chmod 644 "$keydir/upload.jks"
-          image="templar-wallet-build:android-$(sha256sum reproducible/Dockerfile | cut -c1-12)"
+          image="$(./scripts/repro_build.sh --print-image --target android)"
           mkdir -p signed
           docker run --rm --network none --platform linux/amd64 \
             -v "$PWD/built:/in:ro" -v "$PWD/signed:/out" -v "$keydir:/key:ro" \
@@ -260,7 +260,7 @@ jobs:
       - id: verify
         name: Check the signatures
         run: |
-          image="templar-wallet-build:android-$(sha256sum reproducible/Dockerfile | cut -c1-12)"
+          image="$(./scripts/repro_build.sh --print-image --target android)"
           mkdir -p out
           digests=()
           for arch in arm64 x86_64; do

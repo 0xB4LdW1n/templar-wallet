@@ -23,10 +23,12 @@ does not match.
 ## Verify a release
 
 You need git, Docker (or Podman, with `CONTAINER=podman`), Python 3, about
-40 GB of free disk, and time: the first run downloads ~4 GB of toolchains
-per target, and on an ARM machine (Apple silicon included) the `linux/amd64`
-image runs emulated, several times slower than on an x86-64 PC. The result
-does not depend on the machine.
+40 GB of free disk, and time: the first run downloads a few GB of toolchains
+per target (the Linux image alone is 4.2 GB), and on an ARM machine (Apple
+silicon included) the `linux/amd64` image runs emulated, several times slower
+than on an x86-64 PC. The result does not depend on the machine. With Colima
+or a Podman machine, keep the clone under your home folder: by default it is
+the only folder their VM shares with the container.
 
 ```bash
 git clone https://github.com/0xB4LdW1n/templar-wallet.git
@@ -82,7 +84,7 @@ The certificate's SHA-256 is in each release's notes.
 |---|---|
 | The source | `git archive` of the tagged commit: no untracked file and no local change reaches the build |
 | The base system | `ubuntu:22.04` by image digest (`reproducible/Dockerfile`) |
-| System packages (clang, GTK, CMake, JDK, …) | a fixed snapshot of the Ubuntu archive, `snapshot.ubuntu.com/ubuntu/<date>` |
+| System packages (clang, GTK, CMake, JDK, …) | a fixed snapshot of the Ubuntu archive, `snapshot.ubuntu.com/ubuntu/<date>`: its signed index sets every version and every file's hash (`reproducible/apt-install` fetches the files from the regular archive while it has them, checked against those hashes, since the snapshot service is slow) |
 | Rust | `rustup-init` by SHA-256, toolchain 1.95.0 (components checked against the channel manifest) |
 | Rust crates, the engine included | `Cargo.lock` (checksums; templarlib by tag and commit), `--locked` |
 | Flutter | release 3.44.1, checked against its commit; Dart SDK and engine artifacts follow from it |
@@ -94,10 +96,10 @@ The certificate's SHA-256 is in each release's notes.
 | Time | `SOURCE_DATE_EPOCH` = the commit's time; every entry of the tarball carries it |
 | The tarball | names sorted, owner `0:0`, normalised modes, `gzip -n` (no name, no timestamp in the header) |
 
-The image is built from the Dockerfile of the commit being built, never
-downloaded ready-made: verifying a release does not mean trusting an image
-someone else built. The build script (`reproducible/build.sh`) comes from the
-same commit.
+The image is built from the Dockerfile (and `apt-install`) of the commit
+being built, never downloaded ready-made: verifying a release does not mean
+trusting an image someone else built. The build script
+(`reproducible/build.sh`) comes from the same commit.
 
 ## In the release workflow
 

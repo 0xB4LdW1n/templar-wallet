@@ -18,8 +18,9 @@
 # Two targets:
 #   docker build --platform linux/amd64 --target linux   -f reproducible/Dockerfile reproducible
 #   docker build --platform linux/amd64 --target android -f reproducible/Dockerfile reproducible
-# The build context is unused; the source never enters the image (it is fed
-# to the container at run time, see scripts/repro_build.sh).
+# From the build context the image takes apt-install alone; the source never
+# enters the image (it is fed to the container at run time, see
+# scripts/repro_build.sh).
 #
 # Keep RUST_TOOLCHAIN and FLUTTER_VERSION in step with ci.yml and release.yml,
 # and NDK_VERSION with apps/gui/android/app/build.gradle.kts and
@@ -40,9 +41,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # apt reads a frozen snapshot of the Ubuntu archive. Check-Valid-Until is off
 # because a snapshot's Release files expire; their signatures are still
-# checked. The snapshot service is slow and answers 503 at times: apt retries. The very first update runs before ca-certificates exists, so TLS
-# peer verification is off for it alone: what apt installs is still checked
-# against the signed InRelease of the snapshot.
+# checked. The snapshot service is slow (seconds per request, 503 at times),
+# so apt retries, and apt-install takes the .deb files the snapshot lists
+# from the regular archive when it still has them, checked against the
+# snapshot's hashes (see apt-install). The very first update runs before
+# ca-certificates exists, so TLS peer verification is off for it and the
+# ca-certificates install alone: what apt installs is still checked against
+# the signed InRelease of the snapshot.
+COPY apt-install /usr/local/sbin/apt-install
 RUN set -eux; \
     printf '%s\n' \
       "deb https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT} jammy main universe" \
@@ -54,12 +60,10 @@ RUN set -eux; \
       > /etc/apt/apt.conf.d/99snapshot; \
     apt-get -o Acquire::https::Verify-Peer=false update; \
     apt-get -o Acquire::https::Verify-Peer=false install -y --no-install-recommends ca-certificates; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
+    apt-install \
       binutils build-essential clang cmake curl file git libgtk-3-dev \
       liblzma-dev libstdc++-12-dev libudev-dev ninja-build pkg-config python3 \
-      unzip xz-utils zip; \
-    rm -rf /var/lib/apt/lists/*
+      unzip xz-utils zip
 
 # Rust: rustup-init by checksum, then the pinned toolchain (rustup checks
 # every component against the signed channel manifest's hashes).
@@ -102,10 +106,7 @@ WORKDIR /build
 # ── Android APKs ────────────────────────────────────────────────────────────
 FROM base AS android
 
-RUN set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends openjdk-17-jdk-headless; \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-install openjdk-17-jdk-headless
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
 # Android command-line tools (Google publishes a SHA-1, which matches this
