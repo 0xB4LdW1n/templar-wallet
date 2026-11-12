@@ -26,9 +26,13 @@
 # scripts/build_android.sh.
 
 # Ubuntu 22.04 (glibc 2.35): the Linux bundle runs on Ubuntu 22.04+, Debian 12+.
+# This image was built on 2026-11-10T08:08Z.
 FROM ubuntu:22.04@sha256:74b12b11ffa550fba1929ad4d8d16533c34f6612728469671afba1b03b66881c AS base
 
-ARG UBUNTU_SNAPSHOT=20261110T000000Z
+# Must be later than the base image's build time: an older snapshot can hold
+# older versions of packages the image already has, and apt cannot downgrade
+# them (it fails on perl-base, for one).
+ARG UBUNTU_SNAPSHOT=20261111T000000Z
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \

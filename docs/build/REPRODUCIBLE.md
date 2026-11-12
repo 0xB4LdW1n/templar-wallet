@@ -144,8 +144,9 @@ on purpose, in its own commit:
   `FLUTTER_COMMIT`: `git ls-remote https://github.com/flutter/flutter
   refs/tags/<version>`.
 - **System packages:** move `UBUNTU_SNAPSHOT` to a later date
-  (`YYYYMMDDTHHMMSSZ`); the base image digest with it when Ubuntu publishes a
-  new `22.04` image.
+  (`YYYYMMDDTHHMMSSZ`). A new base image digest needs a snapshot taken after
+  that image was built (its `created` time), or apt meets packages newer than
+  the snapshot's and stops.
 - **Android SDK, NDK:** the `ARG`s in the Dockerfile; the NDK also in
   `apps/gui/android/app/build.gradle.kts` and `scripts/build_android.sh`.
 - **Gradle:** `distributionUrl` and `distributionSha256Sum` together.
