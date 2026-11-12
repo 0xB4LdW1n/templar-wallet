@@ -15,7 +15,7 @@ offline, is reviewable in this repository, and cannot change under us between
 releases. HWI 3.x dropped the `installudevrules` subcommand, so shelling out to
 HWI is no longer an option either.
 
-`lib/services/udev_installer.dart` writes these files to
+`apps/gui/lib/services/udev_installer.dart` writes these files to
 `/etc/udev/rules.d/` via `pkexec`, then reloads udev. Nothing is installed
 without the user pressing the button and authenticating.
 
@@ -32,6 +32,6 @@ for f in 20-hw1 51-coinkite 51-hid-digitalbitbox 51-trezor 51-usb-keepkey \
 done
 ```
 
-Keep the file list in sync with `udev_rules_installed()` in
-`templarlib/crates/templarlib/src/handlers/hw.rs`, which probes for these names to decide
-whether to offer the fix.
+Keep the file list in sync with `udev_rules_installed()` in templarlib
+(`crates/templarlib/src/handlers/hw.rs`), which probes for these names to
+decide whether to offer the fix.

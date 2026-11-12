@@ -1,7 +1,11 @@
 # Hardware wallet testing — Ledger (USB) + Jade (USB & QR)
 
-Testnet only. Covers macOS, Windows and Linux. Supersedes the Jade-only subset
-in `JADE_TESTING.md`.
+Testnet only. Covers macOS, Windows and Linux. Android has no USB hardware
+support ([decision 0001](../decisions/0001-android-without-usb-hardware.md)).
+
+The device drivers live in the engine, in templarlib
+([`templar-core/src/bitcoin/device/`](https://github.com/0xB4LdW1n/templarlib/blob/main/crates/templar-core/src/bitcoin/device));
+this runbook tests them through the app.
 
 Every claim below is traced to a code path so a failure can be localised
 without guessing. Run the tests in order — later ones assume a funded wallet
@@ -19,7 +23,7 @@ from earlier ones.
 > | Air-gap QR / file / paste (Bitcoin only) | ✅ | ✅ | ✅ |
 > | Camera QR scanning | ❌ (paste/file) | ❌ (paste/file) | ✅ |
 >
-> Ledger and Jade are driven by `templarlib/crates/templar-core/src/bitcoin/device/` inside
+> Ledger and Jade are driven by the engine's native device layer inside
 > this process — Ledger over USB HID (Ledger's own `ledger_bitcoin_client` on
 > our 64-byte framing), Jade over USB serial (its CBOR dialect on `lwk_jade`'s
 > transport). No subprocess is involved, so they behave the same on all three
@@ -98,12 +102,12 @@ the supported user path; the in-app installer is, on every OS.
 
 ### 1.2 Per-platform first run
 
-**macOS.** Bitcoin over USB is unavailable — see the box at the top of this
-file. Test the *messaging*: the wizard's USB option is disabled with the reason
-on it, the hardware setup screen shows the "Bitcoin over USB is not available"
-card listing any natively detected device, and the connect gate refuses
-immediately rather than polling. That card also offers **Liquid wallet on a
-Jade**, which does work here — run §5c, and the air-gap tests (§4) for Bitcoin.
+**macOS.** Ledger and Jade work over USB through the native layer, Bitcoin
+and (Jade) Liquid alike — run the same tests as on the other platforms.
+Trezor, Coldcard, KeepKey and BitBox cannot be driven (see the box at the top
+of this file): test the *messaging* — such a device is detected and named,
+the card says why it cannot be used and offers a Ledger or Jade over USB, or
+air-gap by QR (§4).
 
 Entitlements still grant `device.usb`, `device.serial` and `device.camera` —
 needed by the native device layer that replaces HWI, and by the QR scanner.
@@ -274,6 +278,8 @@ New Wallet → **Hardware** → **Air-gap** → step 3 → **Scan** (macOS) or *
 - On Windows/Linux the Scan control is **not rendered** — there is no camera
   plugin for those desktops, so the button would only ever open an apology.
   Paste is right beside it and takes the same payload.
+- Any of Jade's export formats works: the import accepts bare xpubs,
+  multipath descriptors and `#checksum` suffixes.
 - **Expect:** type label `Air-gap watch-only`; descriptors validated *before*
   anything is persisted; receive branch `/0/*`, change branch `/1/*`.
 
@@ -353,7 +359,7 @@ Only a Jade can contribute to the Liquid half:
 
 ## 5b. Native device layer (the HWI replacement)
 
-`templarlib/crates/templar-core/src/bitcoin/device/` talks to devices from our own process,
+The engine's `bitcoin/device/` module (in templarlib) talks to devices from our own process,
 with no subprocess — the only design that can work under the macOS sandbox,
 and one that removes the HWI install step from every platform.
 
@@ -380,11 +386,10 @@ Test it on each platform with a device attached and with none:
 - With nothing attached the list must be empty and must not error.
 - A generic USB-to-serial cable (CH340, `1a86:7523`) must **not** appear.
 
-**Not landed: the protocols.** Extended-pubkey export, PSBT signing and
-on-device address display still go through HWI, so they remain Windows/Linux
-only. Ledger speaks APDUs over HID; Jade speaks CBOR over serial. Each needs a
-physical device to develop against — do not trust an untested implementation of
-either with funds.
+**Landed: the protocols for Ledger and Jade.** Extended-pubkey export, PSBT
+signing and on-device address display run natively for both (Ledger: APDUs
+over HID; Jade: CBOR over serial), which is why they work on macOS. The other
+families still go through HWI, so they remain Windows/Linux only.
 
 ## 5c. Test E — Liquid on a Jade
 
@@ -453,16 +458,12 @@ outputs and asset amounts, you approve, it broadcasts.
    Liquid PSET QR transport, so air-gap wallets stay Bitcoin-only. This is the
    next real Liquid feature if macOS users want Liquid without a cable.
 
-3. **Jade's Bitcoin side on macOS** still needs HWI, so it waits on the native
-   driver work — a Jade on macOS can hold a Liquid wallet today but not a
-   Bitcoin one.
-
-4. **Camera QR scanning on Windows/Linux.** `mobile_scanner` has no
+3. **Camera QR scanning on Windows/Linux.** `mobile_scanner` has no
    implementation for those desktops. Scan controls hide themselves there and
    every flow completes via paste or file, so nothing is blocked — but reading
    an animated QR off the device screen still needs a camera-capable machine.
 
-5. **Taproot / Miniscript-in-`tr()`** — BDK 0.30 limitation, unrelated to
+4. **Taproot / Miniscript-in-`tr()`** — BDK 0.30 limitation, unrelated to
    hardware, deferred to a BDK 1.x migration.
 
 ---
