@@ -30,6 +30,7 @@ apps/tui/            `templar` CLI + read-only TUI (package templar-tui)
 crates/wallet-ffi/   C ABI adapter over templarlib → libwallet_ffi.{dylib,so} / wallet_ffi.dll
 assets/brand/        logo SVGs, source of every icon raster
 packaging/           DMG art, Inno Setup script, Linux desktop entry
+reproducible/        pinned build container + in-container build script (Linux, Android)
 scripts/             build, packaging, icons, protocol fixture server
 docs/                index at docs/README.md
 design.md            the design rules
@@ -129,6 +130,13 @@ flutter test
 CI (`.github/workflows/ci.yml`, `release.yml`) runs on GitHub-hosted runners
 only — never attach a self-hosted runner to this public repository. Release
 runbook: `docs/build/RELEASE.md`.
+
+The Linux and Android release files are reproducible: built in
+`reproducible/Dockerfile` (every input pinned) by `scripts/repro_build.sh`,
+rebuilt on a second runner and compared before `release.yml` publishes
+(`docs/build/REPRODUCIBLE.md`). A toolchain bump touches the Dockerfile too;
+anything that makes the build depend on time, paths or the host breaks the
+`compare` job.
 
 ## Docs
 

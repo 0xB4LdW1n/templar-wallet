@@ -52,6 +52,11 @@ Every release is built by CI from a tagged commit and published on the
 | Android 7.0+ phones (arm64) | [TemplarWallet-android-arm64.apk](https://github.com/0xB4LdW1n/templar-wallet/releases/latest/download/TemplarWallet-android-arm64.apk) |
 | Android emulators / x86_64 devices | [TemplarWallet-android-x86_64.apk](https://github.com/0xB4LdW1n/templar-wallet/releases/latest/download/TemplarWallet-android-x86_64.apk) |
 
+The Linux and Android files are **reproducible**: rebuild them from the
+release's tag with `scripts/repro_verify.sh <tag>` and you get the same
+bytes (the APKs, signature aside), so you need not trust the build server:
+[docs/build/REPRODUCIBLE.md](docs/build/REPRODUCIBLE.md).
+
 The desktop builds are not signed with a paid certificate yet, so macOS and
 Windows warn on first launch. How to get past that, per platform:
 [INSTALL.md](INSTALL.md) (English) · [INSTALL.it.md](INSTALL.it.md) (italiano).

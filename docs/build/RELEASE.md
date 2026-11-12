@@ -150,18 +150,23 @@ The jobs of `release.yml`:
 | `version` | ubuntu-24.04 | reads the version from `pubspec.yaml`; fails a tag that does not match it |
 | `checks` | (runs `ci.yml`) | the gate: no build starts before it passes |
 | `macos` | macos-26 | `TemplarWallet-macos.dmg`; fails unless both the app and `libwallet_ffi.dylib` are universal |
-| `android` | ubuntu-24.04 | both APKs; the Rust engine is built in a step that never sees the signing key |
-| `linux` | ubuntu-22.04 | `TemplarWallet-linux-x64.tar.gz` |
+| `android` | ubuntu-24.04 | both APKs, built in the reproducible container, then signed by `apksigner` in a container with no network: no build code sees the key |
+| `linux` | ubuntu-24.04 | `TemplarWallet-linux-x64.tar.gz`, built in the reproducible container (Ubuntu 22.04, glibc 2.35) |
+| `reproduce` | ubuntu-22.04 | a second build of the Linux and Android files, on another runner image |
+| `compare` | ubuntu-24.04 | the published files against the second build ([`REPRODUCIBLE.md`](REPRODUCIBLE.md)); a summary table |
 | `windows` | windows-2025 | the installer (Inno Setup, installed if the image lacks it) and the zip |
 | `release` | ubuntu-24.04 | `SHA256SUMS.txt`, the notes, the release. The only job that can write to the repository. |
 
 Worth knowing:
 
-- **All or nothing.** The release job needs every build to succeed. It then
-  checks that all six files are there, and `gh release create` uploads them
-  to a draft that is published only once every upload succeeded.
+- **All or nothing.** The release job needs every build to succeed, and
+  `compare` to find the two builds of the Linux and Android files identical
+  (the APKs signature aside). It then checks that all six files are there,
+  and `gh release create` uploads them to a draft that is published only
+  once every upload succeeded.
 - **Release notes** are the CHANGELOG section's body, a table of the stable
-  links, and the Android certificate fingerprint.
+  links, the Android certificate fingerprint, and how to verify the build
+  (`scripts/repro_verify.sh <tag>`).
 - **Pre-releases.** A tag with a suffix publishes a pre-release. It is never
   *Latest*, so the site's links do not move; its notes link to its own files.
 - **An older line.** A plain tag lower than the current *Latest* (a fix for an
@@ -174,7 +179,8 @@ Worth knowing:
   before tagging. Do not publish that draft by hand: push the tag; the tag
   build replaces the draft.
 - **No caches in the builds.** A release is compiled from `Cargo.lock` and
-  `pubspec.lock` alone, so nothing a cache entry carries can end up in a
+  `pubspec.lock` alone (and, for Linux and Android, in an image built from
+  `reproducible/Dockerfile` on the spot), so nothing a cache entry carries can end up in a
   published binary or run next to the signing key. The gate (`ci.yml`) does
   use caches, which only makes it faster.
 - **Hosted runners only.** Every job runs on a GitHub-hosted runner, free for a
@@ -186,13 +192,14 @@ Worth knowing:
   `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` (if `object.type` is
   `tag`, follow `gh api repos/<owner>/<repo>/git/tags/<sha>`).
 - **Pinned toolchains.** `FLUTTER_VERSION` and `RUST_TOOLCHAIN` sit at the top
-  of both workflows; `scripts/build_linux.sh` and `scripts/build_windows.ps1`
-  carry the same pins. Bump all four together.
-- **The Linux image has a deadline.** GitHub retires `ubuntu-22.04` on
-  2027-04-17, with brownout days (jobs fail) in March and April 2027. Before
-  then, move the `linux` job to `ubuntu-24.04` building inside an
-  `ubuntu:22.04` container, the same base `scripts/build_linux.sh` uses, so
-  the glibc floor stays at 2.35.
+  of both workflows; `reproducible/Dockerfile`, `scripts/build_linux.sh` and
+  `scripts/build_windows.ps1` carry the same pins. Bump all five together
+  ([`REPRODUCIBLE.md`](REPRODUCIBLE.md), "Changing a pin").
+- **The second build's runner has a deadline.** GitHub retires `ubuntu-22.04`
+  on 2027-04-17, with brownout days (jobs fail) in March and April 2027.
+  Before then, move the `reproduce` job to another image than the one
+  `linux` and `android` use. The Linux bundle itself no longer depends on the
+  runner: its glibc floor (2.35) comes from the container.
 
 ---
 
@@ -247,10 +254,13 @@ gh secret list -R $R
 Line breaks in the base64 value do no harm; CI strips whitespace before
 decoding.
 
-How CI uses them: the `android` job decodes the keystore into the runner's
-temp folder in the one step that builds the APKs, hands it to Gradle through
-the `TEMPLAR_*` variables, and deletes it when the step ends. The Rust build
-runs in an earlier step without them, and pull requests never get them. A
+How CI uses them: the `android` job builds the APKs in the reproducible
+container with no secret in it (they come out signed with a throwaway debug
+key). The next step decodes the keystore into the runner's temp folder and
+runs `apksigner sign --alignment-preserved` from the same image, in a
+container with no network that sees only the APKs and the keystore; the key
+is deleted when the step ends. No build script, Gradle plugin or crate ever
+runs next to the key, and pull requests never get it. A
 tag build without all four fails before it builds anything; after the build
 it checks that both APKs carry the same certificate and that it is not a
 debug one.
@@ -291,8 +301,9 @@ instead of quietly falling back to the debug key.
   one. APK Signature Scheme v3 supports key rotation: `apksigner rotate`
   records a lineage from the old key to the new one, and APKs signed with
   that lineage update existing installs (see the `apksigner` documentation).
-  Gradle cannot do that alone; it would take an `apksigner sign` step after
-  the build. Without rotation, users must uninstall and reinstall, restoring
+  CI already signs with `apksigner` (the "Sign with the release key" step of
+  `android` in `release.yml`): rotation means adding `--lineage` and the new
+  key there. Without rotation, users must uninstall and reinstall, restoring
   from their recovery phrase.
 - **What is an APK signed with?**
   `apksigner verify --print-certs TemplarWallet-android-arm64.apk` (Android
@@ -563,6 +574,7 @@ files of a release only ever come from CI.
 | macOS | `cd apps/gui && flutter build macos --release`, then `./scripts/make_dmg.sh` from the repository root | `dist/TemplarWallet-<version>-macos.dmg` |
 | Android | `./scripts/build_android.sh --release` | `apps/gui/build/app/outputs/flutter-apk/app-<abi>-release.apk` |
 | Linux | `bash scripts/build_linux.sh` (in an Ubuntu 22.04 container, so glibc 2.35 like CI) | `dist/TemplarWallet-<version>-linux-x64.tar.gz` |
+| Linux and Android, exactly as CI | `scripts/repro_build.sh` ([`REPRODUCIBLE.md`](REPRODUCIBLE.md)) | `dist/repro/<commit>/` |
 | Windows | double-click `scripts\build_windows.cmd` | `dist\TemplarWallet-<version>-windows-x64-setup.exe` and `.zip` |
 
 - **macOS:** the Xcode Run Script phase builds and bundles
@@ -583,7 +595,8 @@ files of a release only ever come from CI.
 - [ ] `CHANGELOG.md` has a `## [X.Y.Z] — date` section
 - [ ] `INSTALL.md` and `INSTALL.it.md` current: `INSTALL.md` ships in the bundles as `README.md`
 - [ ] `ci` green on `main`
-- [ ] tag `vX.Y.Z` pushed; the `release` run green; the release is *Latest* with seven files
+- [ ] tag `vX.Y.Z` pushed; the `release` run green (`compare` included); the release is *Latest* with seven files
+- [ ] optionally, on your own machine: `scripts/repro_verify.sh vX.Y.Z` prints `MATCH` three times
 - [ ] the stable links download the new version; the files match `SHA256SUMS.txt`
 - [ ] installed from a **downloaded** copy on macOS, Windows, Linux and Android
 - [ ] wallet data survives upgrading over the previous version (Windows installer, Android update)

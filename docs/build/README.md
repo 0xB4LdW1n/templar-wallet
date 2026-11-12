@@ -11,6 +11,7 @@ are. Releases are not built by hand: they come from CI ([`RELEASE.md`](RELEASE.m
 | Android (APKs) | [`AndroidBuild.md`](AndroidBuild.md) |
 | Linux / Windows on someone else's PC, from a source zip | [`HELPER_BUILDS.md`](HELPER_BUILDS.md) |
 | Cutting and publishing a release | [`RELEASE.md`](RELEASE.md) |
+| Rebuilding a release's Linux and Android files to check them | [`REPRODUCIBLE.md`](REPRODUCIBLE.md) |
 
 The terminal client (`templar`) needs only Rust:
 [`../guides/TUI.md`](../guides/TUI.md).
