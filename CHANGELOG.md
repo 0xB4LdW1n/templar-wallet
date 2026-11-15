@@ -35,6 +35,34 @@ any release may change anything.
   docs are one user guide and one connector guide; `docs/README.md` is the
   index.
 
+### Test servers
+
+- **Join a test server with one setting.** Settings › Network & Sync › Test
+  server takes a Templar test server's URL; the engine reads the rest from
+  the server and moves Liquid and Bitcoin onto the lab's regtest chains
+  (`el1…`, `bcrt1…`) and the swap market onto its order book. Joining and
+  leaving close the open wallet, so the app asks first and returns to the
+  wallet list. **Check now** says whether the server still runs the chain
+  the wallet joined; after a reset it offers **Re-join**. The swap market
+  makes the same check once per session on first use. A network fixed by
+  `TEMPLAR_LIQUID_NETWORK` is stated instead of failing. Guide:
+  `docs/guides/TEST_SERVER.md`.
+- **Nodes shows what is in use.** The Nodes card lists the Bitcoin, Liquid
+  and order-book servers the engine reports, each with where it came from
+  (test server, environment variable, built-in default).
+- **The swap market follows the active book.** The order book's address
+  comes from the engine instead of a hardcoded `127.0.0.1:3210`; the header
+  names the test server (or the book) and the network; the book's admin
+  dashboard, now a password-protected page, is linked only for a book on
+  this computer. Publish refusals are explained by kind: rate limited (with
+  when to retry), chain unreachable, already published, publishing
+  disabled, rejected (with the book's reason), book unreachable.
+- **Regtest wording.** The take flow names the chain it verifies against
+  and broadcasts to instead of always "Liquid testnet"; the send
+  confirmation, the send result, the receive share text, the dashboard and
+  the regtest strip follow the active Bitcoin network; a regtest has no
+  explorer links.
+
 ### Templar Protocol
 
 - **Loans**, a destination beside the Dashboard (a carousel tab on a phone):
