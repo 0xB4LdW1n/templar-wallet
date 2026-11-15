@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
@@ -26,6 +25,8 @@ import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'models/swap_offer.dart';
+import 'order_book_admin.dart';
+import 'publish_error.dart';
 import 'take_flow.dart' show swapError;
 import '../../shared/widgets/glass_dialog.dart';
 
@@ -695,20 +696,16 @@ class _OfferCreatedDialogState extends State<_OfferCreatedDialog> {
       if (!mounted) return;
       setState(() {
         _publishing = false;
-        _error = swapError(e);
+        _error = swapPublishErrorText(e);
       });
     }
   }
-
-  Future<void> _openAdmin() => launchUrl(
-    Uri.parse('http://127.0.0.1:3210'),
-    mode: LaunchMode.externalApplication,
-  );
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final offer = widget.offer;
+    final admin = orderBookAdminUri(context.read<AppState>());
     return AppDialog(
       title: Row(
         children: [
@@ -757,13 +754,13 @@ class _OfferCreatedDialogState extends State<_OfferCreatedDialog> {
               const SizedBox(height: AppSpacing.md),
               Text(
                 'Share this proposal; it stays valid until you spend the '
-                'coin. Publish it to the localhost book without sharing any '
+                'coin. Publish it to the order book without sharing any '
                 'private key.',
                 style: AppTypography.caption.copyWith(color: s.inkSecondary),
               ),
               if (_publishedId != null) ...[
                 const SizedBox(height: AppSpacing.md),
-                InfoBanner(message: 'Published as local order #$_publishedId.'),
+                InfoBanner(message: 'Published as order #$_publishedId.'),
               ],
               if (_error != null) ...[
                 const SizedBox(height: AppSpacing.md),
@@ -784,14 +781,15 @@ class _OfferCreatedDialogState extends State<_OfferCreatedDialog> {
           onPressed: () =>
               Clipboard.setData(ClipboardData(text: offer.proposalJson)),
         ),
-        SecondaryButton(
-          label: 'Admin',
-          icon: Icons.admin_panel_settings_outlined,
-          onPressed: _openAdmin,
-        ),
+        if (admin != null)
+          SecondaryButton(
+            label: 'Admin',
+            icon: Icons.admin_panel_settings_outlined,
+            onPressed: () => openOrderBookAdmin(context, admin),
+          ),
         if (_publishedId == null)
           PrimaryButton(
-            label: _publishing ? 'Publishing…' : 'Publish locally',
+            label: _publishing ? 'Publishing…' : 'Publish',
             icon: Icons.publish_outlined,
             onPressed: _publishing ? null : _publish,
           ),

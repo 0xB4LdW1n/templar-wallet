@@ -1,5 +1,6 @@
-// Taker side of a LiquiDEX v0 swap: verify a proposal (deep, against testnet
-// Electrum), preview the real transaction economics, then sign & broadcast.
+// Taker side of a LiquiDEX v0 swap: verify a proposal (deep, against the
+// active Liquid network's backend), preview the real transaction economics,
+// then sign & broadcast.
 //
 // Entry points:
 //  - [openTakeFlow] — from a takeable order-book row (proposal already known).
@@ -34,6 +35,16 @@ import '../../shared/widgets/glass_dialog.dart';
 /// Strip the FFI error prefix for display.
 String swapError(Object e) =>
     e.toString().replaceFirst('Exception: wallet-ffi: ', '');
+
+/// The Liquid chain the engine is on, in words ("Liquid testnet", "the
+/// Liquid regtest of Templar testlab"), for the flow's wording.
+String liquidChainOf(BuildContext context) {
+  try {
+    return context.read<AppState>().liquidChainLabel;
+  } on ProviderNotFoundException {
+    return 'the active Liquid network';
+  }
+}
 
 /// Push the take flow for [proposalJson]. Resolves to the broadcast txid, or
 /// null when the user backed out.
@@ -176,8 +187,8 @@ class _ImportProposalDialogState extends State<_ImportProposalDialog> {
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              'The proposal is verified against Liquid testnet on the next '
-              'step — nothing is signed yet.',
+              'The proposal is verified against ${liquidChainOf(context)} on '
+              'the next step — nothing is signed yet.',
               style: AppTypography.caption.copyWith(color: s.inkSecondary),
             ),
           ],
@@ -408,7 +419,7 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
             const SizedBox(height: AppSpacing.md),
             Center(
               child: Text(
-                'Verifying proposal against Liquid testnet…',
+                'Verifying proposal against ${liquidChainOf(context)}…',
                 style: AppTypography.caption.copyWith(color: s.inkSecondary),
               ),
             ),
@@ -713,7 +724,8 @@ class _TakeConfirmDialog extends StatelessWidget {
             const SizedBox(height: AppSpacing.md),
             Text(
               'Your inputs are signed and the complete swap transaction is '
-              'broadcast to Liquid testnet immediately. Atomic: either the '
+              'broadcast to ${liquidChainOf(context)} immediately. Atomic: '
+              'either the '
               'whole swap settles, or nothing moves.',
               style: AppTypography.caption.copyWith(color: s.inkSecondary),
             ),
@@ -787,8 +799,16 @@ class _SwapSuccessDialog extends StatelessWidget {
   final SwapLeg youPay;
   final String feeDisplay;
 
-  Future<void> _openExplorer(BuildContext context) async {
-    final base = context.read<AppState>().liquidExplorerUrl;
+  /// Null on a regtest (no public explorer) or without app state.
+  static String? _explorerBase(BuildContext context) {
+    try {
+      return context.read<AppState>().liquidExplorerBase;
+    } on ProviderNotFoundException {
+      return null;
+    }
+  }
+
+  Future<void> _openExplorer(BuildContext context, String base) async {
     final trimmed = base.endsWith('/')
         ? base.substring(0, base.length - 1)
         : base;
@@ -801,6 +821,7 @@ class _SwapSuccessDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
+    final explorer = _explorerBase(context);
     return AppDialog(
       content: SizedBox(
         width: 520,
@@ -845,7 +866,8 @@ class _SwapSuccessDialog extends StatelessWidget {
               Reveal(
                 delay: 2,
                 child: Text(
-                  'The atomic swap was signed and sent to the Liquid testnet.',
+                  'The atomic swap was signed and sent to '
+                  '${liquidChainOf(context)}.',
                   textAlign: TextAlign.center,
                   style: AppTypography.bodySmall.copyWith(
                     color: s.inkSecondary,
@@ -885,11 +907,13 @@ class _SwapSuccessDialog extends StatelessWidget {
         ),
       ),
       actions: [
-        SecondaryButton(
-          label: 'View on explorer',
-          icon: Icons.open_in_new_rounded,
-          onPressed: () => _openExplorer(context),
-        ),
+        // A regtest has no public explorer: no link rather than a dead one.
+        if (explorer != null)
+          SecondaryButton(
+            label: 'View on explorer',
+            icon: Icons.open_in_new_rounded,
+            onPressed: () => _openExplorer(context, explorer),
+          ),
         PrimaryButton(
           label: 'Done',
           onPressed: () => Navigator.of(context).pop(),

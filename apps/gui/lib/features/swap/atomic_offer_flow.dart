@@ -103,7 +103,12 @@ class _AtomicOfferDialogState extends State<_AtomicOfferDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AppDialog(
+  Widget build(BuildContext context) {
+    final st = context.watch<AppState>();
+    return _dialog(st.bitcoinNetworkName, st.liquidNetworkName);
+  }
+
+  Widget _dialog(String bitcoinNet, String liquidNet) => AppDialog(
     title: const Text('New cross-chain offer'),
     content: SizedBox(
       width: 500,
@@ -111,10 +116,10 @@ class _AtomicOfferDialogState extends State<_AtomicOfferDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const WarningBanner(
-              title: 'Testnet HTLC v1',
+            WarningBanner(
+              title: 'HTLC v1 on test networks',
               message:
-                  'Real funds move on Bitcoin testnet and Liquid testnet. The '
+                  'Funds move on Bitcoin $bitcoinNet and Liquid $liquidNet. The '
                   'Liquid contract output exposes its asset and amount; wallet '
                   'keys never leave this device.',
             ),

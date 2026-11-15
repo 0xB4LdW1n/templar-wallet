@@ -398,6 +398,28 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  test('the first-use check runs once and flags a reset lab', () async {
+    final bridge = _LabBridge(joined: true, stale: true);
+    final state = AppState()..setTestServerInfo(await bridge.getTestServer());
+    bridge.calls.clear();
+
+    await checkTestServerOnce(state, bridge: bridge);
+    await checkTestServerOnce(state, bridge: bridge);
+
+    expect(bridge.calls, ['get(check: true)']);
+    expect(state.testServerStale, isTrue);
+  });
+
+  test('no server joined: the first-use check asks nothing', () async {
+    final bridge = _LabBridge();
+    final state = AppState()..setTestServerInfo(await bridge.getTestServer());
+    bridge.calls.clear();
+
+    await checkTestServerOnce(state, bridge: bridge);
+
+    expect(bridge.calls, isEmpty);
+  });
+
   test('URL shape feedback', () {
     expect(testServerUrlProblem(''), isNotNull);
     expect(testServerUrlProblem('ftp://lab.example.org'), isNotNull);

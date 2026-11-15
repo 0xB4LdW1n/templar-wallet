@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/app_state.dart';
+import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../shared/widgets/asset_logo.dart';
 import '../../shared/widgets/badges.dart';
@@ -16,15 +17,19 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import '../settings/test_server_switch.dart';
 import 'make_offer_flow.dart';
+import 'order_book_admin.dart';
+import 'publish_error.dart';
 import 'atomic_offer_flow.dart';
 import 'models/swap_offer.dart';
 import 'take_flow.dart';
 
 enum _MarketFilter { all, crossChain, liquid }
 
-/// Chain-aware local market. Liquid rows use LiquiDEX; Bitcoin testnet ↔
-/// Liquid testnet rows use the recoverable HTLC v1 state machine.
+/// Chain-aware market over the order book the engine uses (a joined test
+/// server's, an environment override or the local default). Liquid rows use
+/// LiquiDEX; Bitcoin ↔ Liquid rows use the recoverable HTLC v1 state machine.
 class SwapScreen extends StatefulWidget {
   const SwapScreen({super.key});
 
@@ -61,6 +66,32 @@ class _SwapScreenState extends State<SwapScreen> {
   void initState() {
     super.initState();
     _refresh(feedback: false);
+    // First use of the market this session: ask the joined test server
+    // whether its chains were reset (once; no polling).
+    checkTestServerOnce(context.read<AppState>(), bridge: _bridge);
+  }
+
+  Future<void> _rejoin(String url) async {
+    try {
+      final done = await joinTestServer(
+        context,
+        url,
+        rejoin: true,
+        bridge: _bridge,
+      );
+      if (!mounted || done == null) return;
+      if (done.walletClosed) {
+        context.go(AppRoutes.walletPicker);
+      } else {
+        _refresh(silent: true);
+      }
+    } on TestServerError catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
   }
 
   Future<void> _loadMarkets({bool silent = false}) async {
@@ -127,18 +158,12 @@ class _SwapScreenState extends State<SwapScreen> {
     if (mounted) setState(() => _justRefreshed = false);
   }
 
+  /// The book's admin page, only for a book on this machine.
+  Uri? get _adminUri => orderBookAdminUri(context.read<AppState>());
+
   Future<void> _openAdmin() async {
-    final opened = await launchUrl(
-      Uri.parse('http://127.0.0.1:3210'),
-      mode: LaunchMode.externalApplication,
-    );
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not open the local admin dashboard'),
-        ),
-      );
-    }
+    final uri = _adminUri;
+    if (uri != null) await openOrderBookAdmin(context, uri);
   }
 
   Future<void> _takeProposal(String proposalJson) async {
@@ -152,15 +177,17 @@ class _SwapScreenState extends State<SwapScreen> {
   }
 
   Future<void> _makeOffer() async {
+    final st = context.read<AppState>();
     final type = await showAppDialog<String>(
       context,
       builder: (dialogContext) => AppDialog(
         title: const Text('Choose settlement'),
-        content: const SizedBox(
+        content: SizedBox(
           width: 430,
           child: Text(
-            'Cross-chain uses recoverable HTLCs between Bitcoin testnet and '
-            'Liquid testnet. LiquiDEX exchanges two Liquid assets in one transaction.',
+            'Cross-chain uses recoverable HTLCs between Bitcoin '
+            '${st.bitcoinNetworkName} and Liquid ${st.liquidNetworkName}. '
+            'LiquiDEX exchanges two Liquid assets in one transaction.',
           ),
         ),
         actions: [
@@ -235,13 +262,13 @@ class _SwapScreenState extends State<SwapScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Published as local order #$id')));
+      ).showSnackBar(SnackBar(content: Text('Published as order #$id')));
       _loadMarkets();
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(swapError(error))));
+      ).showSnackBar(SnackBar(content: Text(swapPublishErrorText(error))));
     }
   }
 
@@ -315,6 +342,7 @@ class _SwapScreenState extends State<SwapScreen> {
                 sliver: SliverList.list(
                   children: [
                     _marketHeader(),
+                    ..._staleNotice(),
                     const SizedBox(height: AppSpacing.md),
                     _orderBookExplainer(),
                     const SizedBox(height: AppSpacing.lg),
@@ -333,11 +361,47 @@ class _SwapScreenState extends State<SwapScreen> {
     );
   }
 
+  /// The joined test server's chains were reset: the book and the wallet
+  /// no longer agree on the chain until the user re-joins.
+  List<Widget> _staleNotice() {
+    final st = context.watch<AppState>();
+    final url = st.testServer?.profile?.baseUrl;
+    if (!st.testServerStale || url == null) return const [];
+    return [
+      const SizedBox(height: AppSpacing.md),
+      WarningBanner(
+        title: 'The test chain was reset',
+        message:
+            '${st.testServerName} now runs a new chain. Re-join it to see its '
+            'order book and your regtest coins again.',
+        action: SecondaryButton(
+          label: 'Re-join',
+          icon: Icons.restart_alt_rounded,
+          dense: true,
+          onPressed: () => _rejoin(url),
+        ),
+      ),
+    ];
+  }
+
   Widget _marketHeader() {
     final s = AppScheme.of(context);
     final compact = AppLayout.isCompact(context);
-    final network =
-        context.watch<AppState>().liquidNetwork?.shortName ?? 'testnet';
+    final st = context.watch<AppState>();
+    final network = st.liquidNetworkName;
+    final book = st.testServer?.active.orderbook;
+    final labName = st.testServerName;
+    // Which book this is: a tester comparing two wallets must be able to
+    // tell at a glance that both look at the same one.
+    final (eyebrow, title) = labName != null
+        ? ('TEST SERVER · ${network.toUpperCase()}', labName)
+        : book == null || book.isLoopback
+        ? ('LOCAL ROUTING · ${network.toUpperCase()}', 'Local order book')
+        : (
+            'ORDER BOOK · ${network.toUpperCase()}',
+            Uri.tryParse(book.origin.url)?.host ?? book.origin.url,
+          );
+    final admin = orderBookAdminUri(st);
     final openRoutes = _markets.where((offer) => offer.available).length;
     final (status, statusColor) = _loading
         ? ('Connecting', s.inkFaint)
@@ -357,7 +421,7 @@ class _SwapScreenState extends State<SwapScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'LOCAL ROUTING · ${network.toUpperCase()}',
+                eyebrow,
                 style: AppTypography.navSection.copyWith(
                   color: s.inkFaint,
                   fontSize: 10,
@@ -366,7 +430,9 @@ class _SwapScreenState extends State<SwapScreen> {
               ),
               const SizedBox(height: 2),
               Text(
-                'Local order book',
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: AppTypography.sectionTitle.copyWith(
                   color: s.ink,
                   fontSize: compact ? 19 : 21,
@@ -421,12 +487,14 @@ class _SwapScreenState extends State<SwapScreen> {
           icon: Icons.info_outline_rounded,
           onPressed: _showOrderBookGuide,
         ),
-        const SizedBox(width: AppSpacing.xs),
-        _utilityAction(
-          label: 'Local admin',
-          icon: Icons.tune_rounded,
-          onPressed: _openAdmin,
-        ),
+        if (admin != null) ...[
+          const SizedBox(width: AppSpacing.xs),
+          _utilityAction(
+            label: 'Order book admin',
+            icon: Icons.tune_rounded,
+            onPressed: _openAdmin,
+          ),
+        ],
       ],
     );
 
@@ -481,7 +549,7 @@ class _SwapScreenState extends State<SwapScreen> {
                 const SizedBox(height: AppSpacing.xs),
                 _settlementFact(
                   color: AppColors.bitcoin,
-                  text: 'Bitcoin routes · live HTLC testnet',
+                  text: 'Bitcoin routes · live HTLC ${st.bitcoinNetworkName}',
                   expanded: true,
                 ),
               ],
@@ -497,7 +565,7 @@ class _SwapScreenState extends State<SwapScreen> {
                 ),
                 _settlementFact(
                   color: AppColors.bitcoin,
-                  text: 'Bitcoin routes · live HTLC testnet',
+                  text: 'Bitcoin routes · live HTLC ${st.bitcoinNetworkName}',
                 ),
               ],
             ),
@@ -518,7 +586,7 @@ class _SwapScreenState extends State<SwapScreen> {
         ),
         const SizedBox(height: 3),
         Text(
-          'The local book stores signed public proposals, never keys or funds. '
+          'The order book stores signed public proposals, never keys or funds. '
           'A Liquid taker verifies the proposal, pays the requested asset and '
           'receives the offered asset in one atomic transaction.',
           style: AppTypography.caption.copyWith(
@@ -568,7 +636,7 @@ class _SwapScreenState extends State<SwapScreen> {
     await showAppDialog<void>(
       context,
       builder: (dialogContext) => AppDialog(
-        title: const Text('How the local order book works'),
+        title: const Text('How the order book works'),
         content: SizedBox(
           width: 540,
           child: SingleChildScrollView(
@@ -586,12 +654,12 @@ class _SwapScreenState extends State<SwapScreen> {
                 _guideStep(
                   1,
                   'Wallet A · make',
-                  'Choose one funded Liquid coin, set the asset and amount wanted, then publish locally.',
+                  'Choose one funded Liquid coin, set the asset and amount wanted, then publish it.',
                 ),
                 _guideStep(
                   2,
                   'Wallet B · verify',
-                  'Use the same testnet or regtest network, refresh, and open the offer. “Receive” is what B gets; “Pay” is what B spends.',
+                  'Use the same network (and the same test server), refresh, and open the offer. “Receive” is what B gets; “Pay” is what B spends.',
                 ),
                 _guideStep(
                   3,
@@ -823,6 +891,7 @@ class _SwapScreenState extends State<SwapScreen> {
 
   Widget _marketSection() {
     final markets = _visibleMarkets;
+    final admin = orderBookAdminUri(context.watch<AppState>());
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -830,8 +899,8 @@ class _SwapScreenState extends State<SwapScreen> {
           label: _loading
               ? 'Markets'
               : '${markets.length} market${markets.length == 1 ? '' : 's'}',
-          actionLabel: 'Local admin',
-          onAction: _openAdmin,
+          actionLabel: admin != null ? 'Book admin' : null,
+          onAction: admin != null ? _openAdmin : null,
         ),
         if (_loading)
           const DataWell(
@@ -859,7 +928,7 @@ class _SwapScreenState extends State<SwapScreen> {
           children: [
             Icon(Icons.cloud_off_outlined, size: 30, color: s.inkFaint),
             const SizedBox(height: AppSpacing.sm),
-            Text('Local market is offline', style: AppTypography.sectionTitle),
+            Text('Order book is offline', style: AppTypography.sectionTitle),
             const SizedBox(height: AppSpacing.xs),
             Text(
               _error!,
@@ -876,11 +945,12 @@ class _SwapScreenState extends State<SwapScreen> {
                   icon: Icons.refresh_rounded,
                   onPressed: _loadMarkets,
                 ),
-                GhostButton(
-                  label: 'Open admin',
-                  icon: Icons.tune_rounded,
-                  onPressed: _openAdmin,
-                ),
+                if (_adminUri != null)
+                  GhostButton(
+                    label: 'Open admin',
+                    icon: Icons.tune_rounded,
+                    onPressed: _openAdmin,
+                  ),
               ],
             ),
           ],
@@ -901,7 +971,10 @@ class _SwapScreenState extends State<SwapScreen> {
             Text('No matching markets', style: AppTypography.sectionTitle),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Use the local admin dashboard to post controlled test quotes.',
+              _adminUri != null
+                  ? 'Publish an offer, or post test quotes from the order book '
+                        'admin.'
+                  : 'Publish an offer to open the first market.',
               textAlign: TextAlign.center,
               style: AppTypography.caption.copyWith(color: s.inkSecondary),
             ),
@@ -1162,7 +1235,7 @@ class _SwapScreenState extends State<SwapScreen> {
                 if (action == 'cancel') _cancelOffer(offer);
               },
               itemBuilder: (_) => const [
-                PopupMenuItem(value: 'publish', child: Text('Publish locally')),
+                PopupMenuItem(value: 'publish', child: Text('Publish')),
                 PopupMenuItem(value: 'cancel', child: Text('Cancel offer')),
               ],
             )
@@ -1280,7 +1353,7 @@ class _SwapScreenState extends State<SwapScreen> {
             label: 'Close',
             onPressed: () => Navigator.of(dialogContext).pop(),
           ),
-          if (offer.demo)
+          if (offer.demo && _adminUri != null)
             SecondaryButton(
               label: 'Open admin',
               icon: Icons.tune_rounded,

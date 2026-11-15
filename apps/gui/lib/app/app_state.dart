@@ -140,6 +140,14 @@ class AppState extends ChangeNotifier {
   String get bitcoinNetworkName => isBitcoinRegtest ? 'regtest' : 'testnet';
   String get liquidNetworkName => _liquidNetwork?.shortName ?? 'testnet';
 
+  /// The Liquid chain in words: "Liquid testnet", "Liquid regtest", or the
+  /// joined test server's regtest by name.
+  String get liquidChainLabel {
+    final lab = testServerName;
+    if (isLiquidRegtest && lab != null) return 'the Liquid regtest of $lab';
+    return 'Liquid $liquidNetworkName';
+  }
+
   /// Explorer bases for links, or null when the chain is a regtest no public
   /// explorer knows.
   String? get btcExplorerBase => isBitcoinRegtest ? null : _btcExplorerUrl;
