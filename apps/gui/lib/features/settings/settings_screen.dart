@@ -32,6 +32,7 @@ import 'biometric_unlock_tile.dart';
 import 'liquid_network_switch.dart';
 import 'protocol_section.dart';
 import 'seed_phrase_section.dart';
+import 'test_server_section.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
@@ -368,7 +369,9 @@ class _SettingsHomeState extends State<_SettingsHome> {
                 icon: Icons.wifi_rounded,
                 tint: s.liquid,
                 title: 'Nodes & explorers',
-                subtitle: 'Liquid $liquidNet · Bitcoin Electrum',
+                subtitle: st.testServerName != null
+                    ? 'Test server ${st.testServerName} · Liquid $liquidNet'
+                    : 'Liquid $liquidNet · test server, nodes',
                 chevron: true,
                 onTap: () => context.go(SettingsSection.network.route),
               ),
@@ -986,30 +989,10 @@ class _NetworkSectionState extends State<_NetworkSection> {
         ],
         const _LiquidNetworkCard(),
         const SizedBox(height: AppSpacing.lg),
+        const TestServerCard(),
+        const SizedBox(height: AppSpacing.lg),
         Consumer<AppState>(
-          builder: (context, state, _) => FormCard(
-            title: 'Nodes',
-            subtitle:
-                'Bitcoin is fixed in this build. Liquid follows the network '
-                'above; override the endpoints with TEMPLAR_LIQUID_ELECTRUM_URL '
-                'or TEMPLAR_ELEMENTS_RPC_URL.',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CopyRow(
-                  label: 'Bitcoin Electrum',
-                  value: 'ssl://electrum.blockstream.info:60002',
-                ),
-                const Divider(height: 1),
-                CopyRow(
-                  label: 'Liquid chain',
-                  value:
-                      state.liquidNetwork?.backendDescription ??
-                      'electrum ssl://elements-testnet.blockstream.info:50002',
-                ),
-              ],
-            ),
-          ),
+          builder: (context, state, _) => _NodesCard(state: state),
         ),
         const SizedBox(height: AppSpacing.lg),
         FormCard(
@@ -1018,7 +1001,8 @@ class _NetworkSectionState extends State<_NetworkSection> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Used for "View on Explorer" links in transaction history.',
+                'Used for "View on Explorer" links in transaction history. A '
+                'regtest chain has no public explorer, so its links are hidden.',
                 style: AppTypography.caption.copyWith(
                   color: phone ? s.inkSecondary : null,
                 ),
@@ -1082,6 +1066,68 @@ class _NetworkSectionState extends State<_NetworkSection> {
   }
 }
 
+/// The servers the engine talks to, each with where it came from (a test
+/// server, an environment variable, an app setting or the built-in default),
+/// as the engine reports them in `active`. Read-only.
+class _NodesCard extends StatelessWidget {
+  const _NodesCard({required this.state});
+  final AppState state;
+
+  static String _from(String source) => 'from ${endpointSourceLabel(source)}';
+
+  @override
+  Widget build(BuildContext context) {
+    final active = state.testServer?.active;
+    return FormCard(
+      title: 'Nodes',
+      subtitle:
+          'The servers in use and where each comes from. A test server sets '
+          'them all; TEMPLAR_LIQUID_ELECTRUM_URL, TEMPLAR_ELEMENTS_RPC_URL and '
+          'the TEMPLAR_SWAP_* variables override single ones.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: active == null
+            ? [
+                // No answer from the engine yet: what this build uses by
+                // default, as before.
+                const CopyRow(
+                  label: 'Bitcoin Electrum',
+                  value: 'ssl://electrum.blockstream.info:60002',
+                ),
+                const Divider(height: 1),
+                CopyRow(
+                  label: 'Liquid chain',
+                  value:
+                      state.liquidNetwork?.backendDescription ??
+                      'electrum ssl://elements-testnet.blockstream.info:50002',
+                ),
+              ]
+            : [
+                CopyRow(
+                  label:
+                      'Bitcoin ${active.bitcoin.shortName} · '
+                      '${_from(active.bitcoin.source)}',
+                  value: active.bitcoin.electrumUrl,
+                ),
+                const Divider(height: 1),
+                CopyRow(
+                  label:
+                      'Liquid ${active.liquid.network.replaceFirst('liquid-', '')}'
+                      ' · ${_from(active.liquid.backendSource)}',
+                  value: active.liquid.backendDescription,
+                ),
+                const Divider(height: 1),
+                CopyRow(
+                  label:
+                      'Order book · ${_from(active.orderbook.origin.source)}',
+                  value: active.orderbook.origin.url,
+                ),
+              ],
+      ),
+    );
+  }
+}
+
 /// Liquid network selector: the public testnet or a local Elements regtest
 /// (what the Templar Protocol runs locally). Switching closes the open wallet
 /// on the engine side, so the card sends the user back to the picker.
@@ -1117,17 +1163,25 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
       if (!mounted) return;
       context.read<AppState>().setLiquidNetworkInfo(info);
       setState(() {
-        _info = info;
+        _adopt(info);
         _error = null;
-        _choice = info.shortName;
-        _policyAsset.text = info.isRegtest
-            ? info.policyAsset
-            : info.regtestDefaultPolicyAsset;
       });
     } catch (e) {
       if (mounted) setState(() => _error = liquidNetworkErrorText(e));
     }
   }
+
+  void _adopt(LiquidNetworkInfo info) {
+    _info = info;
+    _choice = info.shortName;
+    _policyAsset.text = info.isRegtest
+        ? info.policyAsset
+        : info.regtestDefaultPolicyAsset;
+  }
+
+  /// A test server is joined: its regtest is the only regtest, and the
+  /// engine takes its policy asset from the server.
+  bool get _onLab => _info?.testServer != null;
 
   /// Whether the form differs from what the engine is on.
   bool get _dirty {
@@ -1135,6 +1189,7 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
     if (info == null) return false;
     if (_choice != info.shortName) return true;
     return _choice == 'regtest' &&
+        !_onLab &&
         _policyAsset.text.trim().toLowerCase() !=
             info.policyAsset.toLowerCase();
   }
@@ -1152,7 +1207,7 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
       final done = await switchLiquidNetwork(
         context,
         target: _choice,
-        policyAsset: _policyAsset.text,
+        policyAsset: _onLab ? null : _policyAsset.text,
       );
       if (!mounted) return;
       if (done == null) {
@@ -1179,6 +1234,16 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
+    // Joining or leaving a test server (the card below) moves Liquid too:
+    // follow the shared state once the engine has answered.
+    final shared = context.select<AppState, LiquidNetworkInfo?>(
+      (a) => a.liquidNetwork,
+    );
+    if (shared != null && _info != null && !identical(shared, _info)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_busy) setState(() => _adopt(shared));
+      });
+    }
     final info = _info;
     final locked = info?.envLocked ?? false;
     return FormCard(
@@ -1239,7 +1304,16 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
                 // choice spans the card it belongs to.
                 expand: phone,
               ),
-              if (_choice == 'regtest') ...[
+              if (_choice == 'regtest' && _onLab) ...[
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  'Regtest is the joined test server\'s chain.',
+                  style: AppTypography.caption.copyWith(
+                    color: phone ? s.inkSecondary : null,
+                  ),
+                ),
+              ],
+              if (_choice == 'regtest' && !_onLab) ...[
                 const SizedBox(height: AppSpacing.lg),
                 TextField(
                   controller: _policyAsset,
