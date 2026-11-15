@@ -20,6 +20,9 @@ import '../features/peg/models/peg_models.dart';
 import '../features/protocol/models/protocol_proof.dart';
 import '../features/psbt/models/psbt_inspection.dart';
 import '../features/psbt/models/pset_inspection.dart';
+import 'test_server.dart';
+
+export 'test_server.dart';
 
 abstract class WalletBridge {
   /// Generate a fresh BIP39 mnemonic. [wordCount] must be 12 or 24.
@@ -609,6 +612,24 @@ abstract class WalletBridge {
     String? policyAsset,
   });
 
+  // ── Test server ("testlab") ─────────────────────────────────────────────────
+
+  /// The joined test server, if any, and the servers in use. With [check] the
+  /// engine also fetches the server's config now (at most 10 s) and reports
+  /// whether it answered and whether its chains were reset (`check.stale`).
+  /// An unreachable server is not an error.
+  Future<TestServerInfo> getTestServer({bool check = false});
+
+  /// Join the test server at [url]: the engine fetches and validates its
+  /// config, switches Liquid to the lab's regtest (unless an environment
+  /// variable fixes the network) and ALWAYS closes the open wallet. Calling it
+  /// again refreshes a stale profile.
+  Future<TestServerInfo> setTestServer(String url);
+
+  /// Leave the joined test server: Liquid returns to testnet and the open
+  /// wallet is closed.
+  Future<TestServerInfo> clearTestServer();
+
   // ── Templar Protocol ─────────────────────────────────────────────
 
   /// The wallet's loan key in keyorigin form — what a `templar://connect`
@@ -641,6 +662,8 @@ class LiquidNetworkInfo {
     required this.backendDescription,
     this.envLocked = false,
     this.regtestDefaultPolicyAsset = '',
+    this.backendSource = 'default',
+    this.testServer,
   });
 
   /// `liquid-testnet` | `liquid-regtest` — the connector-protocol name.
@@ -665,6 +688,12 @@ class LiquidNetworkInfo {
   /// Stock regtest LBTC id, the form's default.
   final String regtestDefaultPolicyAsset;
 
+  /// Where the backend came from: `env` | `profile` | `default`.
+  final String backendSource;
+
+  /// Base URL of the joined test server; null when none is joined.
+  final String? testServer;
+
   bool get isRegtest => shortName == 'regtest';
 
   factory LiquidNetworkInfo.fromJson(Map<String, dynamic> j) =>
@@ -677,6 +706,8 @@ class LiquidNetworkInfo {
         envLocked: j['env_locked'] as bool? ?? false,
         regtestDefaultPolicyAsset:
             j['regtest_default_policy_asset'] as String? ?? '',
+        backendSource: j['backend_source'] as String? ?? 'default',
+        testServer: j['test_server'] as String?,
       );
 }
 

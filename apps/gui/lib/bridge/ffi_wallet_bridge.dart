@@ -1099,6 +1099,27 @@ class FfiWalletBridge implements WalletBridge {
   }
 
   @override
+  Future<TestServerInfo> getTestServer({bool check = false}) async {
+    final raw =
+        await _ok('get_test_server', {'check': check}) as Map<String, dynamic>;
+    return TestServerInfo.fromJson(raw);
+  }
+
+  @override
+  Future<TestServerInfo> setTestServer(String url) async {
+    final raw =
+        await _ok('set_test_server', {'url': url.trim()})
+            as Map<String, dynamic>;
+    return TestServerInfo.fromJson(raw);
+  }
+
+  @override
+  Future<TestServerInfo> clearTestServer() async {
+    final raw = await _ok('clear_test_server', {}) as Map<String, dynamic>;
+    return TestServerInfo.fromJson(raw);
+  }
+
+  @override
   Future<String> getProtocolEscrowXpub(String walletId) async =>
       await _ok('get_protocol_escrow_xpub', {'wallet_id': walletId}) as String;
 

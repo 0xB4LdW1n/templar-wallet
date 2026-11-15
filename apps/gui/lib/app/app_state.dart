@@ -98,6 +98,53 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The joined test server and the servers in use (`get_test_server`), read
+  /// at startup and after every join, leave or network switch. Null until
+  /// the first read.
+  TestServerInfo? _testServer;
+  TestServerInfo? get testServer => _testServer;
+
+  void setTestServerInfo(TestServerInfo? info) {
+    _testServer = info;
+    notifyListeners();
+  }
+
+  /// Whether the joined server's chains were found reset this session (a
+  /// live check said `stale`). Cleared by a re-join or a leave.
+  bool _testServerStale = false;
+  bool get testServerStale => _testServerStale;
+
+  /// Whether this session already looked at the joined server once — the
+  /// light stale check runs on first use, never in a loop.
+  bool testServerChecked = false;
+
+  void setTestServerStale(bool stale) {
+    if (_testServerStale == stale) return;
+    _testServerStale = stale;
+    notifyListeners();
+  }
+
+  /// The joined test server's name, when one is joined.
+  String? get testServerName {
+    final p = _testServer?.profile;
+    if (p == null) return null;
+    return p.name.isNotEmpty ? p.name : p.baseUrl;
+  }
+
+  /// Bitcoin runs on a test server's regtest (`bcrt1…` addresses) instead
+  /// of the public testnet. Only the engine decides; this mirrors
+  /// `active.bitcoin.network`.
+  bool get isBitcoinRegtest => _testServer?.active.bitcoin.isRegtest ?? false;
+
+  /// `testnet` | `regtest`, for wording.
+  String get bitcoinNetworkName => isBitcoinRegtest ? 'regtest' : 'testnet';
+  String get liquidNetworkName => _liquidNetwork?.shortName ?? 'testnet';
+
+  /// Explorer bases for links, or null when the chain is a regtest no public
+  /// explorer knows.
+  String? get btcExplorerBase => isBitcoinRegtest ? null : _btcExplorerUrl;
+  String? get liquidExplorerBase => isLiquidRegtest ? null : _liquidExplorerUrl;
+
   SyncState _syncState = SyncState.idle;
   SyncState get syncState => _syncState;
 

@@ -1737,13 +1737,197 @@ class MockWalletBridge implements WalletBridge {
     network: 'liquid-$_liquidNetwork',
     shortName: _liquidNetwork,
     policyAsset: _liquidPolicyAsset,
-    backend: _liquidNetwork == 'regtest' ? 'elements_rpc' : 'electrum',
-    backendDescription: _liquidNetwork == 'regtest'
-        ? 'elements-rpc http://127.0.0.1:18884'
-        : 'electrum ssl://elements-testnet.blockstream.info:50002',
+    backend: _onLab || _liquidNetwork != 'regtest'
+        ? 'electrum'
+        : 'elements_rpc',
+    backendDescription: _liquidBackendDescription(),
     regtestDefaultPolicyAsset:
         '5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225',
+    backendSource: _onLab ? 'profile' : 'default',
+    testServer: _testServerProfile?.baseUrl,
   );
+
+  String _liquidBackendDescription() {
+    if (_liquidNetwork != 'regtest') {
+      return 'electrum ssl://elements-testnet.blockstream.info:50002';
+    }
+    final lab = _testServerProfile;
+    return lab != null
+        ? 'electrum ${lab.regtest.liquidElectrumUrl}'
+        : 'elements-rpc http://127.0.0.1:18884';
+  }
+
+  // ── Test server — in memory; no network ─────────────────────────────────────
+
+  /// What the next live check of a joined server reports. Debug and test
+  /// knobs: a mock session can show the unreachable and the stale state.
+  bool mockTestServerReachable = true;
+  bool mockTestServerStale = false;
+
+  TestServerProfile? _testServerProfile;
+
+  /// Liquid runs on the joined lab's regtest — and so does Bitcoin.
+  bool get _onLab => _testServerProfile != null && _liquidNetwork == 'regtest';
+
+  static const _labPolicyAsset =
+      'b2e15d0d7a0c94e4e2ce0fe6e8691b9e451377f6e46e8045a86f7c4b5d4f0f23';
+
+  TestServerProfile _mockProfile(String baseUrl) => TestServerProfile(
+    baseUrl: baseUrl,
+    name: 'Mock testlab',
+    version: 1,
+    fetchedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    orderbookUrl: 'http://127.0.0.1:3210',
+    regtest: const TestServerRegtest(
+      instanceId: 'mock0001',
+      policyAsset: _labPolicyAsset,
+      genesisHash:
+          '00902a6b70c2ca83b5d9c815d96a0e2f4202179316970d14ea1847dae5b1ca21',
+      liquidElectrumUrl: 'tcp://127.0.0.1:19061',
+      bitcoinNetwork: 'regtest',
+      bitcoinElectrumUrl: 'tcp://127.0.0.1:19060',
+      bitcoinEsploraUrl: 'http://127.0.0.1:19070',
+      faucetUrl: 'http://127.0.0.1:8096/api/faucet',
+      peg: TestServerPeg(provider: 'native'),
+    ),
+  );
+
+  TestServerInfo _testServerInfo({
+    TestServerCheck? check,
+    TestServerApplied? applied,
+  }) {
+    final lab = _testServerProfile;
+    final bookSource = lab != null ? 'profile' : 'default';
+    final origin = lab?.orderbookUrl ?? 'http://127.0.0.1:3210';
+    SourcedUrl route(String path) =>
+        SourcedUrl(url: '$origin$path', source: bookSource);
+    return TestServerInfo(
+      configured: lab != null,
+      profile: lab,
+      check: check,
+      applied: applied,
+      active: ActiveEndpoints(
+        liquidNetwork: 'liquid-$_liquidNetwork',
+        envLocked: false,
+        orderbook: OrderbookEndpoints(
+          origin: SourcedUrl(url: origin, source: bookSource),
+          book: route('/api/book'),
+          markets: route('/api/markets'),
+          publish: route('/api/offers'),
+          atomicSwaps: route('/api/atomic-swaps'),
+        ),
+        liquid: LiquidEndpoint(
+          network: 'liquid-$_liquidNetwork',
+          policyAsset: _liquidPolicyAsset,
+          genesisHash: _onLab ? lab!.regtest.genesisHash : null,
+          paramsSource: _onLab ? 'profile' : 'default',
+          backend: _onLab || _liquidNetwork != 'regtest'
+              ? 'electrum'
+              : 'elements_rpc',
+          backendDescription: _liquidBackendDescription(),
+          backendSource: _onLab ? 'profile' : 'default',
+        ),
+        bitcoin: _onLab
+            ? BitcoinEndpoint(
+                network: 'bitcoin-regtest',
+                electrumUrl: lab!.regtest.bitcoinElectrumUrl,
+                source: 'profile',
+              )
+            : const BitcoinEndpoint(
+                network: 'bitcoin-testnet',
+                electrumUrl: 'ssl://electrum.blockstream.info:60002',
+                source: 'default',
+              ),
+      ),
+    );
+  }
+
+  @override
+  Future<TestServerInfo> getTestServer({bool check = false}) async {
+    final lab = _testServerProfile;
+    if (!check || lab == null) return _testServerInfo();
+    await Future.delayed(const Duration(milliseconds: 200));
+    return _testServerInfo(
+      check: mockTestServerReachable
+          ? TestServerCheck(
+              reachable: true,
+              stale: mockTestServerStale,
+              serverInstanceId: mockTestServerStale
+                  ? 'mock0002'
+                  : lab.regtest.instanceId,
+            )
+          : const TestServerCheck(
+              reachable: false,
+              stale: false,
+              error: 'Cannot reach the test server: connection refused',
+            ),
+    );
+  }
+
+  @override
+  Future<TestServerInfo> setTestServer(String url) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    var base = url.trim();
+    if (base.endsWith('/')) base = base.substring(0, base.length - 1);
+    final uri = Uri.tryParse(base);
+    if (uri == null ||
+        !(uri.scheme == 'http' || uri.scheme == 'https') ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment) {
+      throw Exception(
+        'wallet-ffi: Invalid test server URL: $url (expected http(s)://host[:port])',
+      );
+    }
+    // `.invalid` never resolves (RFC 2606): the mock's unreachable server.
+    if (uri.host.endsWith('.invalid')) {
+      throw Exception(
+        'wallet-ffi: Cannot reach the test server: ${uri.host}: '
+        'connection refused',
+      );
+    }
+    final switched = _liquidNetwork != 'regtest';
+    _testServerProfile = _mockProfile(base);
+    _liquidNetwork = 'regtest';
+    _liquidPolicyAsset = _labPolicyAsset;
+    final wasStale = mockTestServerStale;
+    mockTestServerStale = false;
+    return _testServerInfo(
+      check: TestServerCheck(
+        reachable: true,
+        stale: false,
+        serverInstanceId: _testServerProfile!.regtest.instanceId,
+      ),
+      applied: TestServerApplied(
+        liquidNetwork: 'liquid-regtest',
+        networkSwitched: switched,
+        walletClosed: true,
+        regtestCacheReset: wasStale,
+      ),
+    );
+  }
+
+  @override
+  Future<TestServerInfo> clearTestServer() async {
+    await Future.delayed(const Duration(milliseconds: 200));
+    final wasOnLab = _onLab;
+    _testServerProfile = null;
+    mockTestServerStale = false;
+    if (wasOnLab) {
+      _liquidNetwork = 'testnet';
+      _liquidPolicyAsset =
+          '144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49';
+    }
+    return _testServerInfo(
+      applied: TestServerApplied(
+        liquidNetwork: 'liquid-$_liquidNetwork',
+        networkSwitched: wasOnLab,
+        walletClosed: true,
+        regtestCacheReset: wasOnLab,
+      ),
+    );
+  }
 
   @override
   Future<LiquidNetworkInfo> getLiquidNetwork() async => _liquidNetworkInfo();
@@ -1758,7 +1942,22 @@ class MockWalletBridge implements WalletBridge {
     if (name != 'testnet' && name != 'regtest') {
       throw Exception('wallet-ffi: unknown Liquid network "$network"');
     }
+    final lab = _testServerProfile;
+    if (name == 'regtest' &&
+        lab != null &&
+        (policyAsset ?? '').trim().isNotEmpty &&
+        policyAsset!.trim().toLowerCase() != lab.regtest.policyAsset) {
+      throw Exception(
+        'wallet-ffi: Liquid regtest is the test server\'s '
+        '(${lab.regtest.policyAsset}). Clear the test server to use another '
+        'regtest.',
+      );
+    }
     _liquidNetwork = name;
+    if (name == 'regtest' && lab != null) {
+      _liquidPolicyAsset = lab.regtest.policyAsset;
+      return _liquidNetworkInfo();
+    }
     _liquidPolicyAsset = name == 'regtest'
         ? ((policyAsset ?? '').trim().isEmpty
               ? '5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225'
