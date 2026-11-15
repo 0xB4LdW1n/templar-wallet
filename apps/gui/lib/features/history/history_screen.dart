@@ -778,8 +778,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       backgroundColor: Colors.transparent,
       builder: (_) => _TxDetailSheet(
         tx: tx,
-        btcExplorerUrl: appState.btcExplorerUrl,
-        liquidExplorerUrl: appState.liquidExplorerUrl,
+        btcExplorerUrl: appState.btcExplorerBase,
+        liquidExplorerUrl: appState.liquidExplorerBase,
       ),
     );
   }
@@ -1233,13 +1233,16 @@ class _TxDetailSheet extends StatelessWidget {
     required this.liquidExplorerUrl,
   });
   final Transaction tx;
-  final String btcExplorerUrl;
-  final String liquidExplorerUrl;
+
+  /// Null on a regtest: no public explorer knows the chain, so no link.
+  final String? btcExplorerUrl;
+  final String? liquidExplorerUrl;
+
+  String? get _explorerBase =>
+      tx.chain == TxChain.liquid ? liquidExplorerUrl : btcExplorerUrl;
 
   String _explorerUrl() {
-    final base = tx.chain == TxChain.liquid
-        ? liquidExplorerUrl
-        : btcExplorerUrl;
+    final base = _explorerBase!;
     final baseTrimmed = base.endsWith('/')
         ? base.substring(0, base.length - 1)
         : base;
@@ -1480,21 +1483,22 @@ class _TxDetailSheet extends StatelessWidget {
                   // Actions. On a phone this is the shared secondary, so its
                   // height, radius and fill come from the one place that owns
                   // them instead of from a local minimumSize patch here.
-                  phone
-                      ? SecondaryButton(
-                          label: 'View on Explorer',
-                          icon: Icons.open_in_new,
-                          onPressed: () => _openExplorer(context),
-                          isFullWidth: true,
-                        )
-                      : SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
+                  if (_explorerBase != null)
+                    phone
+                        ? SecondaryButton(
+                            label: 'View on Explorer',
+                            icon: Icons.open_in_new,
                             onPressed: () => _openExplorer(context),
-                            icon: const Icon(Icons.open_in_new, size: 16),
-                            label: const Text('View on Explorer'),
+                            isFullWidth: true,
+                          )
+                        : SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: () => _openExplorer(context),
+                              icon: const Icon(Icons.open_in_new, size: 16),
+                              label: const Text('View on Explorer'),
+                            ),
                           ),
-                        ),
                 ],
               ),
             ),

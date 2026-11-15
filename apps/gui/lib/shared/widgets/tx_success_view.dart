@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/app_state.dart';
@@ -46,9 +45,7 @@ class _TxSuccessDialog extends StatelessWidget {
 
   bool get _isLiquid => preview.chain == 'liquid';
 
-  Future<void> _openExplorer(BuildContext context) async {
-    final app = context.read<AppState>();
-    final base = _isLiquid ? app.liquidExplorerUrl : app.btcExplorerUrl;
+  Future<void> _openExplorer(BuildContext context, String base) async {
     final trimmed = base.endsWith('/')
         ? base.substring(0, base.length - 1)
         : base;
@@ -63,6 +60,12 @@ class _TxSuccessDialog extends StatelessWidget {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
     final badge = phone ? 56.0 : 64.0;
+    final app = maybeAppState(context);
+    // Null on a regtest (no public explorer knows it): no link at all.
+    final explorer = _isLiquid ? app?.liquidExplorerBase : app?.btcExplorerBase;
+    final network = _isLiquid
+        ? 'Liquid ${app?.liquidNetworkName ?? 'testnet'}'
+        : 'Bitcoin ${app?.bitcoinNetworkName ?? 'testnet'}';
 
     final body = Column(
       mainAxisSize: MainAxisSize.min,
@@ -104,7 +107,7 @@ class _TxSuccessDialog extends StatelessWidget {
         Reveal(
           delay: 2,
           child: Text(
-            'Broadcast to the ${_isLiquid ? 'Liquid' : 'Bitcoin'} testnet.',
+            'Broadcast to $network.',
             textAlign: TextAlign.center,
             style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
           ),
@@ -133,22 +136,25 @@ class _TxSuccessDialog extends StatelessWidget {
                   isFullWidth: true,
                   onPressed: () => Navigator.of(context).pop(),
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                SecondaryButton(
-                  label: 'View on explorer',
-                  icon: Icons.open_in_new_rounded,
-                  isFullWidth: true,
-                  onPressed: () => _openExplorer(context),
-                ),
+                if (explorer != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  SecondaryButton(
+                    label: 'View on explorer',
+                    icon: Icons.open_in_new_rounded,
+                    isFullWidth: true,
+                    onPressed: () => _openExplorer(context, explorer),
+                  ),
+                ],
               ],
             ),
           ]
         : <Widget>[
-            SecondaryButton(
-              label: 'View on explorer',
-              icon: Icons.open_in_new_rounded,
-              onPressed: () => _openExplorer(context),
-            ),
+            if (explorer != null)
+              SecondaryButton(
+                label: 'View on explorer',
+                icon: Icons.open_in_new_rounded,
+                onPressed: () => _openExplorer(context, explorer),
+              ),
             PrimaryButton(
               label: 'Done',
               onPressed: () => Navigator.of(context).pop(),

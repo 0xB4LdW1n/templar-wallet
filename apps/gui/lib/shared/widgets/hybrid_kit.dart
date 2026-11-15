@@ -465,13 +465,17 @@ class TagChip extends StatelessWidget {
 /// once, on the dashboard the user lands on after unlocking, it is still the
 /// answer to "which network am I on" and is no longer wallpaper.
 class TestnetBadge extends StatelessWidget {
-  const TestnetBadge({super.key});
+  const TestnetBadge({super.key, this.label = 'TESTNET'});
+
+  /// The network's name: `TESTNET`, or `REGTEST` beside a test server.
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     return Semantics(
-      label: 'Testnet network — no mainnet funds',
+      label:
+          '${label[0]}${label.substring(1).toLowerCase()} network — no mainnet funds',
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
         decoration: BoxDecoration(
@@ -480,7 +484,7 @@ class TestnetBadge extends StatelessWidget {
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(
-          'TESTNET',
+          label,
           maxLines: 1,
           softWrap: false,
           overflow: TextOverflow.ellipsis,

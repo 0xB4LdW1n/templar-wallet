@@ -411,7 +411,7 @@ class _DashboardContent extends StatelessWidget {
             child: PageHeader(
               title: data.walletName,
               subtitle: 'Dashboard',
-              actions: const [TestnetBadge()],
+              actions: [TestnetBadge(label: networkBadgeLabel(context))],
             ),
           ),
         Reveal(
@@ -740,7 +740,7 @@ class _BrandHeroState extends State<_BrandHero> {
                 Row(
                   children: [
                     Expanded(child: greeting),
-                    const TestnetBadge(),
+                    TestnetBadge(label: networkBadgeLabel(context)),
                   ],
                 )
               else
@@ -1566,7 +1566,7 @@ class _HeroEyebrow extends StatelessWidget {
                 // The network answer, once, where the number is read. It is
                 // amber because it is a warning, not a label.
                 TextSpan(
-                  text: 'TESTNET',
+                  text: networkBadgeLabel(context),
                   style: label.copyWith(color: s.testnet),
                 ),
               ],
@@ -2675,3 +2675,8 @@ class _ActivityRow extends StatelessWidget {
     );
   }
 }
+
+/// The network the dashboard states: `TESTNET`, or `REGTEST` when Bitcoin
+/// runs on a joined test server's regtest (Liquid is then on its regtest too).
+String networkBadgeLabel(BuildContext context) =>
+    (maybeAppState(context)?.isBitcoinRegtest ?? false) ? 'REGTEST' : 'TESTNET';

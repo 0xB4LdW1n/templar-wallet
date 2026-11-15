@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../bridge/wallet_bridge.dart';
 import '../features/dashboard/models/dashboard_data.dart';
@@ -408,5 +409,15 @@ class AppState extends ChangeNotifier {
   void bumpSync() {
     _syncVersion++;
     notifyListeners();
+  }
+}
+
+/// The app state above [context], or null in a bare host without one (some
+/// widget tests render shared widgets alone).
+AppState? maybeAppState(BuildContext context) {
+  try {
+    return context.read<AppState>();
+  } on ProviderNotFoundException {
+    return null;
   }
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../app/app_state.dart';
+
 import '../../features/send/models/tx_preview.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
@@ -58,6 +60,7 @@ class _TxConfirmDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final isLiquid = preview.chain == 'liquid';
+    final app = maybeAppState(context);
     final phone = AppLayout.isPhone(context);
     final badge = phone ? 48.0 : 56.0;
 
@@ -105,7 +108,9 @@ class _TxConfirmDialog extends StatelessWidget {
               : CrossAxisAlignment.center,
           children: [
             TagChip(
-              label: isLiquid ? 'LIQUID TESTNET' : 'BITCOIN TESTNET',
+              label: isLiquid
+                  ? 'LIQUID ${(app?.liquidNetworkName ?? 'testnet').toUpperCase()}'
+                  : 'BITCOIN ${(app?.bitcoinNetworkName ?? 'testnet').toUpperCase()}',
               color: isLiquid ? s.liquid : s.bitcoin,
             ),
             const SizedBox(width: AppSpacing.sm),
