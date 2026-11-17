@@ -1,122 +1,46 @@
 // A native peg-in and peg-out through the Peg screen of the real desktop app,
-// on the real engine, against a running Templar test server: start, fund
-// (confirmation + app password), wait for confirmations, claim, completed.
+// on the real engine, against a running Templar test server — starting from
+// a wallet with NO coins: the form shows its balances; funding the peg-in
+// is refused as "Not enough BTC" with the faucet's BTC beside the refusal;
+// that action pays the wallet; funding again works; then confirmations,
+// claim, completed; then a peg-out of the claimed L-BTC to completion.
 //
-// Opt-in; it needs a lab with its native peg and skips without its URL:
+// Opt-in; it needs a lab with its native peg and skips without its URL.
+// Run it ONLY like this (own sandbox container; window in front):
 //
+//   FLUTTER_XCODE_PRODUCT_BUNDLE_IDENTIFIER=dev.templarwallet.testlabverify \
 //   flutter test integration_test/testlab_peg_test.dart -d macos \
-//     --dart-define=TESTLAB_URL=http://127.0.0.1:8096
+//     --dart-define=TESTLAB_URL=http://127.0.0.1:8196 \
+//     [--dart-define=GUIDE_SHOTS_DIR=/absolute/dir]
 //
-// What is NOT driven through the GUI, on purpose: joining the lab (proven
-// by testlab_join_test.dart; done here through the bridge), funding the
-// throwaway wallet and mining blocks (the lab's admin API on loopback — a
-// lab operator's tools, not the wallet's), and reading balances and order
-// fields for the log (the bridge). Every peg step — start, fund, claim — is
-// a tap in the app, through its confirmation and its password gate.
-//
-// Same isolation as testlab_join_test.dart: a fresh data directory, and a
-// temporary bundle id when a real install shares the Mac. The window must be
-// in front.
-
-import 'dart:convert';
-import 'dart:io';
+// NOT through the GUI, on purpose: joining the lab (testlab_join_test.dart
+// does it through Settings; here the bridge), the throwaway vault and
+// wallet, mining blocks (the lab's admin API on loopback — the lab
+// operator's tool, so the run does not wait ten minutes per block), and
+// reading balances and order fields for the log (the bridge). Every peg
+// step and the faucet are taps in the app, through the confirmation and the
+// password gate where something is signed.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:provider/provider.dart';
 import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/app/router.dart';
 import 'package:templar_wallet/app/routes.dart';
 import 'package:templar_wallet/bridge/bridge_provider.dart';
 import 'package:templar_wallet/bridge/ffi_wallet_bridge.dart';
 import 'package:templar_wallet/features/peg/models/peg_models.dart';
-import 'package:templar_wallet/features/wallet_picker/wallet_picker_screen.dart';
-import 'package:templar_wallet/main.dart';
-import 'package:templar_wallet/shared/widgets/app_dialog.dart';
 
-const String _labUrl = String.fromEnvironment('TESTLAB_URL');
+import 'testlab_support.dart';
+
 const _passphrase = 'testlab-peg-throwaway-passphrase';
-
-Future<void> _wait(WidgetTester tester, [int ms = 700]) async {
-  for (var i = 0; i < (ms / 100).ceil(); i++) {
-    await tester.pump(const Duration(milliseconds: 100));
-  }
-}
-
-Future<void> _until(
-  WidgetTester tester,
-  Finder finder, {
-  int seconds = 90,
-  int atLeast = 1,
-}) async {
-  for (var i = 0; i < seconds * 10; i++) {
-    if (finder.evaluate().length >= atLeast) return;
-    await tester.pump(const Duration(milliseconds: 100));
-  }
-  fail('timed out waiting for $finder');
-}
-
-/// The screen's own refresh button (tooltip "Refresh").
-Future<void> _tapRefresh(WidgetTester tester) async {
-  await _until(tester, find.byTooltip('Refresh'));
-  await tester.tap(find.byTooltip('Refresh').first);
-  await _wait(tester, 3000);
-}
-
-/// The lab's admin API (open on loopback).
-Future<Map<String, dynamic>> _admin(
-  String path,
-  Map<String, Object> body,
-) async {
-  final client = HttpClient();
-  try {
-    final req = await client.postUrl(Uri.parse('$_labUrl/admin/api/$path'));
-    req.headers.contentType = ContentType.json;
-    req.write(jsonEncode(body));
-    final res = await req.close();
-    final text = await res.transform(utf8.decoder).join();
-    if (res.statusCode != 200) fail('admin $path: ${res.statusCode} $text');
-    return jsonDecode(text) as Map<String, dynamic>;
-  } finally {
-    client.close();
-  }
-}
-
-Future<void> _mine(String chain, int blocks) =>
-    _admin('mine', {'chain': chain, 'blocks': blocks});
-
-/// (BTC, L-BTC) in sats after a sync; retried until [ok] holds (Electrum
-/// servers index a new block a moment after it is mined).
-Future<(int, int)> _balances(
-  String walletId, {
-  bool Function((int, int))? ok,
-}) async {
-  var last = (0, 0);
-  for (var i = 0; i < 20; i++) {
-    final sync = await walletBridge.syncWallet(walletId);
-    final d = await walletBridge.getWalletSummary(walletId);
-    int of(String t) =>
-        d.assets.where((a) => a.ticker == t).fold(0, (n, a) => n + a.amount);
-    last = (of('BTC'), of('LBTC'));
-    if (ok == null || ok(last)) return last;
-    if (i == 0) {
-      debugPrint(
-        'PEG waiting for the sync: $sync; assets '
-        '${d.assets.map((a) => '${a.ticker}=${a.amount}').join(', ')}',
-      );
-    }
-    await Future<void>.delayed(const Duration(seconds: 3));
-  }
-  return last;
-}
+const _wallet = 'Peg throwaway';
 
 Future<PegOrder> _order(String walletId, String id) async =>
     (await walletBridge.pegList(walletId)).firstWhere((o) => o.orderId == id);
 
-/// Mines with [between], taps the screen's Refresh, and repeats
-/// until the order has reached [status] (the stepper names every step, so
-/// the engine's answer is the gate; the screen is then checked for it).
+/// Mines with [between], taps the screen's Refresh, and repeats until the
+/// order has reached [status].
 Future<void> _refreshUntil(
   WidgetTester tester,
   String walletId,
@@ -127,233 +51,175 @@ Future<void> _refreshUntil(
 }) async {
   for (var i = 0; i < tries; i++) {
     if (between != null) await between();
-    await _wait(tester, 2500);
+    await wait(tester, 2500);
     final refresh = find.byTooltip('Refresh');
-    if (refresh.evaluate().isNotEmpty) {
-      await tester.tap(refresh.first);
-    }
-    await _wait(tester, 3000);
+    if (refresh.evaluate().isNotEmpty) await tester.tap(refresh.first);
+    await wait(tester, 3000);
     if ((await _order(walletId, orderId)).status == status) {
-      await _wait(tester, 3000);
+      await wait(tester, 3000);
       return;
     }
   }
   fail('the order never reached "$status"');
 }
 
-/// Scrolls [label] into view, then taps it.
-Future<void> _tapText(WidgetTester tester, String label) async {
-  final f = find.text(label).first;
-  await tester.ensureVisible(f);
-  await _wait(tester, 400);
-  await tester.tap(f);
-  await _wait(tester, 600);
-}
-
-Future<void> _tapDialog(WidgetTester tester, String label) async {
-  await tester.tap(
-    find.descendant(of: find.byType(PromptDialog), matching: find.text(label)),
-  );
-  await _wait(tester, 800);
+Future<void> _tapRefresh(WidgetTester tester) async {
+  await until(tester, find.byTooltip('Refresh'));
+  await tester.tap(find.byTooltip('Refresh').first);
+  await wait(tester, 3000);
 }
 
 /// What will be signed, then the app password.
-Future<void> _confirmAndSign(WidgetTester tester) async {
-  await _until(tester, find.text('Continue'));
-  await _tapDialog(tester, 'Continue');
-  await _until(tester, find.text('Confirm with your app password'));
-  await tester.enterText(
-    find.descendant(
-      of: find.byType(PromptDialog),
-      matching: find.byType(TextField),
-    ),
-    _passphrase,
-  );
-  await _tapDialog(tester, 'Sign');
+Future<void> _confirmAndSign(WidgetTester tester, {String? shot}) async {
+  await until(tester, find.text('Continue'));
+  await tapInDialog(tester, 'Continue');
+  await passGate(tester, _passphrase, shot: shot);
 }
-
-/// The wallet's row in the picker (the closing shell's header names it too).
-final _inPicker = find.descendant(
-  of: find.byType(WalletPickerScreen),
-  matching: find.text('Peg throwaway'),
-);
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
 
   testWidgets(
-    'native peg-in and peg-out from the Peg screen',
-    skip: _labUrl.isEmpty,
-    timeout: const Timeout(Duration(minutes: 15)),
+    'peg-in funded from the in-wallet faucet, then a peg-out',
+    skip: labUrl.isEmpty,
+    timeout: const Timeout(Duration(minutes: 20)),
     (tester) async {
-      // An older SwitchListTile on a coloured card trips a debug-only ink
-      // assertion on some screens; it has nothing to do with this flow.
-      final reportError = FlutterError.onError;
-      FlutterError.onError = (details) {
-        if (details.exceptionAsString().contains(
-          'ListTile background color or ink splashes may be invisible',
-        )) {
-          return;
-        }
-        reportError?.call(details);
-      };
-      addTearDown(() => FlutterError.onError = reportError);
-
-      final dataDir = Directory(
-        '${Directory.systemTemp.path}/templar-peg-'
-        '${DateTime.now().millisecondsSinceEpoch}',
-      )..createSync(recursive: true);
-      expect(FfiWalletBridge.setDataDir(dataDir.path), 0);
+      ignoreInkAssertion();
+      final dataDir = throwawayDataDir('templar-peg');
+      expect(FfiWalletBridge.setDataDir(dataDir), 0);
       expect(walletBridge, isA<FfiWalletBridge>());
-      debugPrint('PEG data dir ${dataDir.path}');
+      debugPrint('PEG data dir $dataDir');
 
-      // Throwaway vault, joined to the lab, then the wallet.
       await walletBridge.setupVault(_passphrase);
-      await walletBridge.setTestServer(_labUrl);
-      final words = await walletBridge.generateMnemonic(12);
+      final joined = await walletBridge.setTestServer(labUrl);
+      expect(joined.active.bitcoin.isRegtest, isTrue);
       final walletId = await walletBridge.createWallet(
-        'Peg throwaway',
-        words,
+        _wallet,
+        await walletBridge.generateMnemonic(12),
         liquid: true,
       );
-      final net = await walletBridge.getLiquidNetwork();
-      expect(net.pegProvider, 'native');
-
-      // Coins from the lab's admin API: BTC to peg in, L-BTC for fees.
-      await walletBridge.openWallet(walletId);
-      final btcAddr = (await walletBridge.generateReceiveAddress(
-        walletId,
-        'BTC',
-      )).address;
-      final lbtcAddr = (await walletBridge.generateReceiveAddress(
-        walletId,
-        'LBTC',
-      )).address;
-      final sentBtc = await _admin('send', {
-        'network': 'bitcoin-regtest',
-        'address': btcAddr,
-        'amount': '0.01',
-      });
-      final sentLbtc = await _admin('send', {
-        'network': 'liquid-regtest',
-        'address': lbtcAddr,
-        'asset': 'lbtc',
-        'amount': '0.001',
-      });
-      debugPrint(
-        'PEG funded: btc ${sentBtc['txid']}, lbtc ${sentLbtc['txid']}',
-      );
-      await _mine('bitcoin', 1);
-      await _mine('liquid', 1);
-      await Future<void>.delayed(const Duration(seconds: 3));
-      final start = await _balances(walletId, ok: (b) => b.$1 > 0 && b.$2 > 0);
-      debugPrint(
-        'PEG balances before: BTC ${start.$1} sat, L-BTC ${start.$2} sat',
-      );
-      expect(start.$1, greaterThan(0));
+      final start = await balances(walletId);
+      debugPrint('PEG start: $start');
+      expect(start['BTC'] ?? 0, 0);
 
       final appState = AppState();
       await appState.loadPrefs();
-      await appState.setPegEnabled(true);
-      appState.setLiquidNetworkInfo(net);
+      appState.setLiquidNetworkInfo(await walletBridge.getLiquidNetwork());
       appState.setTestServerInfo(await walletBridge.getTestServer());
+      expect(appState.liquidNetwork!.pegProvider, 'native');
 
-      tester.view.devicePixelRatio = 2.0;
-      tester.view.physicalSize = const Size(2560, 2000);
-      await tester.pumpWidget(
-        ChangeNotifierProvider.value(
-          value: appState,
-          child: const TemplarWalletApp(),
-        ),
-      );
-      await _wait(tester, 2500);
-      appRouter.go(AppRoutes.walletPicker);
-      await _until(tester, _inPicker);
-      await _wait(tester, 1000);
-      await tester.tap(_inPicker.first);
-      await _wait(tester, 3000);
+      await pumpApp(tester, appState);
+      await openWallet(tester, _wallet);
+      await enableFeature(tester, 'advanced-peg');
 
-      // ── Peg-in ────────────────────────────────────────────────────────────
+      // ── Peg-in: the form, with this wallet's balances ──────────────────
       appRouter.go(AppRoutes.peg);
-      await _until(tester, find.textContaining('Native peg'));
-      await tester.enterText(find.byType(TextField).first, '0.002');
-      await _until(tester, find.text('2 Bitcoin confirmations'));
-      await _wait(tester, 1500); // the payout address prefill
-      await _tapText(tester, 'Start peg-in');
-      await _until(tester, find.text('Fund from this wallet'));
+      await until(tester, textContaining('Native peg'));
+      await until(tester, find.byKey(const Key('peg-balances')));
+      await tester.enterText(find.byType(TextField).first, '0.005');
+      await until(tester, find.text('2 Bitcoin confirmations'));
+      await wait(tester, 1500); // the payout address prefill
+      expect(textContaining('In this wallet: 0.00000000 BTC'), findsWidgets);
+      await guideShot(tester, '20-peg-in-form');
+      await tapText(tester, 'Start peg-in');
+      await until(tester, find.text('Fund from this wallet'));
       final pegIn = (await walletBridge.pegList(walletId)).first;
       debugPrint(
         'PEG in ${pegIn.orderId}: deposit ${pegIn.depositAddress} '
         '(valid through Liquid ${pegIn.validUntilLiquidHeight})',
       );
+      await tester.ensureVisible(find.text('Fund from this wallet'));
+      await guideShot(tester, '21-peg-in-awaiting-deposit');
 
-      await _tapText(tester, 'Fund from this wallet');
-      await _confirmAndSign(tester);
-      await _until(tester, find.textContaining('Deposit sent'));
-      debugPrint(
-        'PEG in deposit tx ${(await _order(walletId, pegIn.orderId)).txidDeposit}',
+      // ── Funding with no BTC: the refusal and the faucet beside it ──────
+      await tapText(tester, 'Fund from this wallet');
+      await _confirmAndSign(tester, shot: '22-peg-password-gate');
+      await until(tester, find.text('Not enough BTC'));
+      debugPrint('PEG refusal: ${firstTextContaining('sat of BTC on')}');
+      expect(textContaining('Transaction build failed'), findsNothing);
+      await tester.ensureVisible(find.text('Get test BTC'));
+      await guideShot(tester, '23-peg-insufficient-funds');
+      await tapText(tester, 'Get test BTC');
+      await until(tester, textContaining('BTC on its way'), seconds: 40);
+      debugPrint('PEG faucet: ${firstTextContaining('BTC on its way')}');
+      await guideShot(tester, '24-peg-faucet-btc');
+
+      // The lab confirms the faucet's payment in its next block; mined here
+      // so the run does not wait for the lab's own timer.
+      await mine('bitcoin');
+      final funded = await balances(walletId, ok: (m) => (m['BTC'] ?? 0) > 0);
+      debugPrint('PEG after the faucet: BTC ${funded['BTC']} sat');
+      expect(funded['BTC'], greaterThan(500000));
+      // The screen's balances follow the app's own sync (35 s after the
+      // faucet), so the next tap waits for it.
+      await until(
+        tester,
+        textContaining('In this wallet: 0.01000000 BTC'),
+        seconds: 90,
       );
 
+      // ── Fund again: it goes through ────────────────────────────────────
+      await tapText(tester, 'Fund from this wallet');
+      await _confirmAndSign(tester);
+      await until(tester, textContaining('Deposit sent'));
+      debugPrint(
+        'PEG in deposit tx '
+        '${(await _order(walletId, pegIn.orderId)).txidDeposit}',
+      );
       await _refreshUntil(
         tester,
         walletId,
         pegIn.orderId,
         'claimable',
-        between: () => _mine('bitcoin', 1),
+        between: () => mine('bitcoin'),
       );
-      await _until(tester, find.text('Claim'));
-      await _tapText(tester, 'Claim');
+      await until(tester, find.text('Claim'));
+      await tester.ensureVisible(find.text('Claim'));
+      await guideShot(tester, '25-peg-in-ready-to-claim');
+      await tapText(tester, 'Claim');
       await _confirmAndSign(tester);
-      await _until(tester, find.textContaining('Claim sent'));
+      await until(tester, textContaining('Claim sent'));
       await _refreshUntil(
         tester,
         walletId,
         pegIn.orderId,
         'completed',
-        between: () => _mine('liquid', 1),
+        between: () => mine('liquid'),
       );
-      // The engine's read above can be newer than the screen's last one
-      // (the screen said "Settling" while the engine already answered
-      // "completed"): check the chains once more from the screen, then
-      // its badge says it beside the stepper's own "Completed" label.
       await _tapRefresh(tester);
-      await _until(tester, find.text('Completed'), atLeast: 2);
-      expect(find.text('Completed'), findsAtLeastNWidgets(2));
+      await until(tester, find.text('Completed'), atLeast: 2);
       final inDone = await _order(walletId, pegIn.orderId);
       debugPrint(
         'PEG in ${inDone.status}: deposit ${inDone.txidDeposit}, claim '
         '${inDone.txidClaim}, received ${inDone.payoutExpectedSats} sat',
       );
       expect(inDone.status, 'completed');
-      final afterIn = await _balances(walletId, ok: (b) => b.$2 > start.$2);
+      await guideShot(tester, '26-peg-in-completed');
+      final afterIn = await balances(walletId, ok: (m) => (m['LBTC'] ?? 0) > 0);
       debugPrint(
-        'PEG balances after peg-in: BTC ${afterIn.$1} sat, L-BTC ${afterIn.$2} sat',
+        'PEG after peg-in: BTC ${afterIn['BTC']} sat, L-BTC ${afterIn['LBTC']}',
       );
-      expect(afterIn.$2, greaterThan(start.$2));
 
-      // ── Peg-out ───────────────────────────────────────────────────────────
-      // The rework's segment reads "Peg out" (sentence case, no hyphen).
-      await _tapText(tester, 'Peg out');
-      await _wait(tester, 1500);
-      await tester.enterText(find.byType(TextField).first, '0.001');
-      await _until(tester, find.text('2 Liquid confirmations'));
-      await _wait(tester, 1500);
-      await _tapText(tester, 'Start peg-out');
-      await _until(tester, find.textContaining('no address to pay by hand'));
+      // ── Peg-out of the claimed L-BTC ───────────────────────────────────
+      await tapText(tester, 'Peg out');
+      await wait(tester, 1500);
+      await tester.enterText(find.byType(TextField).first, '0.002');
+      await until(tester, find.text('2 Liquid confirmations'));
+      await wait(tester, 1500);
+      await guideShot(tester, '27-peg-out-form');
+      await tapText(tester, 'Start peg-out');
+      await until(tester, textContaining('no address to pay by hand'));
       final pegOut = (await walletBridge.pegList(walletId)).first;
       expect(pegOut.isPegIn, isFalse);
-
-      await _tapText(tester, 'Fund from this wallet');
+      await guideShot(tester, '28-peg-out-order');
+      await tapText(tester, 'Fund from this wallet');
       await _confirmAndSign(tester);
-      await _until(tester, find.textContaining('Deposit sent'));
+      await until(tester, textContaining('Deposit sent'));
       debugPrint(
         'PEG out ${pegOut.orderId}: peg-out tx '
         '${(await _order(walletId, pegOut.orderId)).txidDeposit}',
       );
-
-      // Liquid confirmations, then the lab's federation bot pays; its
-      // payment completes the order once it is in a Bitcoin block.
       await _refreshUntil(
         tester,
         walletId,
@@ -362,25 +228,26 @@ void main() {
         tries: 40,
         between: () async {
           final o = await _order(walletId, pegOut.orderId);
-          await _mine(o.status == 'settling' ? 'bitcoin' : 'liquid', 1);
+          await mine(o.status == 'settling' ? 'bitcoin' : 'liquid');
         },
       );
-      // On screen: the peg-in's badge, the peg-out's badge and the peg-out
-      // stepper's own label (the peg-out is the order open).
       await _tapRefresh(tester);
-      await _until(tester, find.text('Completed'), atLeast: 3);
+      await until(tester, find.text('Completed'), atLeast: 3);
       final outDone = await _order(walletId, pegOut.orderId);
       debugPrint(
         'PEG out ${outDone.status}: peg-out ${outDone.txidDeposit}, '
         'federation payment ${outDone.txidPayout}',
       );
       expect(outDone.status, 'completed');
-      await Future<void>.delayed(const Duration(seconds: 3));
-      final end = await _balances(walletId, ok: (b) => b.$1 > afterIn.$1);
-      debugPrint(
-        'PEG balances after peg-out: BTC ${end.$1} sat, L-BTC ${end.$2} sat',
+      await guideShot(tester, '29-peg-out-completed');
+      final end = await balances(
+        walletId,
+        ok: (m) => (m['BTC'] ?? 0) > (afterIn['BTC'] ?? 0),
       );
-      expect(end.$1, greaterThan(afterIn.$1));
+      debugPrint(
+        'PEG after peg-out: BTC ${end['BTC']} sat, L-BTC ${end['LBTC']}',
+      );
+      expect(end['BTC'], greaterThan(afterIn['BTC'] ?? 0));
     },
   );
 }
