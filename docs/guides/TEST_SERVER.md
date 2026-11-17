@@ -41,6 +41,43 @@ Use the test server's own faucet: open the server's URL in a browser (the
 tester page) and paste a receive address from the wallet (Receive, Bitcoin
 or Liquid). Then sync the wallet.
 
+## Peg between the lab's chains
+
+With **Settings › Advanced › Peg** on, the Peg tab (beside Assets and
+LiquiDEX) runs the test server's native peg — the real Elements peg between
+its Bitcoin regtest and its Liquid regtest. Software wallets with both
+chains only.
+
+**Peg-in (BTC → L-BTC).**
+
+1. Enter the amount and choose **Start peg-in**. The order shows a Bitcoin
+   deposit address (and how long it stays valid, as a Liquid block height).
+2. Pay it: **Fund from this wallet** shows what will be signed, then asks
+   for the app password. You can also pay the address from any other wallet.
+3. Wait for the deposit's Bitcoin confirmations (the order counts them,
+   `1 of 2`, …). The list re-reads the chains every 30 seconds while an
+   order is open, or when you press refresh.
+4. When the order says **Ready to claim**, choose **Claim** (confirmation and
+   password again). The claim's small Liquid fee comes out of the deposit.
+   The order completes once the claim is in a Liquid block.
+
+**Peg-out (L-BTC → BTC).** Start a peg-out to one of your Bitcoin addresses,
+then **Fund from this wallet**: the wallet signs the Liquid peg-out (there is
+no address to pay by hand). After its Liquid confirmations the test server's
+federation pays the BTC, up to the server's peg-out maximum; the order
+completes once that payment is in a Bitcoin block.
+
+On **Liquid testnet** (a test server joined, Liquid switched to testnet) the
+provider is **SideSwap**, a third party's custodial swap service — not a
+peg. The app says so before an order is opened: you send coins to SideSwap,
+it pays you on the other chain, and your receive address is sent to it.
+SideSwap's testnet currently refuses to open orders; the app shows its
+answer.
+
+An order that says **Expired** must never be paid. Orders made with older
+versions of the app, against the retired simulated provider, stay in the
+list labelled **Simulated**; no coins moved for them.
+
 ## When the test chain is reset
 
 The operator can reset the lab's chains. The wallet then still points at the

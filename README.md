@@ -30,7 +30,8 @@ from a template or a policy builder.
 - **Co-signing** — import a PSBT or PSET by paste, file or camera, read what
   it really does, sign, merge co-signers' copies, broadcast.
 - **Liquid** — confidential assets, issuance / reissuance / burn on testnet,
-  LiquiDEX swaps and a peg-in / peg-out flow (simulated provider).
+  LiquiDEX swaps, and peg-in / peg-out: the real Elements peg on a Templar
+  test server's regtest, or SideSwap's custodial swap on Liquid testnet.
 - **Templar Protocol** — the wallet is the signing side of Templar Protocol,
   a peer-to-peer lending protocol on Liquid: a site hands over loan
   transactions through `templar://` links, the wallet shows them and signs

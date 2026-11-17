@@ -63,6 +63,22 @@ any release may change anything.
   the regtest strip follow the active Bitcoin network; a regtest has no
   explorer links.
 
+### Peg
+
+- **The peg is real.** The simulated provider is retired. On a joined test
+  server's regtest the Peg screen runs the native Elements peg: start a
+  peg-in, pay its Bitcoin deposit address with **Fund from this wallet** (or
+  from anywhere), wait for its confirmations (shown n of m), then **Claim**
+  the L-BTC; or start a peg-out, **Fund** it, and the test server's
+  federation pays the BTC. Fund and Claim are the only signing steps, each
+  behind a confirmation of what will be signed and the app password. On
+  Liquid testnet the provider is SideSwap's custodial swap service, said
+  plainly (and that the receive address goes to SideSwap) before an order
+  is opened. Elsewhere the screen says why there is no peg. Peg refusals
+  are explained by kind (not ready, expired, proof rejected, unavailable);
+  orders of the retired simulated provider stay listed, labelled as such.
+  Activity names peg transactions. Guide: `docs/guides/TEST_SERVER.md`.
+
 ### Templar Protocol
 
 - **Loans**, a destination beside the Dashboard (a carousel tab on a phone):
