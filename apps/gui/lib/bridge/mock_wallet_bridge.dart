@@ -1043,46 +1043,88 @@ class MockWalletBridge implements WalletBridge {
   Future<AtomicSwap> atomicSwapRefund(String walletId, int offerId) async =>
       throw UnimplementedError('Atomic swaps require the native engine');
 
-  // ── Peg (mock, simulated provider) ────────────────────────────────────────
+  // ── Peg (mock of the native peg and SideSwap) ──────────────────────────────
+  //
+  // The provider follows the mock network the way the engine's does: native
+  // on a joined lab's regtest, SideSwap on testnet beside a joined lab, none
+  // otherwise. Each status read moves a funded order one step, so a debug
+  // session (or a test) walks the whole flow by refreshing.
 
   static const int _pegMinSats = 10000;
-  static const int _pegMaxSats = 2100000000;
-  // Clearly fake but well-formed deposit addresses; the UI labels them SIMULATED.
-  static const _pegInDepositAddr =
-      'tb1qsimulatedpegdeposit0demo0nly00000000000';
-  static const _pegOutDepositAddr =
-      'tlq1qqsimulatedpegdeposit0demo0nly00000000000000000000000000000';
+  static const int _pegOutMaxSats = 100000000;
+  static const int _pegClaimFeeSats = 35;
+
+  /// Reads after which an unfunded native peg-in expires (the federation
+  /// changed). Null: never.
+  int? mockPegExpireAfterReads;
+
+  /// What the next reads report as `last_error` (a chain server down).
+  String? mockPegChainError;
 
   final Map<String, Map<String, dynamic>> _pegOrders = {};
 
-  static (int service, int network, int receive) _pegFees(int amountSats) {
-    // Integer division to match the Rust provider's 0.1% floor exactly.
-    final service = math.max(100, amountSats ~/ 1000);
-    const network = 250;
-    return (service, network, amountSats - service - network);
+  String? get _pegProvider {
+    if (_onLab) return 'native';
+    if (_testServerProfile != null && _liquidNetwork == 'testnet') {
+      return 'sideswap';
+    }
+    return null;
+  }
+
+  String get _pegUnavailable => _liquidNetwork == 'testnet'
+      ? 'PEG_UNAVAILABLE: Liquid testnet has no parent chain, so it has no '
+            'native peg-in / peg-out (a test server whose config names '
+            'SideSwap for testnet enables its swap service).'
+      : 'PEG_UNAVAILABLE: a plain regtest has no peg; join a test server.';
+
+  String _requirePegProvider() {
+    final p = _pegProvider;
+    if (p == null) throw Exception('wallet-ffi: $_pegUnavailable');
+    return p;
+  }
+
+  void _checkPegLimits(String direction, int amountSats, String provider) {
+    if (amountSats < _pegMinSats) {
+      throw Exception(
+        'wallet-ffi: Amount is below the minimum of $_pegMinSats sats',
+      );
+    }
+    if (provider == 'native' &&
+        direction == 'out' &&
+        amountSats > _pegOutMaxSats) {
+      throw Exception(
+        'wallet-ffi: Amount is above the maximum of $_pegOutMaxSats sats',
+      );
+    }
   }
 
   @override
   Future<PegQuote> pegQuote(String direction, int amountSats) async {
     await Future.delayed(const Duration(milliseconds: 250));
-    if (amountSats < _pegMinSats) {
-      throw Exception('wallet-ffi: amount below minimum of $_pegMinSats sats');
-    }
-    if (amountSats > _pegMaxSats) {
-      throw Exception('wallet-ffi: amount above maximum of $_pegMaxSats sats');
-    }
-    final (service, network, receive) = _pegFees(amountSats);
+    final provider = _requirePegProvider();
+    _checkPegLimits(direction, amountSats, provider);
+    final native = provider == 'native';
+    final serviceFee = native ? 0 : amountSats ~/ 100;
+    final networkFee = native
+        ? _pegClaimFeeSats
+        : (direction == 'out' ? 300 : 0);
+    final included = !native || direction == 'in';
     return PegQuote.fromJson({
       'direction': direction,
       'amount_sats': amountSats,
       'rate': 1.0,
-      'service_fee_sats': service,
-      'network_fee_sats': network,
-      'receive_sats': receive,
+      'service_fee_sats': serviceFee,
+      'network_fee_sats': networkFee,
+      'receive_sats': amountSats - serviceFee - (included ? networkFee : 0),
       'min_sats': _pegMinSats,
-      'max_sats': _pegMaxSats,
-      'eta_minutes': 2,
-      'simulated': true,
+      'max_sats': native && direction == 'out'
+          ? _pegOutMaxSats
+          : 2100000000000000,
+      'eta_minutes': direction == 'in' ? 21 : 12,
+      'simulated': false,
+      'provider': provider,
+      'confirmations_required': 2,
+      'network_fee_included': included,
     });
   }
 
@@ -1094,14 +1136,8 @@ class MockWalletBridge implements WalletBridge {
     String payoutAddress,
   ) async {
     await Future.delayed(const Duration(milliseconds: 500));
-    // Same limit checks the Rust provider applies via quote().
-    if (amountSats < _pegMinSats) {
-      throw Exception('wallet-ffi: amount below minimum of $_pegMinSats sats');
-    }
-    if (amountSats > _pegMaxSats) {
-      throw Exception('wallet-ffi: amount above maximum of $_pegMaxSats sats');
-    }
-    final (_, _, receive) = _pegFees(amountSats);
+    final quote = await pegQuote(direction, amountSats);
+    final provider = quote.provider;
     final now = _nowSecs();
     final orderId = 'pg_${_hex8()}';
     final order = <String, dynamic>{
@@ -1109,62 +1145,102 @@ class MockWalletBridge implements WalletBridge {
       'wallet_id': walletId,
       'direction': direction,
       'status': 'awaiting_deposit',
+      // A native peg-out has nothing to pay by hand: funding makes it.
       'deposit_address': direction == 'in'
-          ? _pegInDepositAddr
-          : _pegOutDepositAddr,
+          ? '2MwZFDfh4yR5ahSbq2mqgzhv77kPxPQELUY'
+          : (provider == 'sideswap'
+                ? 'tlq1qqmocksideswapdeposit00000000000000000000000000000000'
+                : ''),
       'deposit_expected_sats': amountSats,
       'payout_address': payoutAddress,
-      'payout_expected_sats': receive,
+      'payout_expected_sats': quote.receiveSats,
       'created_at': now,
       'updated_at': now,
-      'eta_minutes': 2,
+      'eta_minutes': quote.etaMinutes,
       'txid_deposit': null,
       'txid_payout': null,
-      'simulated': true,
+      'txid_claim': null,
+      'simulated': false,
+      'provider': provider,
+      'confirmations': 0,
+      'confirmations_required': 2,
+      'deposit_received_sats': null,
+      'valid_until_liquid_height': provider == 'native' && direction == 'in'
+          ? 189
+          : null,
+      'last_error': null,
+      'expires_at': provider == 'sideswap' ? now + 3600 : null,
       'status_history': <Map<String, dynamic>>[
         {'status': 'awaiting_deposit', 'at': now},
       ],
+      '_reads': 0,
     };
     _pegOrders[orderId] = order;
     return PegOrder.fromJson(order);
   }
 
-  // Mock lifecycle: elapsed seconds since created_at drive the transitions.
-  static const _pegStages = [
-    (20, 'deposit_seen'),
-    (50, 'confirming'),
-    (80, 'settling'),
-    (110, 'completed'),
-  ];
+  void _pegEnter(Map<String, dynamic> order, String status) {
+    final now = _nowSecs();
+    order['status'] = status;
+    order['updated_at'] = now;
+    (order['status_history'] as List).cast<Map<String, dynamic>>().add({
+      'status': status,
+      'at': now,
+    });
+  }
 
+  /// One status read: a funded order moves one step.
   void _advancePegOrder(Map<String, dynamic> order) {
     final status = order['status'] as String;
-    if (status == 'cancelled' || status == 'completed') return;
-    final created = order['created_at'] as int;
-    final elapsed = _nowSecs() - created;
-    final history = (order['status_history'] as List)
-        .cast<Map<String, dynamic>>();
-    for (final (threshold, stage) in _pegStages) {
-      if (elapsed < threshold) break;
-      if (history.any((h) => h['status'] == stage)) continue;
-      history.add({'status': stage, 'at': created + threshold});
-      order['status'] = stage;
-      order['updated_at'] = created + threshold;
-      if (stage == 'deposit_seen') {
-        order['txid_deposit'] = 'mock_peg_deposit_txid_${order['order_id']}';
-      } else if (stage == 'completed') {
-        order['txid_payout'] = 'mock_peg_payout_txid_${order['order_id']}';
-      }
+    if (const {
+      'completed',
+      'cancelled',
+      'expired',
+      'failed',
+    }.contains(status)) {
+      return;
     }
+    order['last_error'] = mockPegChainError;
+    if (mockPegChainError != null) return;
+    final reads = (order['_reads'] as int? ?? 0) + 1;
+    order['_reads'] = reads;
+    final pegIn = order['direction'] == 'in';
+    switch (status) {
+      case 'awaiting_deposit':
+        final limit = mockPegExpireAfterReads;
+        if (pegIn && limit != null && reads >= limit) {
+          _pegEnter(order, 'expired');
+        }
+      case 'deposit_seen':
+        order['confirmations'] = 1;
+        _pegEnter(order, 'confirming');
+      case 'confirming':
+        order['confirmations'] = 2;
+        if (pegIn && order['provider'] == 'native') {
+          _pegEnter(order, 'claimable');
+        } else {
+          _pegEnter(order, 'settling');
+          if (!pegIn) {
+            order['txid_payout'] = 'mock_pegout_payment_${order['order_id']}';
+          }
+        }
+      case 'settling':
+        _pegEnter(order, 'completed');
+    }
+  }
+
+  Map<String, dynamic> _pegOrder(String orderId) {
+    final order = _pegOrders[orderId];
+    if (order == null) {
+      throw Exception('wallet-ffi: Unknown peg order $orderId');
+    }
+    return order;
   }
 
   @override
   Future<PegOrder> pegStatus(String orderId) async {
     await Future.delayed(const Duration(milliseconds: 200));
-    final order = _pegOrders[orderId];
-    if (order == null) {
-      throw Exception('wallet-ffi: unknown peg order $orderId');
-    }
+    final order = _pegOrder(orderId);
     _advancePegOrder(order);
     return PegOrder.fromJson(order);
   }
@@ -1187,23 +1263,62 @@ class MockWalletBridge implements WalletBridge {
   @override
   Future<PegOrder> pegCancel(String orderId) async {
     await Future.delayed(const Duration(milliseconds: 400));
-    final order = _pegOrders[orderId];
-    if (order == null) {
-      throw Exception('wallet-ffi: unknown peg order $orderId');
-    }
-    _advancePegOrder(order);
+    final order = _pegOrder(orderId);
     if (order['status'] != 'awaiting_deposit') {
       throw Exception(
-        'wallet-ffi: order can only be cancelled while awaiting deposit',
+        'wallet-ffi: Order can no longer be cancelled (status: '
+        '${order['status']})',
       );
     }
-    final now = _nowSecs();
-    order['status'] = 'cancelled';
-    order['updated_at'] = now;
-    (order['status_history'] as List).cast<Map<String, dynamic>>().add({
-      'status': 'cancelled',
-      'at': now,
-    });
+    _pegEnter(order, 'cancelled');
+    return PegOrder.fromJson(order);
+  }
+
+  @override
+  Future<PegOrder> pegFund(String orderId, {double? feeRate}) async {
+    await Future.delayed(const Duration(milliseconds: 600));
+    final order = _pegOrder(orderId);
+    if (order['status'] == 'expired') {
+      throw Exception('wallet-ffi: PEG_EXPIRED: the deposit address expired.');
+    }
+    if (order['status'] != 'awaiting_deposit') {
+      throw Exception(
+        'wallet-ffi: PEG_NOT_READY: the order is ${order['status']}.',
+      );
+    }
+    final amount = order['deposit_expected_sats'] as int;
+    // The mock wallet holds about 0.5 BTC: a larger deposit cannot be built.
+    if (amount > 50000000) {
+      throw Exception(
+        'wallet-ffi: Transaction build failed: Insufficient funds: 50000000 '
+        'sat available of ${amount + 143} sat needed',
+      );
+    }
+    order['txid_deposit'] = 'mock_peg_deposit_${order['order_id']}';
+    order['deposit_received_sats'] = amount;
+    _pegEnter(order, 'deposit_seen');
+    return PegOrder.fromJson(order);
+  }
+
+  @override
+  Future<PegOrder> pegClaim(String orderId) async {
+    await Future.delayed(const Duration(milliseconds: 600));
+    final order = _pegOrder(orderId);
+    if (order['provider'] != 'native' || order['direction'] != 'in') {
+      throw Exception(
+        'wallet-ffi: PEG_UNAVAILABLE: only a native peg-in is claimed.',
+      );
+    }
+    if (order['status'] != 'claimable') {
+      throw Exception(
+        'wallet-ffi: PEG_NOT_READY: the deposit has '
+        '${order['confirmations']} of the 2 Bitcoin confirmations a claim '
+        'needs.',
+      );
+    }
+    order['txid_claim'] = 'mock_peg_claim_${order['order_id']}';
+    order['txid_payout'] = order['txid_claim'];
+    _pegEnter(order, 'settling');
     return PegOrder.fromJson(order);
   }
 
@@ -1745,6 +1860,8 @@ class MockWalletBridge implements WalletBridge {
         '5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225',
     backendSource: _onLab ? 'profile' : 'default',
     testServer: _testServerProfile?.baseUrl,
+    pegProvider: _pegProvider,
+    pegUnavailableReason: _pegProvider == null ? _pegUnavailable : null,
   );
 
   String _liquidBackendDescription() {

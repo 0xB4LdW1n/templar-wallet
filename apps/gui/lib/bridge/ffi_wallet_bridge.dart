@@ -1020,6 +1020,21 @@ class FfiWalletBridge implements WalletBridge {
   }
 
   @override
+  Future<PegOrder> pegFund(String orderId, {double? feeRate}) async {
+    final raw =
+        await _ok('peg_fund', {'order_id': orderId, 'fee_rate': ?feeRate})
+            as Map<String, dynamic>;
+    return PegOrder.fromJson(raw);
+  }
+
+  @override
+  Future<PegOrder> pegClaim(String orderId) async {
+    final raw =
+        await _ok('peg_claim', {'order_id': orderId}) as Map<String, dynamic>;
+    return PegOrder.fromJson(raw);
+  }
+
+  @override
   Future<bool> reregisterAsset({
     required String walletId,
     required String assetId,
