@@ -33,6 +33,7 @@ import '../../theme/app_typography.dart';
 import 'models/swap_offer.dart';
 import 'swap_gate.dart';
 import '../../shared/widgets/app_dialog.dart';
+import 'swap_screen.dart' show swapLegName;
 
 /// Strip the FFI error prefix for display.
 String swapError(Object e) =>
@@ -493,7 +494,9 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
                   const Spacer(),
                   TagChip(
                     label: analysis.network,
-                    color: analysis.network == 'testnet'
+                    // The expected network is the one the engine is on now
+                    // (a test server's regtest, or testnet).
+                    color: analysis.network == _activeNetwork
                         ? s.success
                         : s.testnet,
                   ),
@@ -638,7 +641,7 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
                 const SizedBox(height: AppSpacing.xs),
                 _kvLine(
                   'Change (back to you)',
-                  '${c.displayAmount} ${c.ticker}',
+                  '${c.displayAmount} ${swapLegName(c)}',
                 ),
               ],
             ],
@@ -659,6 +662,15 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
     );
   }
 
+  /// `testnet` | `regtest`: what a proposal's network should say here.
+  String get _activeNetwork {
+    try {
+      return context.read<AppState>().liquidNetworkName;
+    } on ProviderNotFoundException {
+      return 'testnet';
+    }
+  }
+
   Widget _legRow(String label, SwapLeg leg, {bool emphasize = false}) {
     final s = AppScheme.of(context);
     return Row(
@@ -672,7 +684,7 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
           ),
         ),
         Text(
-          '${leg.displayAmount} ${leg.ticker}',
+          '${leg.displayAmount} ${swapLegName(leg)}',
           style: emphasize
               ? AppTypography.numericLargeOf(context).copyWith(color: s.ink)
               : AppTypography.numeric.copyWith(color: s.ink),
@@ -726,13 +738,13 @@ class _TakeConfirmDialog extends StatelessWidget {
                   _line(
                     context,
                     'You receive',
-                    '${preview.youReceive.displayAmount} ${preview.youReceive.ticker}',
+                    '${preview.youReceive.displayAmount} ${swapLegName(preview.youReceive)}',
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   _line(
                     context,
                     'You pay',
-                    '${preview.youPay.displayAmount} ${preview.youPay.ticker}',
+                    '${preview.youPay.displayAmount} ${swapLegName(preview.youPay)}',
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   _line(context, 'Fee', preview.feeDisplay),
@@ -879,13 +891,13 @@ class _SwapSuccessDialog extends StatelessWidget {
                       _line(
                         context,
                         'You receive',
-                        '${youReceive.displayAmount} ${youReceive.ticker}',
+                        '${youReceive.displayAmount} ${swapLegName(youReceive)}',
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       _line(
                         context,
                         'You pay',
-                        '${youPay.displayAmount} ${youPay.ticker}',
+                        '${youPay.displayAmount} ${swapLegName(youPay)}',
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       _line(context, 'Fee', feeDisplay),

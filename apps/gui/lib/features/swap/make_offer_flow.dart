@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../shared/asset_amount.dart';
+import 'swap_screen.dart' show swapLegName;
 import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../features/dashboard/models/dashboard_data.dart';
@@ -177,19 +179,34 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
 
   bool get _wantIsLbtc => _wantAsset?.ticker == 'LBTC';
 
-  /// LBTC uses 8 decimals; tokens and raw asset ids use base units.
+  /// The asset's own units when the engine knows its precision (LBTC: 8;
+  /// a token: what its issuer chose, `TMPL` 2); base units, labelled, for
+  /// an asset id typed by hand or one of unknown precision.
+  AssetAmountField get _wantField => AssetAmountField(
+    precision: _wantIsLbtc ? 8 : _wantAsset?.precision,
+    unit: _wantTicker,
+  );
+
   int? get _wantAmountSats {
-    final v = double.tryParse(_wantAmountCtrl.text.trim());
-    // isFinite: tryParse accepts "NaN"/"Infinity", and .round() throws on them.
-    if (v == null || !v.isFinite || v <= 0) return null;
-    return _wantIsLbtc ? (v * 1e8).round() : v.round();
+    final v = _wantField.parse(_wantAmountCtrl.text).baseUnits;
+    return v == null || v <= 0 ? null : v;
   }
 
-  String get _wantAmountDisplay {
-    final sats = _wantAmountSats ?? 0;
-    return _wantIsLbtc
-        ? '${(sats / 1e8).toStringAsFixed(8)} LBTC'
-        : '$sats $_wantTicker';
+  String get _wantAmountDisplay => _wantField.format(_wantAmountSats ?? 0);
+
+  /// The asset chosen for an exact coin, and its amount field.
+  AssetBalance? get _exactAsset =>
+      _assets.where((a) => a.assetId == _exactAssetId).firstOrNull;
+
+  AssetAmountField get _exactField {
+    final a = _exactAsset;
+    final isLbtc = a?.ticker == 'LBTC';
+    return AssetAmountField(
+      precision: isLbtc ? 8 : a?.precision,
+      unit: a == null
+          ? ''
+          : (isLbtc ? 'LBTC' : AssetRegistryService.instance.displayTicker(a)),
+    );
   }
 
   bool get _canContinue => switch (_step) {
@@ -214,15 +231,21 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
     final walletId = _walletId;
     final assetId = _exactAssetId;
     if (walletId == null || assetId == null) return;
-    final asset = _assets.where((a) => a.assetId == assetId).firstOrNull;
-    final isLbtc = asset?.ticker == 'LBTC';
-    final v = double.tryParse(_exactAmountCtrl.text.trim());
-    if (v == null || !v.isFinite || v <= 0) {
-      setState(() => _error = 'Enter a valid amount for the new coin.');
+    final parsed = _exactField.parse(_exactAmountCtrl.text);
+    final sats = parsed.baseUnits;
+    if (parsed.error != null || sats == null || sats <= 0) {
+      setState(
+        () => _error = parsed.error != null
+            ? '${parsed.error}.'
+            : 'Enter a valid amount for the new coin.',
+      );
       return;
     }
-    final sats = isLbtc ? (v * 1e8).round() : v.round();
-    if (!await confirmSwapSignature(context, 'the payment to yourself') ||
+    if (!await confirmSwapSignature(
+          context,
+          'a payment to yourself of ${_exactField.format(sats)} '
+          '(${AssetAmount.baseUnitsText(sats)})',
+        ) ||
         !mounted) {
       return;
     }
@@ -462,21 +485,21 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
               const SizedBox(height: AppSpacing.lg),
               FieldBlock(
                 label: 'Amount',
+                help: _exactAssetId == null
+                    ? null
+                    : _exactField.help(_exactAmountCtrl.text),
                 child: TextField(
+                  key: const Key('exact-coin-amount'),
                   controller: _exactAmountCtrl,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   style: AppTypography.numeric,
                   decoration: InputDecoration(
-                    hintText:
-                        _assets
-                                .where((a) => a.assetId == _exactAssetId)
-                                .firstOrNull
-                                ?.ticker ==
-                            'LBTC'
-                        ? '0.00000000'
-                        : '0',
+                    hintText: _exactField.fieldText(0),
+                    suffixText: _exactField.inBaseUnits
+                        ? null
+                        : _exactField.unit,
                   ),
                   onChanged: (_) => setState(() {}),
                 ),
@@ -559,16 +582,17 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
       const SizedBox(height: AppSpacing.lg),
       FieldBlock(
         label: 'Amount',
-        help: _wantIsLbtc
-            ? (fiat ?? 'LBTC amounts use 8 decimals')
-            : 'Token amounts are entered in base units',
+        help: (_wantIsLbtc && fiat != null)
+            ? fiat
+            : _wantField.help(_wantAmountCtrl.text),
         child: TextField(
+          key: const Key('want-amount'),
           controller: _wantAmountCtrl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           style: AppTypography.numeric,
           decoration: InputDecoration(
-            hintText: _wantIsLbtc ? '0.00000000' : '0',
-            suffixText: _wantTicker,
+            hintText: _wantField.fieldText(0),
+            suffixText: _wantField.inBaseUnits ? null : _wantTicker,
           ),
           onChanged: (_) => setState(() {}),
         ),
@@ -660,7 +684,15 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
               KvRow(label: '', value: rate.$2),
             ],
             KvRow(label: 'Coin', value: utxo.outpoint),
+            KvRow(
+              label: 'Offered, signed as',
+              value: AssetAmount.baseUnitsText(utxo.amount),
+            ),
             KvRow(label: 'Want asset', value: _wantAssetIdResolved),
+            KvRow(
+              label: 'Wanted, signed as',
+              value: AssetAmount.baseUnitsText(_wantAmountSats ?? 0),
+            ),
           ],
         ),
       ),
@@ -731,8 +763,8 @@ class _OfferCreatedDialogState extends State<_OfferCreatedDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                '${offer.offers.displayAmount} ${offer.offers.ticker} → '
-                '${offer.wants.displayAmount} ${offer.wants.ticker}',
+                '${offer.offers.displayAmount} ${swapLegName(offer.offers)} → '
+                '${offer.wants.displayAmount} ${swapLegName(offer.wants)}',
                 textAlign: TextAlign.center,
                 style: AppTypography.numeric.copyWith(color: s.ink),
               ),

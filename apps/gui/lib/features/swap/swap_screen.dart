@@ -52,13 +52,23 @@ class _SwapScreenState extends State<SwapScreen> {
   bool _cancelling = false;
   bool _justRefreshed = false;
   String? _error;
-  String? _mineError;
+
+  /// Why this wallet's LiquiDEX offers, or its cross-chain swaps, could not
+  /// be read. The two lists load apart: one failing never hides the other.
+  String? _offersError;
+  String? _atomicError;
   _MarketFilter _filter = _MarketFilter.all;
 
   String? get _walletId => context.read<AppState>().activeWalletId;
 
+  /// The cross-chain (BTC ↔ Liquid HTLC) routes exist only on Liquid
+  /// testnet: on a regtest — a test server's — there is no coordinator, so
+  /// their filter, settlement choice, rows and words are not drawn at all.
+  bool get _crossChain => crossChainAvailable(context.read<AppState>());
+
   List<MarketOffer> get _visibleMarkets => _markets.where((offer) {
-    return switch (_filter) {
+    if (!_crossChain && (offer.isCrossChain || offer.isAtomic)) return false;
+    return switch (_crossChain ? _filter : _MarketFilter.all) {
       _MarketFilter.all => true,
       _MarketFilter.crossChain => offer.isCrossChain,
       _MarketFilter.liquid => !offer.isCrossChain,
@@ -128,26 +138,52 @@ class _SwapScreenState extends State<SwapScreen> {
     }
     setState(() {
       if (!silent) _loadingMine = true;
-      _mineError = null;
+      _offersError = null;
+      _atomicError = null;
     });
-    try {
-      final results = await Future.wait<Object>([
-        _bridge.listMyOffers(walletId),
-        _bridge.atomicSwapList(walletId),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        _myOffers = results[0] as List<MyOffer>;
-        _myAtomic = results[1] as List<AtomicSwap>;
-        _loadingMine = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _mineError = swapError(error);
-        _loadingMine = false;
-      });
+    final crossChain = _crossChain;
+    // Apart, so a stale cross-chain record (a coordinator's 404) can never
+    // hide this wallet's LiquiDEX offers, nor the other way round.
+    Future<void> offers() async {
+      try {
+        final list = await _bridge.listMyOffers(walletId);
+        if (mounted) setState(() => _myOffers = list);
+      } catch (error) {
+        if (mounted) {
+          setState(() {
+            _myOffers = [];
+            _offersError = plainBookError(
+              error,
+              what: 'This wallet\'s LiquiDEX offers could not be read',
+            );
+          });
+        }
+      }
     }
+
+    Future<void> atomic() async {
+      if (!crossChain) {
+        if (mounted) setState(() => _myAtomic = []);
+        return;
+      }
+      try {
+        final list = await _bridge.atomicSwapList(walletId);
+        if (mounted) setState(() => _myAtomic = list);
+      } catch (error) {
+        if (mounted) {
+          setState(() {
+            _myAtomic = [];
+            _atomicError = plainBookError(
+              error,
+              what: 'The cross-chain swaps could not be read',
+            );
+          });
+        }
+      }
+    }
+
+    await Future.wait([offers(), atomic()]);
+    if (mounted) setState(() => _loadingMine = false);
   }
 
   Future<void> _refresh({bool silent = false, bool feedback = true}) async {
@@ -155,7 +191,9 @@ class _SwapScreenState extends State<SwapScreen> {
       _loadMarkets(silent: silent),
       _loadMine(silent: silent),
     ]);
-    if (!mounted || !feedback || _error != null || _mineError != null) return;
+    if (!mounted || !feedback || _error != null || _offersError != null) {
+      return;
+    }
     setState(() => _justRefreshed = true);
     await Future<void>.delayed(const Duration(milliseconds: 1400));
     if (mounted) setState(() => _justRefreshed = false);
@@ -181,6 +219,12 @@ class _SwapScreenState extends State<SwapScreen> {
 
   Future<void> _makeOffer() async {
     final st = context.read<AppState>();
+    // Off Liquid testnet there is one settlement: straight to LiquiDEX.
+    if (!_crossChain) {
+      final created = await openMakeOfferFlow(context);
+      if (created != null && mounted) _refresh(silent: true);
+      return;
+    }
     final type = await showAppDialog<String>(
       context,
       builder: (dialogContext) => AppDialog(
@@ -236,6 +280,10 @@ class _SwapScreenState extends State<SwapScreen> {
   Future<void> _atomicAction(AtomicSwap swap, String action) async {
     final walletId = _walletId;
     if (walletId == null) return;
+    // Funding, claiming and refunding an HTLC sign with this wallet's key.
+    if (!await confirmSwapSignature(context, 'the HTLC $action') || !mounted) {
+      return;
+    }
     try {
       switch (action) {
         case 'fund':
@@ -323,7 +371,7 @@ class _SwapScreenState extends State<SwapScreen> {
       if (!mounted) return;
       setState(() {
         _cancelling = false;
-        _mineError = swapError(error);
+        _offersError = swapError(error);
       });
     }
   }
@@ -608,9 +656,13 @@ class _SwapScreenState extends State<SwapScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
-                  'Both wallets need the asset they pay plus LBTC for fees. '
-                  'BTC routes marked HTLC v1 use two funding transactions, a '
-                  'shared preimage and recoverable timeouts.',
+                  _crossChain
+                      ? 'Both wallets need the asset they pay plus LBTC for '
+                            'fees. BTC routes marked HTLC v1 use two funding '
+                            'transactions, a shared preimage and recoverable '
+                            'timeouts.'
+                      : 'Both wallets need the asset they pay plus LBTC for '
+                            'fees.',
                   style: AppTypography.caption.copyWith(
                     color: AppScheme.of(context).inkSecondary,
                   ),
@@ -677,16 +729,7 @@ class _SwapScreenState extends State<SwapScreen> {
 
   Widget _filters() {
     final phone = AppLayout.isPhone(context);
-    final segments = SegmentedSwitch<_MarketFilter>(
-      options: const [
-        SegOption(value: _MarketFilter.all, label: 'All'),
-        SegOption(value: _MarketFilter.crossChain, label: 'BTC routes'),
-        SegOption(value: _MarketFilter.liquid, label: 'Liquid assets'),
-      ],
-      selected: _filter,
-      onChanged: (value) => setState(() => _filter = value),
-      expand: phone,
-    );
+    context.watch<AppState>();
     final closed = ChoiceTile(
       label: 'Closed',
       selected: _includeUnavailable,
@@ -697,6 +740,20 @@ class _SwapScreenState extends State<SwapScreen> {
               setState(() => _includeUnavailable = !_includeUnavailable);
               _loadMarkets();
             },
+    );
+    // One settlement here: nothing to filter by, only closed offers.
+    if (!_crossChain) {
+      return Align(alignment: Alignment.centerLeft, child: closed);
+    }
+    final segments = SegmentedSwitch<_MarketFilter>(
+      options: const [
+        SegOption(value: _MarketFilter.all, label: 'All'),
+        SegOption(value: _MarketFilter.crossChain, label: 'BTC routes'),
+        SegOption(value: _MarketFilter.liquid, label: 'Liquid assets'),
+      ],
+      selected: _filter,
+      onChanged: (value) => setState(() => _filter = value),
+      expand: phone,
     );
     if (phone) {
       return Column(
@@ -834,10 +891,10 @@ class _SwapScreenState extends State<SwapScreen> {
           'Receive ${gives.displayAmount} ${gives.ticker}; pay '
           '${wants.displayAmount} ${wants.ticker}',
       leading: _PairedLogos(first: gives.ticker, second: wants.ticker),
-      title: 'Receive ${gives.displayAmount} ${gives.ticker}',
+      title: 'Receive ${gives.displayAmount} ${marketLegName(gives)}',
       titleInk: unavailable ? s.inkFaint : s.ink,
       subtitle:
-          'Pay ${wants.displayAmount} ${wants.ticker}'
+          'Pay ${wants.displayAmount} ${marketLegName(wants)}'
           '${offer.priceDisplay.isEmpty ? '' : ' · ${offer.priceDisplay}'}',
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -882,20 +939,38 @@ class _SwapScreenState extends State<SwapScreen> {
               ),
             ],
           )
-        else if (_mineError != null)
-          note(_mineError!, s.danger)
-        else if (_myOffers.isEmpty && _myAtomic.isEmpty)
-          note(
-            'Offers and active HTLC swaps created by this wallet appear here',
-            s.inkSecondary,
-          )
-        else
-          ListCard(
-            children: [
-              for (final swap in _myAtomic) _atomicSwapRow(swap),
-              for (final offer in _myOffers) _myOfferRow(offer),
+        else ...[
+          if (_myOffers.isNotEmpty)
+            ListCard(
+              children: [for (final offer in _myOffers) _myOfferRow(offer)],
+            )
+          else if (_offersError != null)
+            note(_offersError!, s.inkSecondary)
+          else if (_myAtomic.isEmpty && _atomicError == null)
+            note(
+              _crossChain
+                  ? 'Offers and active HTLC swaps created by this wallet '
+                        'appear here'
+                  : 'Offers created by this wallet appear here',
+              s.inkSecondary,
+            ),
+          if (_myOffers.isNotEmpty && _offersError != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            note(_offersError!, s.inkSecondary),
+          ],
+          // Cross-chain swaps: Liquid testnet only, read on their own.
+          if (_crossChain && (_myAtomic.isNotEmpty || _atomicError != null))
+            ...[
+              const SizedBox(height: AppSpacing.lg),
+              const ListSectionLabel(label: 'Cross-chain swaps'),
+              if (_myAtomic.isNotEmpty)
+                ListCard(
+                  children: [for (final w in _myAtomic) _atomicSwapRow(w)],
+                )
+              else
+                note(_atomicError!, s.inkSecondary),
             ],
-          ),
+        ],
       ],
     );
   }
@@ -911,6 +986,30 @@ class _SwapScreenState extends State<SwapScreen> {
     final gives = swap.role == 'maker' ? swap.offered : swap.wanted;
     final gets = swap.role == 'maker' ? swap.wanted : swap.offered;
     final status = swap.status.replaceAll('_', ' ');
+    if (!swap.isLive) {
+      // Not this book's live row: what the record is, in words, and no
+      // action (nothing would be signed against it).
+      final known = gives.amountSats > 0 || gets.amountSats > 0;
+      return _SwapRow(
+        semanticLabel: 'Cross-chain swap ${swap.offerId}',
+        leading: _PairedLogos(
+          first: known ? gives.ticker : 'BTC',
+          second: known ? gets.ticker : 'LBTC',
+        ),
+        title: known
+            ? '${gives.displayAmount} ${gives.ticker} → '
+                  '${gets.displayAmount} ${gets.ticker}'
+            : 'Cross-chain swap #${swap.offerId}',
+        subtitle:
+            '#${swap.offerId} · ${atomicAvailabilityText(swap.availability)}',
+        trailing: StatusBadge(
+          label: atomicAvailabilityBadge(swap.availability),
+          variant: swap.availability == 'book_mismatch'
+              ? BadgeVariant.warning
+              : BadgeVariant.neutral,
+        ),
+      );
+    }
     return _SwapRow(
       semanticLabel:
           '${gives.displayAmount} ${gives.ticker} to '
@@ -986,8 +1085,8 @@ class _SwapScreenState extends State<SwapScreen> {
         second: offer.wants.ticker,
       ),
       title:
-          '${offer.offers.displayAmount} ${offer.offers.ticker} → '
-          '${offer.wants.displayAmount} ${offer.wants.ticker}',
+          '${offer.offers.displayAmount} ${swapLegName(offer.offers)} → '
+          '${offer.wants.displayAmount} ${swapLegName(offer.wants)}',
       subtitle: '${offer.offerId} · ${offer.status}',
       trailing: trailing,
     );
@@ -1142,11 +1241,15 @@ class _SwapScreenState extends State<SwapScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${value.displayAmount} ${value.ticker}',
+                      '${value.displayAmount} ${marketLegName(value)}',
                       style: AppTypography.numeric.copyWith(color: s.ink),
                     ),
                     Text(
-                      value.network,
+                      [
+                        if (value.name.isNotEmpty && value.name != value.ticker)
+                          value.name,
+                        networkWords(value.network),
+                      ].join(' · '),
                       style: AppTypography.caption.copyWith(
                         color: s.inkSecondary,
                       ),
@@ -1415,4 +1518,59 @@ class _SwapRowState extends State<_SwapRow> {
       ),
     );
   }
+}
+
+/// Cross-chain (BTC ↔ Liquid HTLC) swaps exist only on Liquid testnet.
+bool crossChainAvailable(AppState st) =>
+    !st.isLiquidRegtest && !st.isBitcoinRegtest;
+
+/// A LiquiDEX leg as shown: its ticker, with the short asset id beside a
+/// name the wallet did not give (`TMPL · 80d249a8`).
+String swapLegName(SwapLeg leg) =>
+    leg.showsIdBeside ? '${leg.ticker} · ${leg.shortId}' : leg.ticker;
+
+String marketLegName(MarketLeg leg) =>
+    leg.showsIdBeside ? '${leg.ticker} · ${leg.shortId}' : leg.ticker;
+
+/// `liquid-regtest` → `Liquid regtest`.
+String networkWords(String network) {
+  final parts = network.split('-');
+  if (parts.length != 2) return network;
+  final chain = parts[0] == 'bitcoin' ? 'Bitcoin' : 'Liquid';
+  return '$chain ${parts[1]}';
+}
+
+/// What a cross-chain record that is not live means, for people.
+String atomicAvailabilityText(String availability) => switch (availability) {
+  'other_book' => 'kept for another order book; not followed here',
+  'not_on_this_book' => 'this order book no longer knows it',
+  'book_mismatch' => 'the order book\'s copy does not match the agreed terms',
+  'book_unreachable' => 'the order book did not answer; it may still be live',
+  _ => 'live',
+};
+
+String atomicAvailabilityBadge(String availability) => switch (availability) {
+  'other_book' => 'Other book',
+  'not_on_this_book' => 'Not on this book',
+  'book_mismatch' => 'Mismatch',
+  'book_unreachable' => 'Unreachable',
+  _ => 'Live',
+};
+
+/// A failure of an order-book read, in words: never the raw
+/// `Order book HTTP 404: …` string as the content of a section.
+String plainBookError(Object error, {required String what}) {
+  final raw = swapError(error);
+  final http = RegExp(r'HTTP (\d{3})').firstMatch(raw)?.group(1);
+  if (http != null) {
+    return '$what: the order book answered with an error ($http). Refresh '
+        'to try again';
+  }
+  final lower = raw.toLowerCase();
+  if (lower.contains('connect') ||
+      lower.contains('timed out') ||
+      lower.contains('unreachable')) {
+    return '$what: the order book did not answer. Refresh to try again';
+  }
+  return '$what: $raw';
 }

@@ -945,6 +945,9 @@ class MockWalletBridge implements WalletBridge {
     bool includeUnavailable = false,
   }) async {
     await Future.delayed(const Duration(milliseconds: 350));
+    // On the mock lab's regtest: its book, with a token named by the book's
+    // registry (not by this wallet) and no cross-chain routes.
+    if (_onLab) return [_labMarket()];
     final offers = [
       MarketOffer.fromJson({
         'id': 'liquid:101',
@@ -1058,6 +1061,49 @@ class MockWalletBridge implements WalletBridge {
         ? offers
         : offers.where((offer) => offer.available).toList();
   }
+
+  /// The id of the token the mock lab's book names `TMPL` (precision 2).
+  static const String mockLabTokenId =
+      '80d249a8c1f5e3b7a9d2c4e6f8a0b1c3d5e7f9a1b3c5d7e9f0a2b4c6d8e0f1a3';
+
+  MarketOffer _labMarket() => MarketOffer.fromJson({
+    'id': 'liquid:7',
+    'source_id': 7,
+    'status': 'open',
+    'settlement': 'liquidex-v0',
+    'demo': false,
+    'available': true,
+    'maker_gives': {
+      'chain': 'liquid',
+      'network': 'liquid-regtest',
+      'asset_id': mockLabTokenId,
+      'ticker': 'TMPL',
+      'name': 'Templar Token',
+      'precision': 2,
+      'amount_sats': 10000,
+      'display_amount': '100.00',
+      'metadata_source': 'book',
+      'book_source': 'contract',
+    },
+    'maker_wants': {
+      'chain': 'liquid',
+      'network': 'liquid-regtest',
+      'asset_id': _labPolicyAsset,
+      'ticker': 'LBTC',
+      'name': 'Liquid Bitcoin',
+      'precision': 8,
+      'amount_sats': 5000000,
+      'display_amount': '0.05000000',
+      'metadata_source': 'wallet',
+    },
+    'price_display': '100.00 → 0.05000000',
+    'note': '',
+    'created_at': 1794944627,
+    'proposal_json': _testnetProposalJson,
+    'verified': true,
+    'takeable': true,
+    'block_reason': null,
+  });
 
   @override
   Future<SwapAnalysis> swapVerify(

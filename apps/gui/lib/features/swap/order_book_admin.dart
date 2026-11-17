@@ -15,10 +15,31 @@ import '../../app/app_state.dart';
 
 /// The admin page of the book in use, or null when the app should not offer
 /// it (no answer from the engine yet, or a book on another machine).
+///
+/// A joined test server on this machine has ONE control dashboard for the
+/// whole lab: its order book page is `<test server>/admin#liquidex`. Without
+/// a lab (or with a lab elsewhere) the rule stays: the book's own origin,
+/// only when that book runs on this machine.
 Uri? orderBookAdminUri(AppState state) {
-  final book = state.testServer?.active.orderbook;
+  final server = state.testServer;
+  final base = server?.profile?.baseUrl ?? '';
+  if ((server?.configured ?? false) && _isLoopback(base)) {
+    final trimmed = base.endsWith('/')
+        ? base.substring(0, base.length - 1)
+        : base;
+    return Uri.tryParse('$trimmed/admin#liquidex');
+  }
+  final book = server?.active.orderbook;
   if (book == null || !book.isLoopback) return null;
   return Uri.tryParse(book.origin.url);
+}
+
+bool _isLoopback(String url) {
+  final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+  return host == '127.0.0.1' ||
+      host == 'localhost' ||
+      host == '::1' ||
+      host == '[::1]';
 }
 
 Future<void> openOrderBookAdmin(BuildContext context, Uri uri) async {
