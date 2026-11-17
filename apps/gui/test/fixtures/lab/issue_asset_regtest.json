@@ -1,0 +1,13 @@
+{
+  "ok": {
+    "asset_id": "65272b2cc5a11ab2ab5bcab3e4352594fc1b105567e2595aa34426be16dd8e3e",
+    "book_error": null,
+    "book_registered": true,
+    "domain": "regtest.templar.test",
+    "proof_content": "",
+    "proof_url": "",
+    "registry_registered": false,
+    "token_id": "1d99c2ed331a49ff6c12f2760a27e52cb7c9286528786d34b005237c71f5e036",
+    "txid": "5f3c5a96e7cf8661c9444be4f4980a57fafd785e2a329df2b6b33923231f53bf"
+  }
+}

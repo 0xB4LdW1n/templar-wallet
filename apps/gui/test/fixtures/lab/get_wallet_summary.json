@@ -1,0 +1,108 @@
+{
+  "ok": {
+    "assets": [
+      {
+        "amount": 2000000,
+        "asset_id": "BTC",
+        "book_source": null,
+        "display_amount": "0.02000000 BTC",
+        "fiat_estimate": null,
+        "is_native": true,
+        "metadata_source": "wallet",
+        "name": "Bitcoin",
+        "precision": 8,
+        "status": "synced",
+        "ticker": "BTC",
+        "utxo_count": 2
+      },
+      {
+        "amount": 1000000,
+        "asset_id": "1e19c40da6e374ff7f7ae2bb46edc6b042b0bc0545cccbf2bc769d93ebd75562",
+        "book_source": null,
+        "display_amount": "0.01000000 BTC",
+        "fiat_estimate": null,
+        "is_native": false,
+        "metadata_source": "wallet",
+        "name": "Liquid Bitcoin",
+        "precision": 8,
+        "status": "synced",
+        "ticker": "LBTC",
+        "utxo_count": 1
+      },
+      {
+        "amount": 10000000000,
+        "asset_id": "74e90b06d984b77ef6651a82814f054282c13b424a008a87f97060635f45ce7d",
+        "book_source": "admin",
+        "display_amount": "100.00000000",
+        "fiat_estimate": null,
+        "is_native": false,
+        "metadata_source": "book",
+        "name": "Tether USD (test)",
+        "precision": 8,
+        "status": "third-party",
+        "ticker": "USDT",
+        "utxo_count": 1
+      }
+    ],
+    "bitcoin_network": "bitcoin-regtest",
+    "liquid_network": "liquid-regtest",
+    "recent_activity": [
+      {
+        "amount": "+0.01000000 BTC",
+        "asset_id": null,
+        "chain": "bitcoin",
+        "confirmations": 9,
+        "counterparty": null,
+        "direction": "incoming",
+        "metadata_source": "wallet",
+        "note": null,
+        "ticker": "BTC",
+        "timestamp": 1794944952,
+        "txid": "eb9a6a2282dd938781ceb114475b1ce4ba122c93ca8d667e87b4ca2a3c058920"
+      },
+      {
+        "amount": "+0.01000000 BTC",
+        "asset_id": null,
+        "chain": "bitcoin",
+        "confirmations": 9,
+        "counterparty": null,
+        "direction": "incoming",
+        "metadata_source": "wallet",
+        "note": null,
+        "ticker": "BTC",
+        "timestamp": 1794944952,
+        "txid": "5fa1553a554c0ed950f851d5607ead52e701ed53febf5ac402b6cba7503afe90"
+      },
+      {
+        "amount": "+100.00000000 USDT",
+        "asset_id": "74e90b06d984b77ef6651a82814f054282c13b424a008a87f97060635f45ce7d",
+        "chain": "liquid",
+        "confirmations": 1,
+        "counterparty": null,
+        "direction": "incoming",
+        "metadata_source": "book",
+        "note": null,
+        "ticker": "USDT",
+        "timestamp": 1794944952,
+        "txid": "331d4d6d01f0b5fc6f6f85542530eb71aab46ea93ec673dc4d0ba087ef004275"
+      },
+      {
+        "amount": "+0.01000000 LBTC",
+        "asset_id": "1e19c40da6e374ff7f7ae2bb46edc6b042b0bc0545cccbf2bc769d93ebd75562",
+        "chain": "liquid",
+        "confirmations": 1,
+        "counterparty": null,
+        "direction": "incoming",
+        "metadata_source": "wallet",
+        "note": null,
+        "ticker": "LBTC",
+        "timestamp": 1794944952,
+        "txid": "a1d5b14abe2b806015abb3e7c4cb0789355c1c48c8c247478653bd856ab58309"
+      }
+    ],
+    "sync_state": "synced",
+    "total_balance_display": "0.02000000 BTC",
+    "wallet_id": "40f14ad1",
+    "wallet_name": "json-a"
+  }
+}

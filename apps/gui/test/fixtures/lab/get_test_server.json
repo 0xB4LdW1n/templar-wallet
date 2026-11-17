@@ -1,0 +1,159 @@
+{
+  "ok": {
+    "active": {
+      "bitcoin": {
+        "electrum_url": "tcp://127.0.0.1:29060",
+        "network": "bitcoin-regtest",
+        "source": "profile"
+      },
+      "env_locked": false,
+      "liquid": {
+        "backend": "electrum",
+        "backend_description": "electrum tcp://127.0.0.1:29061",
+        "backend_source": "profile",
+        "genesis_hash": "05fac6e1c56ab40b92308c512fe9f3e551f392b59cea2b3ac090892773f88a07",
+        "network": "liquid-regtest",
+        "params_source": "profile",
+        "policy_asset": "1e19c40da6e374ff7f7ae2bb46edc6b042b0bc0545cccbf2bc769d93ebd75562"
+      },
+      "liquid_network": "liquid-regtest",
+      "orderbook": {
+        "assets": {
+          "source": "profile",
+          "url": "http://127.0.0.1:3310/api/assets"
+        },
+        "atomic_swaps": {
+          "source": "profile",
+          "url": "http://127.0.0.1:3310/api/atomic-swaps"
+        },
+        "book": {
+          "source": "profile",
+          "url": "http://127.0.0.1:3310/api/book"
+        },
+        "markets": {
+          "source": "profile",
+          "url": "http://127.0.0.1:3310/api/markets"
+        },
+        "origin": {
+          "source": "profile",
+          "url": "http://127.0.0.1:3310"
+        },
+        "publish": {
+          "source": "profile",
+          "url": "http://127.0.0.1:3310/api/offers"
+        }
+      },
+      "protocol": {
+        "source": "profile",
+        "url": "http://127.0.0.1:8198"
+      }
+    },
+    "applied": null,
+    "check": null,
+    "configured": true,
+    "faucet": {
+      "assets": [
+        {
+          "asset": "btc",
+          "asset_id": null,
+          "default_sat": 1000000,
+          "max_sat": 10000000,
+          "name": "Bitcoin (regtest)",
+          "network": "bitcoin-regtest",
+          "precision": 8,
+          "ticker": "BTC"
+        },
+        {
+          "asset": "lbtc",
+          "asset_id": "1e19c40da6e374ff7f7ae2bb46edc6b042b0bc0545cccbf2bc769d93ebd75562",
+          "default_sat": 1000000,
+          "max_sat": 10000000,
+          "name": "Liquid Bitcoin",
+          "network": "liquid-regtest",
+          "precision": 8,
+          "ticker": "LBTC"
+        },
+        {
+          "asset": "USDt",
+          "asset_id": "74e90b06d984b77ef6651a82814f054282c13b424a008a87f97060635f45ce7d",
+          "default_sat": 10000000000,
+          "max_sat": 100000000000,
+          "name": "Tether USD (test)",
+          "network": "liquid-regtest",
+          "precision": 8,
+          "ticker": "USDt"
+        }
+      ],
+      "assets_source": "profile",
+      "available": true,
+      "url": "http://127.0.0.1:8196/api/faucet"
+    },
+    "profile": {
+      "base_url": "http://127.0.0.1:8196",
+      "fetched_at": 1794944919,
+      "name": "Templar testlab (scratch)",
+      "orderbook_url": "http://127.0.0.1:3310",
+      "protocol_url": "http://127.0.0.1:8198",
+      "regtest": {
+        "bitcoin_electrum_url": "tcp://127.0.0.1:29060",
+        "bitcoin_esplora_url": "http://127.0.0.1:29070",
+        "bitcoin_network": "regtest",
+        "faucet": [
+          {
+            "asset": "btc",
+            "asset_id": null,
+            "default_sat": 1000000,
+            "max_sat": 10000000,
+            "name": "Bitcoin (regtest)",
+            "network": "bitcoin-regtest",
+            "precision": 8,
+            "ticker": "BTC"
+          },
+          {
+            "asset": "lbtc",
+            "asset_id": "1e19c40da6e374ff7f7ae2bb46edc6b042b0bc0545cccbf2bc769d93ebd75562",
+            "default_sat": 1000000,
+            "max_sat": 10000000,
+            "name": "Liquid Bitcoin",
+            "network": "liquid-regtest",
+            "precision": 8,
+            "ticker": "LBTC"
+          },
+          {
+            "asset": "USDt",
+            "asset_id": "74e90b06d984b77ef6651a82814f054282c13b424a008a87f97060635f45ce7d",
+            "default_sat": 10000000000,
+            "max_sat": 100000000000,
+            "name": "Tether USD (test)",
+            "network": "liquid-regtest",
+            "precision": 8,
+            "ticker": "USDt"
+          }
+        ],
+        "faucet_url": "http://127.0.0.1:8196/api/faucet",
+        "genesis_hash": "05fac6e1c56ab40b92308c512fe9f3e551f392b59cea2b3ac090892773f88a07",
+        "instance_id": "afd1ed23a0a0c721c21af10b19aaed0f94c239b7cc1071e56894e6a0b2919f53",
+        "liquid_electrum_url": "tcp://127.0.0.1:29061",
+        "peg": {
+          "pegin_confirmations": 2,
+          "pegout_confirmations": 2,
+          "pegout_max_sat": 100000000,
+          "pegout_min_sat": 100000,
+          "provider": "native"
+        },
+        "policy_asset": "1e19c40da6e374ff7f7ae2bb46edc6b042b0bc0545cccbf2bc769d93ebd75562"
+      },
+      "testnet": {
+        "faucet_url": "https://liquidtestnet.com",
+        "peg": {
+          "pegin_confirmations": null,
+          "pegout_confirmations": null,
+          "pegout_max_sat": null,
+          "pegout_min_sat": null,
+          "provider": "sideswap"
+        }
+      },
+      "version": 1
+    }
+  }
+}

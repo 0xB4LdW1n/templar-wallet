@@ -110,7 +110,11 @@ class WalletSummary {
     id: j['id'] as String,
     name: j['name'] as String,
     type: _typeFromString(j['wallet_type'] as String? ?? ''),
-    network: WalletNetwork.testnet,
+    // The test network the wallet opens on now: `regtest` beside a joined
+    // lab's regtest, else `testnet`.
+    network: (j['network'] as String?) == 'regtest'
+        ? WalletNetwork.regtest
+        : WalletNetwork.testnet,
     balanceSats: j['balance_sats'] as int? ?? 0,
     txCount: j['tx_count'] as int? ?? 0,
     lastSyncAt: DateTime.fromMillisecondsSinceEpoch(

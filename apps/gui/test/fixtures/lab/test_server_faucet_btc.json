@@ -1,0 +1,12 @@
+{
+  "ok": {
+    "address": "bcrt1q2kz6dc2cu4d6zc8fh3y5764x6m53h4kpuheuyc",
+    "amount_sat": 1000000,
+    "asset": "btc",
+    "asset_id": null,
+    "network": "bitcoin-regtest",
+    "precision": 8,
+    "ticker": "BTC",
+    "txid": "eb9a6a2282dd938781ceb114475b1ce4ba122c93ca8d667e87b4ca2a3c058920"
+  }
+}

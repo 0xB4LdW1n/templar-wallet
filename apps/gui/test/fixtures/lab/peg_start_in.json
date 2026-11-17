@@ -1,0 +1,33 @@
+{
+  "ok": {
+    "confirmations": 0,
+    "confirmations_required": 2,
+    "created_at": 1794945119,
+    "deposit_address": "2N2kCWZgjatDwe4gKs9QX5r4xToxfFKjqXv",
+    "deposit_expected_sats": 100000,
+    "deposit_received_sats": null,
+    "deposits": [],
+    "direction": "in",
+    "eta_minutes": 21,
+    "expires_at": null,
+    "last_error": null,
+    "order_id": "pg_bf0cf838",
+    "payout_address": "el1qqvqx6yejj9y2ns2gklymh579ss4evragadekc85df3dnzfcdgdrvh3mzdyxuulyphz28fadsaf7vmyxvga0y7e2uy4hz2agrd",
+    "payout_expected_sats": 99965,
+    "provider": "native",
+    "simulated": false,
+    "status": "awaiting_deposit",
+    "status_history": [
+      {
+        "at": 1794945119,
+        "status": "awaiting_deposit"
+      }
+    ],
+    "txid_claim": null,
+    "txid_deposit": null,
+    "txid_payout": null,
+    "updated_at": 1794945119,
+    "valid_until_liquid_height": 199,
+    "wallet_id": "e39cae2e"
+  }
+}

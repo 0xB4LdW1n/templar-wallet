@@ -1,26 +1,63 @@
+import '../../../shared/asset_naming.dart';
+
 /// One side of a LiquiDEX swap, oriented from the taker's point of view.
+///
+/// Named by the engine (templarlib docs/API.md, "Asset names"): the
+/// wallet's own knowledge first, then the order book's registry. A name
+/// that is not the wallet's is shown with the short asset id beside it
+/// ([showsIdBeside]).
 class SwapLeg {
   const SwapLeg({
     required this.assetId,
     required this.ticker,
     required this.amountSats,
     required this.displayAmount,
+    this.name = '',
+    this.precision,
+    this.metadataSource = 'wallet',
+    this.bookSource,
   });
 
   final String assetId;
 
-  /// Short ticker for display (derived from the order book's asset name).
+  /// Short ticker for display.
   final String ticker;
+
+  /// Base units: the source of truth.
   final int amountSats;
 
-  /// Human-formatted amount as provided by the order book.
+  /// [amountSats] in the asset's display unit ([precision] decimals), as the
+  /// engine wrote it.
   final String displayAmount;
+
+  /// The asset's name; empty from an older engine.
+  final String name;
+
+  /// Decimals of [displayAmount]; null from an older engine.
+  final int? precision;
+
+  /// `wallet` | `book` | `feed` | `none`.
+  final String metadataSource;
+
+  /// `admin` | `contract` | `other` for a `book` name.
+  final String? bookSource;
+
+  /// The name came from a registry or a listing, not from this wallet.
+  bool get showsIdBeside =>
+      showsAssetIdBeside(metadataSource, shownName: ticker, assetId: assetId);
+
+  /// The short asset id shown beside a name that is not the wallet's.
+  String get shortId => shortAssetId(assetId);
 
   factory SwapLeg.fromJson(Map<String, dynamic> j) => SwapLeg(
     assetId: j['asset_id'] as String? ?? '',
     ticker: _displayTicker(j['ticker'] as String? ?? ''),
-    amountSats: j['amount_sats'] as int? ?? 0,
+    amountSats: (j['amount_sats'] as num?)?.toInt() ?? 0,
     displayAmount: j['display_amount'] as String? ?? '0',
+    name: j['name'] as String? ?? '',
+    precision: (j['precision'] as num?)?.toInt(),
+    metadataSource: j['metadata_source'] as String? ?? 'wallet',
+    bookSource: j['book_source'] as String?,
   );
 }
 
@@ -120,6 +157,8 @@ class MarketLeg {
     required this.precision,
     required this.amountSats,
     required this.displayAmount,
+    this.metadataSource = 'wallet',
+    this.bookSource,
   });
 
   final String chain;
@@ -131,7 +170,18 @@ class MarketLeg {
   final int amountSats;
   final String displayAmount;
 
+  /// `wallet` | `book` | `feed` | `none`.
+  final String metadataSource;
+  final String? bookSource;
+
   bool get isBitcoin => chain == 'bitcoin';
+
+  /// The name came from a registry or a listing, not from this wallet.
+  bool get showsIdBeside =>
+      !isBitcoin &&
+      showsAssetIdBeside(metadataSource, shownName: ticker, assetId: assetId);
+
+  String get shortId => shortAssetId(assetId);
 
   factory MarketLeg.fromJson(Map<String, dynamic> j) => MarketLeg(
     chain: j['chain'] as String? ?? '',
@@ -139,9 +189,11 @@ class MarketLeg {
     assetId: j['asset_id'] as String? ?? '',
     ticker: _displayTicker(j['ticker'] as String? ?? ''),
     name: j['name'] as String? ?? '',
-    precision: j['precision'] as int? ?? 0,
-    amountSats: j['amount_sats'] as int? ?? 0,
+    precision: (j['precision'] as num?)?.toInt() ?? 0,
+    amountSats: (j['amount_sats'] as num?)?.toInt() ?? 0,
     displayAmount: j['display_amount'] as String? ?? '0',
+    metadataSource: j['metadata_source'] as String? ?? 'wallet',
+    bookSource: j['book_source'] as String?,
   );
 }
 
@@ -219,6 +271,9 @@ class AtomicSwap {
     required this.canRefund,
     required this.makerTimeout,
     this.takerTimeout,
+    this.availability = 'live',
+    this.availabilityNote,
+    this.coordinator,
   });
 
   final int offerId;
@@ -232,6 +287,19 @@ class AtomicSwap {
   final bool canRefund;
   final int makerTimeout;
   final int? takerTimeout;
+
+  /// `live` | `other_book` | `not_on_this_book` | `book_mismatch` |
+  /// `book_unreachable` (templarlib docs/API.md, `atomic_swap_list`). Only a
+  /// live row can be acted on.
+  final String availability;
+
+  /// Why the row is not live, for people.
+  final String? availabilityNote;
+
+  /// The coordinator the stored record names (credentials masked).
+  final String? coordinator;
+
+  bool get isLive => availability == 'live';
 
   factory AtomicSwap.fromJson(Map<String, dynamic> j) {
     final row = j['row'] as Map<String, dynamic>? ?? const {};
@@ -263,6 +331,9 @@ class AtomicSwap {
       canRefund: j['can_refund'] as bool? ?? false,
       makerTimeout: state['maker_timeout'] as int? ?? 0,
       takerTimeout: state['taker_timeout'] as int?,
+      availability: j['availability'] as String? ?? 'live',
+      availabilityNote: j['availability_note'] as String?,
+      coordinator: j['coordinator'] as String?,
     );
   }
 }

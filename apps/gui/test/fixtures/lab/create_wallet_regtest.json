@@ -1,0 +1,20 @@
+{
+  "ok": {
+    "balance_sats": 0,
+    "bitcoin_enabled": true,
+    "device_model": null,
+    "id": "40f14ad1",
+    "is_watch_only": false,
+    "last_sync_at": 1794944938,
+    "liquid_enabled": true,
+    "master_fingerprint": null,
+    "name": "json-a",
+    "network": "regtest",
+    "required_sigs": null,
+    "total_signers": null,
+    "tx_count": 0,
+    "type_label": "Software",
+    "wallet_type": "singlesig",
+    "xpub": null
+  }
+}

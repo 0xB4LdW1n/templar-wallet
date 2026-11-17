@@ -1,0 +1,32 @@
+{
+  "ok": [
+    {
+      "created_at": 1794945165,
+      "kind": "swap",
+      "offer_id": "of_6a709115",
+      "offers": {
+        "amount_sats": 10000000000,
+        "asset_id": "74e90b06d984b77ef6651a82814f054282c13b424a008a87f97060635f45ce7d",
+        "book_source": "admin",
+        "display_amount": "100.00000000",
+        "metadata_source": "book",
+        "name": "Tether USD (test)",
+        "precision": 8,
+        "ticker": "USDT"
+      },
+      "proposal_json": "{}",
+      "status": "open",
+      "utxo": "331d4d6d01f0b5fc6f6f85542530eb71aab46ea93ec673dc4d0ba087ef004275:0",
+      "wants": {
+        "amount_sats": 50000,
+        "asset_id": "1e19c40da6e374ff7f7ae2bb46edc6b042b0bc0545cccbf2bc769d93ebd75562",
+        "book_source": null,
+        "display_amount": "0.00050000",
+        "metadata_source": "wallet",
+        "name": "Liquid Bitcoin (regtest)",
+        "precision": 8,
+        "ticker": "LBTC"
+      }
+    }
+  ]
+}

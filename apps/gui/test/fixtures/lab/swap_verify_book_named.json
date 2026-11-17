@@ -1,0 +1,60 @@
+{
+  "ok": {
+    "checks": [
+      {
+        "name": "structure",
+        "note": null,
+        "ok": true
+      },
+      {
+        "name": "sighash_single_acp",
+        "note": null,
+        "ok": true
+      },
+      {
+        "name": "output_commitments",
+        "note": null,
+        "ok": true
+      },
+      {
+        "name": "input_commitments",
+        "note": "needs chain access",
+        "ok": null
+      },
+      {
+        "name": "input_unspent",
+        "note": "needs chain access",
+        "ok": null
+      },
+      {
+        "name": "signature",
+        "note": "needs chain access",
+        "ok": null
+      }
+    ],
+    "maker_offers": {
+      "amount_sats": 10000,
+      "asset_id": "a9fab7bb1d633d1e6f26d3d20f6780018e0a0ae861941e4f478ab3ba575dc378",
+      "book_source": "contract",
+      "display_amount": "100.00",
+      "metadata_source": "book",
+      "name": "Registry Token",
+      "precision": 2,
+      "ticker": "RT115D70"
+    },
+    "maker_wants": {
+      "amount_sats": 1000000,
+      "asset_id": "1e19c40da6e374ff7f7ae2bb46edc6b042b0bc0545cccbf2bc769d93ebd75562",
+      "book_source": null,
+      "display_amount": "0.01000000",
+      "metadata_source": "wallet",
+      "name": "Liquid Bitcoin (regtest)",
+      "precision": 8,
+      "ticker": "LBTC"
+    },
+    "network": "regtest",
+    "take_block_reason": "deep (chain) verification required before taking",
+    "takeable": false,
+    "valid": true
+  }
+}

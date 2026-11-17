@@ -54,14 +54,14 @@ class _AssetOperationsScreenState extends State<AssetOperationsScreen> {
     try {
       // The FFI rebuilds the contract from these fields, validates it against
       // the on-chain issuance, and re-submits it to the registry.
-      ok = await _bridge.reregisterAsset(
+      ok = (await _bridge.reregisterAsset(
         walletId: walletId,
         assetId: entry.assetId,
         name: entry.name,
         ticker: entry.ticker,
         precision: entry.precision,
         domain: entry.domain,
-      );
+      )).registered;
     } catch (e) {
       failure = e.toString();
     }

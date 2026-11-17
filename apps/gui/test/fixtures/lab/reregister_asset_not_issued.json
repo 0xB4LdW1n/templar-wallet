@@ -1,0 +1,7 @@
+{
+  "ok": {
+    "book_error": "Issuance failed: the issuance of asset 0000000000000000000000000000000000000000000000000000000000000000 is not in this wallet's history (sync the wallet, or it was issued by another wallet)",
+    "book_registered": false,
+    "registered": false
+  }
+}

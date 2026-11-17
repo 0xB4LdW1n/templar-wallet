@@ -16,6 +16,7 @@ class TestServerInfo {
     this.profile,
     this.check,
     this.applied,
+    this.faucet,
   });
 
   /// A test server is joined (`profile` is then non-null).
@@ -34,6 +35,20 @@ class TestServerInfo {
   /// The servers in use after the call.
   final ActiveEndpoints active;
 
+  /// The joined lab's faucet; null when no lab is joined.
+  final TestServerFaucet? faucet;
+
+  /// The faucet can be asked now: a lab is joined and the engine runs on
+  /// its own regtest (never on testnet).
+  bool get faucetAvailable => faucet?.available ?? false;
+
+  /// The lab's Templar Protocol site, while the active network is the lab's
+  /// regtest; null otherwise.
+  String? get protocolUrl {
+    final url = active.protocol?.url ?? '';
+    return url.isEmpty ? null : url;
+  }
+
   /// The joined server answered with a different chain than the stored
   /// profile (its chains were reset): re-join to apply it.
   bool get isStale => check?.stale ?? false;
@@ -49,6 +64,129 @@ class TestServerInfo {
     active: ActiveEndpoints.fromJson(
       j['active'] as Map<String, dynamic>? ?? const {},
     ),
+    faucet: _map(j['faucet'], TestServerFaucet.fromJson),
+  );
+}
+
+/// `faucet`: what the joined lab's faucet pays, and whether it may be asked.
+class TestServerFaucet {
+  const TestServerFaucet({
+    required this.url,
+    required this.assetsSource,
+    required this.assets,
+    required this.available,
+  });
+
+  final String url;
+
+  /// `profile` (the lab lists its faucet) or `default` (an older lab: BTC
+  /// and L-BTC only).
+  final String assetsSource;
+  final List<FaucetAsset> assets;
+
+  /// True while the active network is the lab's own regtest.
+  final bool available;
+
+  factory TestServerFaucet.fromJson(Map<String, dynamic> j) => TestServerFaucet(
+    url: j['url'] as String? ?? '',
+    assetsSource: j['assets_source'] as String? ?? 'default',
+    assets: _list(j['assets'], FaucetAsset.fromJson),
+    available: j['available'] as bool? ?? false,
+  );
+}
+
+/// One coin a lab's faucet pays (`FaucetAsset`).
+class FaucetAsset {
+  const FaucetAsset({
+    required this.asset,
+    required this.network,
+    required this.ticker,
+    required this.name,
+    required this.precision,
+    this.assetId,
+    this.defaultSat,
+    this.maxSat,
+  });
+
+  /// The faucet's name for it — what `test_server_faucet` is asked for:
+  /// `btc`, `lbtc` or a lab ticker.
+  final String asset;
+
+  /// `bitcoin-regtest` | `liquid-regtest`.
+  final String network;
+  final String ticker;
+  final String name;
+
+  /// Decimals of its display unit (0–8).
+  final int precision;
+
+  /// Liquid asset id; null for BTC.
+  final String? assetId;
+
+  /// What one request pays, in base units, when the lab says.
+  final int? defaultSat;
+  final int? maxSat;
+
+  bool get isBitcoin => network == 'bitcoin-regtest';
+  bool get isLiquid => !isBitcoin;
+
+  /// The chain's own coin: BTC, or the Liquid regtest's L-BTC.
+  bool get isNativeCoin =>
+      isBitcoin || asset.toLowerCase() == 'lbtc' || ticker == 'LBTC';
+
+  factory FaucetAsset.fromJson(Map<String, dynamic> j) => FaucetAsset(
+    asset: j['asset'] as String? ?? '',
+    network: j['network'] as String? ?? 'liquid-regtest',
+    ticker: j['ticker'] as String? ?? '',
+    name: j['name'] as String? ?? '',
+    precision: (j['precision'] as num?)?.toInt() ?? 8,
+    assetId: j['asset_id'] as String?,
+    defaultSat: (j['default_sat'] as num?)?.toInt(),
+    maxSat: (j['max_sat'] as num?)?.toInt(),
+  );
+}
+
+/// What `test_server_faucet` sent: the faucet's payment to this wallet.
+class FaucetPayment {
+  const FaucetPayment({
+    required this.txid,
+    required this.asset,
+    required this.network,
+    required this.amountSat,
+    required this.address,
+    required this.ticker,
+    required this.precision,
+    this.assetId,
+  });
+
+  final String txid;
+
+  /// The faucet's name for the coin.
+  final String asset;
+
+  /// `bitcoin-regtest` | `liquid-regtest`.
+  final String network;
+
+  /// Base units.
+  final int amountSat;
+
+  /// The wallet's own address the engine derived and gave the faucet.
+  final String address;
+  final String ticker;
+  final int precision;
+  final String? assetId;
+
+  bool get isBitcoin => network == 'bitcoin-regtest';
+
+  factory FaucetPayment.fromJson(Map<String, dynamic> j) => FaucetPayment(
+    txid: j['txid'] as String? ?? '',
+    asset: j['asset'] as String? ?? '',
+    network: j['network'] as String? ?? '',
+    amountSat: (j['amount_sat'] as num?)?.toInt() ?? 0,
+    address: j['address'] as String? ?? '',
+    ticker: j['ticker'] as String? ?? '',
+    precision: (j['precision'] as num?)?.toInt() ?? 8,
+    assetId: j['asset_id'] as String?,
   );
 }
 
@@ -62,6 +200,7 @@ class TestServerProfile {
     required this.orderbookUrl,
     required this.regtest,
     this.testnet,
+    this.protocolUrl,
   });
 
   final String baseUrl;
@@ -84,6 +223,9 @@ class TestServerProfile {
   /// Liquid testnet links, display only.
   final TestServerTestnet? testnet;
 
+  /// The lab's Templar Protocol (lending) site; null on older labs.
+  final String? protocolUrl;
+
   factory TestServerProfile.fromJson(Map<String, dynamic> j) =>
       TestServerProfile(
         baseUrl: j['base_url'] as String? ?? '',
@@ -95,6 +237,7 @@ class TestServerProfile {
           j['regtest'] as Map<String, dynamic>? ?? const {},
         ),
         testnet: _map(j['testnet'], TestServerTestnet.fromJson),
+        protocolUrl: j['protocol_url'] as String?,
       );
 }
 
@@ -110,6 +253,7 @@ class TestServerRegtest {
     required this.bitcoinEsploraUrl,
     required this.faucetUrl,
     required this.peg,
+    this.faucet = const [],
   });
 
   /// Changes on every chain reset.
@@ -125,6 +269,9 @@ class TestServerRegtest {
   final String faucetUrl;
   final TestServerPeg peg;
 
+  /// What the faucet pays, as the lab lists it (empty on older labs).
+  final List<FaucetAsset> faucet;
+
   factory TestServerRegtest.fromJson(Map<String, dynamic> j) =>
       TestServerRegtest(
         instanceId: j['instance_id'] as String? ?? '',
@@ -138,6 +285,7 @@ class TestServerRegtest {
         peg: TestServerPeg.fromJson(
           j['peg'] as Map<String, dynamic>? ?? const {},
         ),
+        faucet: _list(j['faucet'], FaucetAsset.fromJson),
       );
 }
 
@@ -148,6 +296,7 @@ class TestServerPeg {
     this.peginConfirmations,
     this.pegoutConfirmations,
     this.pegoutMaxSat,
+    this.pegoutMinSat,
   });
 
   /// `native` (the lab's own Elements peg) or `sideswap`.
@@ -155,12 +304,14 @@ class TestServerPeg {
   final int? peginConfirmations;
   final int? pegoutConfirmations;
   final int? pegoutMaxSat;
+  final int? pegoutMinSat;
 
   factory TestServerPeg.fromJson(Map<String, dynamic> j) => TestServerPeg(
     provider: j['provider'] as String? ?? '',
     peginConfirmations: (j['pegin_confirmations'] as num?)?.toInt(),
     pegoutConfirmations: (j['pegout_confirmations'] as num?)?.toInt(),
     pegoutMaxSat: (j['pegout_max_sat'] as num?)?.toInt(),
+    pegoutMinSat: (j['pegout_min_sat'] as num?)?.toInt(),
   );
 }
 
@@ -242,6 +393,7 @@ class ActiveEndpoints {
     required this.orderbook,
     required this.liquid,
     required this.bitcoin,
+    this.protocol,
   });
 
   /// `liquid-testnet` | `liquid-regtest`.
@@ -252,6 +404,10 @@ class ActiveEndpoints {
   final OrderbookEndpoints orderbook;
   final LiquidEndpoint liquid;
   final BitcoinEndpoint bitcoin;
+
+  /// The joined lab's Templar Protocol site while the active network is the
+  /// lab's own regtest; null otherwise.
+  final SourcedUrl? protocol;
 
   factory ActiveEndpoints.fromJson(Map<String, dynamic> j) => ActiveEndpoints(
     liquidNetwork: j['liquid_network'] as String? ?? 'liquid-testnet',
@@ -265,6 +421,7 @@ class ActiveEndpoints {
     bitcoin: BitcoinEndpoint.fromJson(
       j['bitcoin'] as Map<String, dynamic>? ?? const {},
     ),
+    protocol: _map(j['protocol'], SourcedUrl.fromJson),
   );
 }
 
@@ -292,6 +449,7 @@ class OrderbookEndpoints {
     required this.markets,
     required this.publish,
     required this.atomicSwaps,
+    this.assets,
   });
 
   final SourcedUrl origin;
@@ -303,6 +461,10 @@ class OrderbookEndpoints {
 
   /// The HTLC v1 coordinator.
   final SourcedUrl atomicSwaps;
+
+  /// The book's public asset registry (names for tokens a wallet does not
+  /// know); null from an older engine.
+  final SourcedUrl? assets;
 
   /// The origin's host is this machine. Only then does the app offer the
   /// order book's admin page: anywhere else it is someone else's server.
@@ -323,6 +485,7 @@ class OrderbookEndpoints {
       markets: at('markets'),
       publish: at('publish'),
       atomicSwaps: at('atomic_swaps'),
+      assets: _map(j['assets'], SourcedUrl.fromJson),
     );
   }
 }
@@ -397,6 +560,12 @@ String endpointSourceLabel(String source) => switch (source) {
   'setting' => 'app setting',
   _ => 'built-in default',
 };
+
+List<T> _list<T>(Object? raw, T Function(Map<String, dynamic>) decode) => [
+  if (raw is List)
+    for (final e in raw)
+      if (e is Map<String, dynamic>) decode(e),
+];
 
 T? _map<T>(Object? raw, T Function(Map<String, dynamic>) decode) =>
     raw is Map<String, dynamic> ? decode(raw) : null;

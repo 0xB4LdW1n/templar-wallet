@@ -9,6 +9,9 @@ class AssetBalance {
     this.status = 'synced',
     this.utxoCount = 0,
     this.isNative = false,
+    this.precision,
+    this.metadataSource = 'wallet',
+    this.bookSource,
   });
 
   final String assetId;
@@ -20,6 +23,18 @@ class AssetBalance {
   final String status;
   final int utxoCount;
   final bool isNative;
+
+  /// Decimals of the display unit, when the engine knows them (null from an
+  /// older engine): what an amount of this asset is typed in.
+  final int? precision;
+
+  /// Who named it: `wallet` | `book` | `feed` | `none` (see
+  /// `shared/asset_naming.dart`).
+  final String metadataSource;
+
+  /// The book's own provenance of a `book` name: `admin` | `contract` |
+  /// `other`.
+  final String? bookSource;
 }
 
 class RecentActivityItem {
@@ -62,6 +77,7 @@ class DashboardData {
     required this.recentActivity,
     required this.syncState,
     this.liquidNetwork = 'liquid-testnet',
+    this.bitcoinNetwork = 'bitcoin-testnet',
   });
 
   final String walletId;
@@ -76,6 +92,11 @@ class DashboardData {
 
   bool get isLiquidRegtest => liquidNetwork == 'liquid-regtest';
 
+  /// `bitcoin-testnet` | `bitcoin-regtest` — where the Bitcoin side lives.
+  final String bitcoinNetwork;
+
+  bool get isBitcoinRegtest => bitcoinNetwork == 'bitcoin-regtest';
+
   DashboardData withActivity(List<RecentActivityItem> activity) =>
       DashboardData(
         walletId: walletId,
@@ -85,5 +106,6 @@ class DashboardData {
         recentActivity: activity,
         syncState: syncState,
         liquidNetwork: liquidNetwork,
+        bitcoinNetwork: bitcoinNetwork,
       );
 }

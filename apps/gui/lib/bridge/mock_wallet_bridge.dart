@@ -750,13 +750,30 @@ class MockWalletBridge implements WalletBridge {
     required String name,
     required String ticker,
     required int precision,
-    required String domain,
+    String? domain,
     required int amountSats,
     required int reissuanceTokens,
   }) async {
     await Future.delayed(const Duration(seconds: 2));
     const assetId =
         'abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234';
+    final d = (domain ?? '').trim();
+    if (!_onLab && d.isEmpty) {
+      throw Exception(
+        'wallet-ffi: A domain is required to issue an asset on Liquid testnet',
+      );
+    }
+    lastIssue = {
+      'name': name,
+      'ticker': ticker,
+      'precision': precision,
+      'domain': domain,
+      'amount_sats': amountSats,
+      'reissuance_tokens': reissuanceTokens,
+    };
+    // On a lab's regtest: no public registry and no proof; the book's
+    // registry is asked at once (refused when [mockBookRegisterError]).
+    final bookError = mockBookRegisterError;
     return IssueResult(
       assetId: assetId,
       tokenId: reissuanceTokens > 0
@@ -764,11 +781,23 @@ class MockWalletBridge implements WalletBridge {
           : null,
       txid: 'mock_issue_txid_${DateTime.now().millisecondsSinceEpoch}',
       registryRegistered: false,
-      proofUrl: 'https://$domain/.well-known/liquid-asset-proof-$assetId',
-      proofContent:
-          'Authorize linking the domain name $domain to the Liquid asset $assetId',
+      proofUrl: _onLab
+          ? ''
+          : 'https://$d/.well-known/liquid-asset-proof-$assetId',
+      proofContent: _onLab
+          ? ''
+          : 'Authorize linking the domain name $d to the Liquid asset $assetId',
+      bookRegistered: bookError == null,
+      bookError: bookError,
+      domain: _onLab && d.isEmpty ? 'regtest.templar.test' : d,
     );
   }
+
+  /// The parameters of the last `issue_asset` (tests).
+  Map<String, Object?>? lastIssue;
+
+  /// The order book's refusal of the next registrations; null = stored.
+  String? mockBookRegisterError;
 
   @override
   Future<IssueResult> reissueAsset({
@@ -1144,8 +1173,15 @@ class MockWalletBridge implements WalletBridge {
   @override
   Future<List<MyOffer>> listMyOffers(String walletId) async {
     await Future.delayed(const Duration(milliseconds: 300));
+    final err = mockMyOffersError;
+    if (err != null) throw Exception('wallet-ffi: $err');
     return _myOffers.map(MyOffer.fromJson).toList();
   }
+
+  /// Knobs for My swaps: the next `list_my_offers` / `atomic_swap_list`
+  /// fails with this text (tests of one list failing without the other).
+  String? mockMyOffersError;
+  String? mockAtomicSwapListError;
 
   @override
   Future<String> swapCancel(String walletId, String offerId) async {
@@ -1179,6 +1215,10 @@ class MockWalletBridge implements WalletBridge {
       throw UnimplementedError('Atomic swaps require the native engine');
   @override
   Future<List<AtomicSwap>> atomicSwapList(String walletId) async {
+    // Off Liquid testnet the engine answers [] at once (no coordinator).
+    if (_liquidNetwork != 'testnet') return const [];
+    final err = mockAtomicSwapListError;
+    if (err != null) throw Exception('wallet-ffi: $err');
     // "Primary" (both chains) has one swap under way, so Activity and
     // LiquiDEX have a cross-chain row to draw; every other wallet has none.
     if (walletId != 'wallet-1') return const [];
@@ -1646,11 +1686,19 @@ class MockWalletBridge implements WalletBridge {
       );
     }
     final amount = order['deposit_expected_sats'] as int;
-    // The mock wallet holds about 0.5 BTC: a larger deposit cannot be built.
-    if (amount > 50000000) {
+    final pegIn = order['direction'] == 'in';
+    final chain = _onLab
+        ? (pegIn ? 'Bitcoin regtest' : 'Liquid regtest')
+        : (pegIn ? 'Bitcoin testnet' : 'Liquid testnet');
+    // The mock wallet holds about 0.5 BTC (none at all while
+    // [mockPegWalletEmpty]): a larger deposit cannot be built.
+    final has = mockPegWalletEmpty ? 0 : 50000000;
+    if (amount + 43 > has) {
       throw Exception(
-        'wallet-ffi: Transaction build failed: Insufficient funds: 50000000 '
-        'sat available of ${amount + 143} sat needed',
+        'wallet-ffi: PEG_INSUFFICIENT_FUNDS: this wallet has $has sat of '
+        '${pegIn ? 'BTC' : 'L-BTC'} on $chain; the '
+        '${pegIn ? 'deposit and its fee need' : 'peg-out and its fee need at least'} '
+        '${amount + 43} sat.',
       );
     }
     order['txid_deposit'] = 'mock_peg_deposit_${order['order_id']}';
@@ -1682,16 +1730,21 @@ class MockWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<bool> reregisterAsset({
+  Future<ReregisterResult> reregisterAsset({
     required String walletId,
     required String assetId,
     required String name,
     required String ticker,
     required int precision,
-    required String domain,
+    String? domain,
   }) async {
     await Future.delayed(const Duration(seconds: 1));
-    return false;
+    final bookError = mockBookRegisterError;
+    return ReregisterResult(
+      registered: false,
+      bookRegistered: bookError == null,
+      bookError: bookError,
+    );
   }
 
   @override
@@ -2268,8 +2321,93 @@ class MockWalletBridge implements WalletBridge {
       bitcoinEsploraUrl: 'http://127.0.0.1:19070',
       faucetUrl: 'http://127.0.0.1:8096/api/faucet',
       peg: TestServerPeg(provider: 'native'),
+      faucet: mockFaucetAssets,
     ),
+    protocolUrl: 'http://127.0.0.1:8098',
   );
+
+  /// What the mock lab's faucet pays: BTC, its L-BTC and a lab USDt.
+  static const List<FaucetAsset> mockFaucetAssets = [
+    FaucetAsset(
+      asset: 'btc',
+      network: 'bitcoin-regtest',
+      ticker: 'BTC',
+      name: 'Bitcoin (regtest)',
+      precision: 8,
+      defaultSat: 1000000,
+      maxSat: 10000000,
+    ),
+    FaucetAsset(
+      asset: 'lbtc',
+      network: 'liquid-regtest',
+      ticker: 'LBTC',
+      name: 'Liquid Bitcoin',
+      precision: 8,
+      assetId: _labPolicyAsset,
+      defaultSat: 1000000,
+      maxSat: 10000000,
+    ),
+    FaucetAsset(
+      asset: 'USDt',
+      network: 'liquid-regtest',
+      ticker: 'USDt',
+      name: 'Tether USD (test)',
+      precision: 8,
+      assetId: mockLabUsdtId,
+      defaultSat: 10000000000,
+      maxSat: 100000000000,
+    ),
+  ];
+
+  static const String mockLabUsdtId =
+      '74e90b06d984b77ef6651a82814f054282c13b424a008a87f97060635f45ce7d';
+
+  /// The next faucet requests fail with this engine error (e.g.
+  /// `FAUCET_RATE_LIMITED: … Try again in 90 seconds.`); null = they pay.
+  String? mockFaucetError;
+
+  /// The wallet has no coins for a peg deposit (until the faucet pays BTC).
+  bool mockPegWalletEmpty = false;
+
+  /// Every faucet request answered so far (tests).
+  final List<String> faucetRequests = [];
+
+  @override
+  Future<FaucetPayment> testServerFaucet(String walletId, String asset) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    final lab = _testServerProfile;
+    if (lab == null || !_onLab) {
+      throw Exception(
+        'wallet-ffi: FAUCET_UNAVAILABLE: no test server is joined, or the '
+        'wallet is not on its regtest.',
+      );
+    }
+    final err = mockFaucetError;
+    if (err != null) throw Exception('wallet-ffi: $err');
+    final coin = lab.regtest.faucet.firstWhere(
+      (a) =>
+          a.asset.toLowerCase() == asset.toLowerCase() ||
+          a.ticker.toLowerCase() == asset.toLowerCase(),
+      orElse: () => throw Exception(
+        'wallet-ffi: FAUCET_UNAVAILABLE: the lab\'s faucet does not pay '
+        '"$asset"; it pays BTC, LBTC, USDt.',
+      ),
+    );
+    faucetRequests.add(coin.asset);
+    if (coin.isBitcoin) mockPegWalletEmpty = false;
+    return FaucetPayment(
+      txid: 'mock_faucet_${coin.asset}_${faucetRequests.length}',
+      asset: coin.asset,
+      network: coin.network,
+      amountSat: coin.defaultSat ?? 100000,
+      address: coin.isBitcoin
+          ? 'bcrt1qmockfaucet0000000000000000000000000000'
+          : 'el1qqmockfaucet00000000000000000000000000000000',
+      ticker: coin.ticker,
+      precision: coin.precision,
+      assetId: coin.assetId,
+    );
+  }
 
   TestServerInfo _testServerInfo({
     TestServerCheck? check,
@@ -2294,6 +2432,7 @@ class MockWalletBridge implements WalletBridge {
           markets: route('/api/markets'),
           publish: route('/api/offers'),
           atomicSwaps: route('/api/atomic-swaps'),
+          assets: route('/api/assets'),
         ),
         liquid: LiquidEndpoint(
           network: 'liquid-$_liquidNetwork',
@@ -2317,7 +2456,18 @@ class MockWalletBridge implements WalletBridge {
                 electrumUrl: 'ssl://electrum.blockstream.info:60002',
                 source: 'default',
               ),
+        protocol: _onLab && lab!.protocolUrl != null
+            ? SourcedUrl(url: lab.protocolUrl!, source: 'profile')
+            : null,
       ),
+      faucet: lab == null
+          ? null
+          : TestServerFaucet(
+              url: lab.regtest.faucetUrl,
+              assetsSource: 'profile',
+              assets: lab.regtest.faucet,
+              available: _onLab,
+            ),
     );
   }
 

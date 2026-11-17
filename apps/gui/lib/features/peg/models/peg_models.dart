@@ -237,6 +237,25 @@ String pegErrorText(Object error) {
     'PEG_PROOF_REJECTED' =>
       'The deposit\'s proof does not match this wallet\'s own view of the '
           'Bitcoin chain, so nothing was signed. ($detail)',
+    'PEG_INSUFFICIENT_FUNDS' =>
+      'Not enough coins: ${_sentence(detail)} Nothing was signed.',
     _ => raw,
   };
+}
+
+/// The engine refused to fund an order because the wallet cannot pay it
+/// (`PEG_INSUFFICIENT_FUNDS`): BTC for a peg-in deposit, L-BTC for a
+/// peg-out and its fee.
+bool isPegInsufficientFunds(Object error) => error
+    .toString()
+    .replaceFirst('Exception: wallet-ffi: ', '')
+    .startsWith('PEG_INSUFFICIENT_FUNDS');
+
+/// The engine's sentence with its first letter raised and a full stop at
+/// the end, to sit inside a paragraph.
+String _sentence(String text) {
+  final t = text.trim();
+  if (t.isEmpty) return t;
+  final first = t[0].toUpperCase() + t.substring(1);
+  return first.endsWith('.') ? first : '$first.';
 }

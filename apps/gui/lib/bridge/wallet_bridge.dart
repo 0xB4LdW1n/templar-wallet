@@ -120,7 +120,10 @@ abstract class WalletBridge {
     required String name,
     required String ticker,
     required int precision,
-    required String domain,
+
+    /// Required on Liquid testnet; on a test server's regtest null lets the
+    /// engine write its reserved default.
+    String? domain,
     required int amountSats,
     required int reissuanceTokens,
   });
@@ -398,14 +401,16 @@ abstract class WalletBridge {
     required String psbtBase64,
   });
 
-  /// Re-submit asset contract to the Liquid registry (after domain proof is live).
-  Future<bool> reregisterAsset({
+  /// Submit an issued asset again: on Liquid testnet to the public registry
+  /// (after its domain proof is live), and on any network to the active
+  /// order book's registry. Nothing is signed.
+  Future<ReregisterResult> reregisterAsset({
     required String walletId,
     required String assetId,
     required String name,
     required String ticker,
     required int precision,
-    required String domain,
+    String? domain,
   });
 
   /// Show the next receive address on the connected hardware wallet screen.
@@ -648,6 +653,13 @@ abstract class WalletBridge {
   /// Leave the joined test server: Liquid returns to testnet and the open
   /// wallet is closed.
   Future<TestServerInfo> clearTestServer();
+
+  /// Ask the joined lab's faucet to pay this wallet [asset] (`btc`, `lbtc`
+  /// or a lab ticker from `TestServerInfo.faucet`). The engine derives the
+  /// wallet's own address; nothing is signed. Only on the lab's regtest.
+  /// Errors carry the tags FAUCET_UNAVAILABLE, FAUCET_RATE_LIMITED,
+  /// FAUCET_REFUSED and FAUCET_UNREACHABLE (`FaucetError.from`).
+  Future<FaucetPayment> testServerFaucet(String walletId, String asset);
 
   // ── Templar Protocol ─────────────────────────────────────────────
 

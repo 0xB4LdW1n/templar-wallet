@@ -7,6 +7,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../features/create_wallet/models/hw_device.dart';
 import '../features/create_wallet/models/hw_import_result.dart';
@@ -742,7 +743,7 @@ class FfiWalletBridge implements WalletBridge {
     required String name,
     required String ticker,
     required int precision,
-    required String domain,
+    String? domain,
     required int amountSats,
     required int reissuanceTokens,
   }) async {
@@ -752,7 +753,8 @@ class FfiWalletBridge implements WalletBridge {
               'name': name,
               'ticker': ticker,
               'precision': precision,
-              'domain': domain,
+              if (domain != null && domain.trim().isNotEmpty)
+                'domain': domain.trim(),
               'amount_sats': amountSats,
               'reissuance_tokens': reissuanceTokens,
             })
@@ -1035,13 +1037,13 @@ class FfiWalletBridge implements WalletBridge {
   }
 
   @override
-  Future<bool> reregisterAsset({
+  Future<ReregisterResult> reregisterAsset({
     required String walletId,
     required String assetId,
     required String name,
     required String ticker,
     required int precision,
-    required String domain,
+    String? domain,
   }) async {
     final raw =
         await _ok('reregister_asset', {
@@ -1050,10 +1052,11 @@ class FfiWalletBridge implements WalletBridge {
               'name': name,
               'ticker': ticker,
               'precision': precision,
-              'domain': domain,
+              if (domain != null && domain.trim().isNotEmpty)
+                'domain': domain.trim(),
             })
             as Map<String, dynamic>;
-    return raw['registered'] as bool? ?? false;
+    return ReregisterResult.fromJson(raw);
   }
 
   @override
@@ -1132,6 +1135,14 @@ class FfiWalletBridge implements WalletBridge {
   Future<TestServerInfo> clearTestServer() async {
     final raw = await _ok('clear_test_server', {}) as Map<String, dynamic>;
     return TestServerInfo.fromJson(raw);
+  }
+
+  @override
+  Future<FaucetPayment> testServerFaucet(String walletId, String asset) async {
+    final raw =
+        await _ok('test_server_faucet', {'wallet_id': walletId, 'asset': asset})
+            as Map<String, dynamic>;
+    return FaucetPayment.fromJson(raw);
   }
 
   @override
@@ -1265,6 +1276,12 @@ class FfiWalletBridge implements WalletBridge {
 
   // ── JSON → model mappers ────────────────────────────────────────────────────
 
+  /// The `get_wallet_summary` mapper, for decoding tests against real engine
+  /// JSON.
+  @visibleForTesting
+  static DashboardData decodeWalletSummary(Map<String, dynamic> j) =>
+      _dashboardFromJson(j);
+
   static DashboardData _dashboardFromJson(Map<String, dynamic> j) {
     final assets = (j['assets'] as List<dynamic>? ?? [])
         .map((e) => _assetBalanceFromJson(e as Map<String, dynamic>))
@@ -1280,6 +1297,7 @@ class FfiWalletBridge implements WalletBridge {
       recentActivity: activity,
       syncState: j['sync_state'] as String? ?? 'synced',
       liquidNetwork: j['liquid_network'] as String? ?? 'liquid-testnet',
+      bitcoinNetwork: j['bitcoin_network'] as String? ?? 'bitcoin-testnet',
     );
   }
 
@@ -1294,6 +1312,9 @@ class FfiWalletBridge implements WalletBridge {
         status: j['status'] as String? ?? 'synced',
         utxoCount: j['utxo_count'] as int? ?? 0,
         isNative: j['is_native'] as bool? ?? false,
+        precision: (j['precision'] as num?)?.toInt(),
+        metadataSource: j['metadata_source'] as String? ?? 'wallet',
+        bookSource: j['book_source'] as String?,
       );
 
   static RecentActivityItem _recentActivityFromJson(Map<String, dynamic> j) {
@@ -1486,12 +1507,5 @@ class FfiWalletBridge implements WalletBridge {
   );
 
   static IssueResult _issueResultFromJson(Map<String, dynamic> j) =>
-      IssueResult(
-        assetId: j['asset_id'] as String,
-        tokenId: j['token_id'] as String?,
-        txid: j['txid'] as String,
-        registryRegistered: j['registry_registered'] as bool? ?? false,
-        proofUrl: j['proof_url'] as String? ?? '',
-        proofContent: j['proof_content'] as String? ?? '',
-      );
+      IssueResult.fromJson(j);
 }

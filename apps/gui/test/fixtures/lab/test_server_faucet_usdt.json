@@ -1,0 +1,12 @@
+{
+  "ok": {
+    "address": "el1qqv9nw3nyfr2lyxvnhq4kar35cwhns2a2gjtd9nl42lmanntpdxwdu4v95ms43e2m59swn0zffa42d4hfr0tvz4fapk90vn6cy",
+    "amount_sat": 10000000000,
+    "asset": "USDt",
+    "asset_id": "74e90b06d984b77ef6651a82814f054282c13b424a008a87f97060635f45ce7d",
+    "network": "liquid-regtest",
+    "precision": 8,
+    "ticker": "USDt",
+    "txid": "331d4d6d01f0b5fc6f6f85542530eb71aab46ea93ec673dc4d0ba087ef004275"
+  }
+}

@@ -182,14 +182,14 @@ class _IssueScreenState extends State<IssueScreen> {
     if (result == null) return;
     final walletId = context.read<AppState>().activeWalletId ?? 'wallet-1';
     try {
-      final ok = await _bridge.reregisterAsset(
+      final ok = (await _bridge.reregisterAsset(
         walletId: walletId,
         assetId: result.assetId,
         name: _nameController.text.trim(),
         ticker: _tickerController.text.trim(),
         precision: int.tryParse(_precisionController.text.trim()) ?? 8,
         domain: _domainController.text.trim(),
-      );
+      )).registered;
       if (ok) {
         await IssuedAssetStore.instance.markRegistered(
           walletId,

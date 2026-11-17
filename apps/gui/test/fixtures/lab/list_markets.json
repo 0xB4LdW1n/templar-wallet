@@ -1,0 +1,43 @@
+{
+  "ok": [
+    {
+      "available": true,
+      "block_reason": null,
+      "created_at": 1794944627,
+      "demo": false,
+      "id": "liquid:5",
+      "maker_gives": {
+        "amount_sats": 10000,
+        "asset_id": "a9fab7bb1d633d1e6f26d3d20f6780018e0a0ae861941e4f478ab3ba575dc378",
+        "book_source": "contract",
+        "chain": "liquid",
+        "display_amount": "100.00",
+        "metadata_source": "book",
+        "name": "Registry Token",
+        "network": "liquid-regtest",
+        "precision": 2,
+        "ticker": "RT115D70"
+      },
+      "maker_wants": {
+        "amount_sats": 1000000,
+        "asset_id": "1e19c40da6e374ff7f7ae2bb46edc6b042b0bc0545cccbf2bc769d93ebd75562",
+        "book_source": null,
+        "chain": "liquid",
+        "display_amount": "0.01000000",
+        "metadata_source": "wallet",
+        "name": "Liquid Bitcoin (regtest)",
+        "network": "liquid-regtest",
+        "precision": 8,
+        "ticker": "LBTC"
+      },
+      "note": "",
+      "price_display": "100.00 \u2192 0.01000000",
+      "proposal_json": "{}",
+      "settlement": "liquidex-v0",
+      "source_id": 5,
+      "status": "open",
+      "takeable": true,
+      "verified": true
+    }
+  ]
+}
