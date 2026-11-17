@@ -11,7 +11,6 @@
 
 import 'package:flutter/material.dart';
 
-import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
@@ -31,43 +30,50 @@ class UsbUnsupportedCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.cardPadding),
       decoration: BoxDecoration(
-        color: s.surfaceGlass,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: s.warning, width: 1.5),
+        color: s.panel,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(color: s.edge),
+        boxShadow: s.panelShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.info_outline_rounded, color: s.warning, size: 22),
-              const SizedBox(width: AppSpacing.md),
+              Icon(
+                Icons.info_outlined,
+                color: s.inkSecondary,
+                size: AppSpacing.icon,
+              ),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
                   'Some devices cannot be used over USB here',
-                  style: AppTypography.sectionTitle,
+                  style: AppTypography.sectionTitle.copyWith(color: s.ink),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             usbPartialSupportReason,
-            style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+            style: AppTypography.body.copyWith(color: s.inkSecondary),
           ),
           const SizedBox(height: AppSpacing.lg),
-          const InfoBanner(
-            title: 'What works today',
-            message: '$jadeLiquidStillWorks\n\n$usbUnsupportedAlternative',
+          Text(
+            'What works today',
+            style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            '$jadeLiquidStillWorks\n\n$usbUnsupportedAlternative',
+            style: AppTypography.body.copyWith(color: s.inkSecondary),
           ),
           const SizedBox(height: AppSpacing.lg),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: SecondaryButton(
-              label: 'Set up as air-gap instead',
-              icon: Icons.qr_code_2_rounded,
-              onPressed: onUseAirgap,
-            ),
+          SecondaryButton(
+            label: 'Set up as air-gap instead',
+            icon: Icons.qr_code_2_outlined,
+            onPressed: onUseAirgap,
           ),
         ],
       ),

@@ -13,10 +13,10 @@ layout is added.
 
 - On Android and iOS the app always uses `MobileShell`
   (`apps/gui/lib/app/shell.dart`) — on phones, tablets and in landscape
-  alike: a thin header (wallet name opens the picker, the sync pill syncs)
-  and a bottom carousel (`apps/gui/lib/shared/widgets/carousel_nav.dart`).
-  No sidebar or rail on mobile. The carousel items are listed by
-  `mobileNavItems` in `shell.dart`.
+  alike: a thin header (wallet name opens the picker, the sync state syncs)
+  and a bottom tab bar (`apps/gui/lib/shared/widgets/mobile_tab_bar.dart`)
+  with every destination visible and labelled. No sidebar or rail on mobile.
+  The tabs are listed by `mobileNavItems` in `shell.dart`.
 - The system back button goes through one handler
   (`apps/gui/lib/app/back_handler.dart` and the shell's `PopScope`): a wizard
   step goes back, a sub-page returns to its parent, any section returns to
@@ -33,3 +33,10 @@ layout is added.
 - A new screen needs a phone layout check, and its phone branch belongs
   behind `isPhone`.
 - Tablets get the phone shell with wider content, not the desktop sidebar.
+
+## Amendment — the carousel became a tab bar
+
+The shell first shipped with a bottom carousel: three destinations on screen
+at a time, the centred one labelled. It hid half of the app behind a swipe
+and left the side icons unlabelled, so it was replaced by a fixed tab bar
+(at most six tabs). Everything else in this decision stands.

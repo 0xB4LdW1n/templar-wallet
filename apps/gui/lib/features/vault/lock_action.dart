@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../../app/app_state.dart';
 import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
-import '../../theme/app_colors.dart';
 import '../settings/seed_phrase_section.dart';
 import 'vault_unlock_screen.dart';
 
@@ -30,12 +29,9 @@ Future<void> lockVaultAndPrompt(
     SeedRevealGate.reset();
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not lock: $e'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not lock: $e')));
     }
     return;
   }

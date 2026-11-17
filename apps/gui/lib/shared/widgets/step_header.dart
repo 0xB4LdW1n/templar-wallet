@@ -1,10 +1,13 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import '../../theme/app_colors.dart';
+
+import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import 'choice_list.dart';
+import 'hybrid_kit.dart';
 
 /// One step's header text, used to reserve the header's height up front.
 /// See [StepHeader.variants].
@@ -14,6 +17,17 @@ class StepHeaderVariant {
   final String? subtitle;
 }
 
+/// The head of a wizard step (design.md, "Steps").
+///
+/// Top to bottom: the counter ("Step 2 of 6") with the way back before it and
+/// Cancel opposite; a row of thin segments, one per step, done and current
+/// in the primary ink; then the step's question as the title and an optional
+/// line under it. No numbered circles: the count is stated once, in words.
+///
+/// The segments sit with the counter, above the title, so the height the
+/// header reserves for its longest step ([variants]) opens between the text
+/// and the body — where a gap reads as a paragraph break — and not between
+/// the text and its own progress bar.
 class StepHeader extends StatelessWidget {
   const StepHeader({
     super.key,
@@ -24,6 +38,7 @@ class StepHeader extends StatelessWidget {
     this.onBack,
     this.onCancel,
     this.variants,
+    this.display = false,
   });
 
   final int currentStep;
@@ -35,22 +50,28 @@ class StepHeader extends StatelessWidget {
 
   /// Every title/subtitle pair this flow can show. Given them, the header
   /// reserves the height of its tallest step, so a two-line subtitle on step 3
-  /// does not push the body — and the back arrow — down the screen when the
-  /// user arrives from a one-line step 2. Null keeps the old behaviour:
-  /// the header is exactly as tall as the text it holds.
+  /// does not push the body — and everything under it — down the screen when
+  /// the user arrives from a one-line step 2. Null: the header is exactly as
+  /// tall as the text it holds.
   final List<StepHeaderVariant>? variants;
+
+  /// The title in `displayTitle`, for a full-screen wizard outside the shell
+  /// (no page title competes with it there). In-shell flows keep `pageTitle`.
+  final bool display;
 
   @override
   Widget build(BuildContext context) {
-    // A phone keeps the same header a size down: 22 dp title, full-size
-    // touch targets on Back / Cancel and a tighter gap above the progress
-    // bar. Desktop metrics are untouched.
+    final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
-    final titleStyle = AppTypography.pageTitleOf(context);
-    final subtitleStyle = _subtitleStyle(context, phone);
-    final indicatorStyle = AppTypography.stepIndicator.copyWith(
-      color: AppColors.accent,
-    );
+    final titleStyle =
+        (display
+                ? AppTypography.displayTitleOf(context)
+                : AppTypography.pageTitleOf(context))
+            .copyWith(color: s.ink);
+    final subtitleStyle =
+        (phone ? AppTypography.bodyOf(context) : AppTypography.body).copyWith(
+          color: s.inkSecondary,
+        );
     // Read here, never inside the LayoutBuilder below: its builder runs during
     // layout, and an inherited dependency registered from there is re-checked
     // in the same phase — when the keyboard closes and MediaQuery changes
@@ -66,101 +87,87 @@ class StepHeader extends StatelessWidget {
       children: [
         Row(
           children: [
-            // The slot is always there, whether or not there is a Back to
-            // press: rendering it only from step 2 on slid the whole title
-            // block sideways every time the user advanced, and moved the
-            // arrow out from under a thumb that was already on its way.
-            _BackSlot(onBack: onBack, phone: phone),
+            // The arrow keeps one place from the second step on. On the first
+            // there is nothing to go back to, and the counter starts on the
+            // title's own left edge instead of floating a slot away from it.
+            if (onBack != null) ...[
+              _BackSlot(onBack: onBack, phone: phone),
+              const SizedBox(width: AppSpacing.xs),
+            ],
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final block = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Step $currentStep of $totalSteps',
-                        style: indicatorStyle,
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(title, style: titleStyle),
-                      if (subtitle != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: AppSpacing.xs),
-                          child: Text(subtitle!, style: subtitleStyle),
-                        ),
-                    ],
-                  );
-                  final reserved = _reservedHeight(
-                    measure,
-                    constraints.maxWidth,
-                    indicatorStyle,
-                    titleStyle,
-                    subtitleStyle,
-                  );
-                  if (reserved == null) return block;
-                  return ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: reserved),
-                    child: block,
-                  );
-                },
+              child: Text(
+                'Step $currentStep of $totalSteps',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
               ),
             ),
             if (onCancel != null)
               TextButton(
                 onPressed: onCancel,
-                style: phone
-                    ? TextButton.styleFrom(
-                        minimumSize: const Size(
+                style: TextButton.styleFrom(
+                  foregroundColor: s.inkSecondary,
+                  minimumSize: phone
+                      ? const Size(
                           AppLayout.minTouchTarget,
                           AppLayout.minTouchTarget,
-                        ),
-                      )
-                    : null,
+                        )
+                      : const Size(0, AppSpacing.controlHeightSmall),
+                ),
                 child: const Text('Cancel'),
               ),
           ],
         ),
-        SizedBox(height: phone ? AppSpacing.md : AppSpacing.lg),
+        const SizedBox(height: AppSpacing.sm),
         _StepProgress(current: currentStep, total: totalSteps),
+        const SizedBox(height: AppSpacing.xl),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final block = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(title, style: titleStyle),
+                if (subtitle != null && subtitle!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.sm),
+                    child: Text(subtitle!, style: subtitleStyle),
+                  ),
+              ],
+            );
+            final reserved = _reservedHeight(
+              measure,
+              constraints.maxWidth,
+              titleStyle,
+              subtitleStyle,
+            );
+            if (reserved == null) return block;
+            return ConstrainedBox(
+              constraints: BoxConstraints(minHeight: reserved),
+              child: block,
+            );
+          },
+        ),
       ],
     );
   }
-
-  static TextStyle _subtitleStyle(BuildContext context, bool phone) =>
-      (phone ? AppTypography.bodySmall : AppTypography.body).copyWith(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? AppColors.textSecondaryDark
-            : AppColors.textSecondary,
-      );
 
   /// The height of the tallest [variants] entry at this width, or null when
   /// the flow did not declare its steps.
   double? _reservedHeight(
     _TextMeasure measure,
     double width,
-    TextStyle indicatorStyle,
     TextStyle titleStyle,
     TextStyle subtitleStyle,
   ) {
     final vs = variants;
     if (vs == null || vs.isEmpty || !width.isFinite || width <= 0) return null;
-    // The counter is one line on every step; measured rather than assumed so
-    // a text-scale setting moves the reservation with it.
-    final indicator = measure.height(
-      'Step $currentStep of $totalSteps',
-      indicatorStyle,
-      width,
-    );
     var tallest = 0.0;
     for (final v in vs) {
-      var h =
-          indicator +
-          AppSpacing.xs +
-          measure.height(v.title, titleStyle, width);
-      final s = v.subtitle;
-      if (s != null && s.isNotEmpty) {
-        h += AppSpacing.xs + measure.height(s, subtitleStyle, width);
+      var h = measure.height(v.title, titleStyle, width);
+      final sub = v.subtitle;
+      if (sub != null && sub.isNotEmpty) {
+        h += AppSpacing.sm + measure.height(sub, subtitleStyle, width);
       }
       tallest = math.max(tallest, h);
     }
@@ -190,12 +197,13 @@ class _TextMeasure {
       textDirection: direction,
       textScaler: scaler,
     )..layout(maxWidth: width);
-    return painter.height;
+    final h = painter.height;
+    painter.dispose();
+    return h;
   }
 }
 
-/// The back arrow's fixed slot: the button when there is somewhere to go
-/// back to, an inert copy of it — same metrics, invisible — when there is not.
+/// The back arrow, at one size on every step that has one.
 class _BackSlot extends StatelessWidget {
   const _BackSlot({required this.onBack, required this.phone});
 
@@ -204,26 +212,28 @@ class _BackSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final button = IconButton(
+    final side = phone
+        ? AppLayout.minTouchTarget
+        : AppSpacing.controlHeightSmall;
+    return IconButton(
       onPressed: onBack,
-      icon: const Icon(Icons.arrow_back),
-      visualDensity: phone ? VisualDensity.standard : VisualDensity.compact,
-      constraints: phone
-          ? const BoxConstraints(
-              minWidth: AppLayout.minTouchTarget,
-              minHeight: AppLayout.minTouchTarget,
-            )
-          : null,
-    );
-    if (onBack != null) return button;
-    return ExcludeSemantics(
-      child: IgnorePointer(child: Opacity(opacity: 0, child: button)),
+      tooltip: 'Back',
+      icon: const Icon(Icons.arrow_back_outlined),
+      iconSize: phone ? 22 : AppSpacing.icon,
+      padding: EdgeInsets.zero,
+      constraints: BoxConstraints.tightFor(width: side, height: side),
+      // No invisible tap-target padding around it: the arrow's box starts on
+      // the column's left edge, in line with the title under it.
+      style: IconButton.styleFrom(
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
     );
   }
 }
 
-/// One short bar per step: filled behind you, muted on the step you are on,
-/// hairline ahead. Nothing here reads inherited state inside a layout-phase
+/// One thin bar per step: the primary ink for the steps behind you, the
+/// accent for the one you are on ("you are here", design.md), the control
+/// outline ahead. Nothing here reads inherited state inside a layout-phase
 /// builder — see the note in [StepHeader.build].
 class _StepProgress extends StatelessWidget {
   const _StepProgress({required this.current, required this.total});
@@ -232,26 +242,26 @@ class _StepProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rest = Theme.of(context).brightness == Brightness.dark
-        ? AppColors.borderDark
-        : AppColors.borderLight;
+    final s = AppScheme.of(context);
+    final duration = AppMotion.of(context, AppMotion.quick);
     return Row(
       children: List.generate(total, (i) {
-        final done = i < current;
+        final reached = i < current;
         final here = i == current - 1;
         return Expanded(
           child: Padding(
             padding: EdgeInsets.only(right: i < total - 1 ? AppSpacing.xs : 0),
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              height: 4,
+              duration: duration,
+              curve: AppMotion.settle,
+              height: 3,
               decoration: BoxDecoration(
-                color: done
-                    ? AppColors.accent
-                    : here
-                    ? AppColors.accentMuted
-                    : rest,
-                borderRadius: BorderRadius.circular(2),
+                color: here
+                    ? s.accent
+                    : reached
+                    ? s.ink
+                    : s.edgeStrong,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
               ),
             ),
           ),
@@ -261,9 +271,10 @@ class _StepProgress extends StatelessWidget {
   }
 }
 
-/// A desktop pointer gets the wallet tile's answer (design.md): the surface
-/// steps up one, the hairline firms, the icon flashes crimson, and the cursor
-/// says it can be clicked. Nothing on the phone changes — it ripples.
+/// A standalone option with a radio (design.md, "Option card"): a card that
+/// is chosen by its radio and a firmer edge, never by a filled slab or an
+/// accent border. Under the pointer the card takes the hover layer; keyboard
+/// focus is a ring.
 class SelectableOptionCard extends StatefulWidget {
   const SelectableOptionCard({
     super.key,
@@ -278,7 +289,11 @@ class SelectableOptionCard extends StatefulWidget {
   final String title;
   final String description;
   final bool isSelected;
+
+  /// Null: the option is shown but not on offer (drawn at half ink).
   final VoidCallback? onTap;
+
+  /// A short fact beside the title ("Coming soon"), drawn as a quiet tag.
   final String? badge;
   final IconData? icon;
 
@@ -288,140 +303,123 @@ class SelectableOptionCard extends StatefulWidget {
 
 class _SelectableOptionCardState extends State<SelectableOptionCard> {
   bool _hover = false;
+  bool _down = false;
+  bool _focus = false;
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final phone = AppLayout.isPhone(context);
     final s = AppScheme.of(context);
-    final title = widget.title;
-    final description = widget.description;
+    final phone = AppLayout.isPhone(context);
     final isSelected = widget.isSelected;
     final onTap = widget.onTap;
+    final enabled = onTap != null;
     final badge = widget.badge;
     final icon = widget.icon;
-    final active = !phone && onTap != null && _hover && !isSelected;
+    final lit = enabled && (_hover || _down);
+
+    final radius = BorderRadius.circular(AppSpacing.radiusLg);
+    final fill = !lit
+        ? s.panel
+        : Color.alphaBlend(_down ? s.pressed : s.hover, s.panel);
+
     final card = AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      padding: EdgeInsets.all(
-        phone ? AppSpacing.cardPaddingSmall : AppSpacing.cardPadding,
-      ),
+      duration: AppMotion.of(context, AppMotion.instant),
+      curve: AppMotion.settle,
+      padding: const EdgeInsets.all(AppSpacing.cardPaddingSmall),
       decoration: BoxDecoration(
-        color: isSelected
-            ? (isDark ? AppColors.sidebarActiveItemBg : AppColors.accentLight)
-            : active
-            ? (isDark ? AppColors.surfaceDark2 : AppColors.surfaceLight)
-            : (isDark ? AppColors.surfaceDark : AppColors.surfaceLight),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(
-          color: isSelected
-              ? AppColors.accent
-              : active
-              ? s.edgeStrong
-              : (isDark ? AppColors.borderDark : AppColors.borderLight),
-          width: isSelected ? 2 : 1,
-        ),
+        color: fill,
+        borderRadius: radius,
+        border: Border.all(color: isSelected || lit ? s.edgeStrong : s.edge),
+        boxShadow: s.panelShadow,
       ),
+      foregroundDecoration: _focus && enabled
+          ? BoxDecoration(
+              borderRadius: radius,
+              border: Border.all(color: s.focus, width: 2),
+            )
+          : null,
       child: Row(
         children: [
           if (icon != null) ...[
-            Icon(
-              icon,
-              size: 24,
-              color: isSelected || active
-                  ? AppColors.accent
-                  : (isDark
-                        ? AppColors.textSecondaryDark
-                        : AppColors.textSecondary),
-            ),
-            const SizedBox(width: AppSpacing.lg),
+            Icon(icon, size: AppSpacing.icon, color: s.inkSecondary),
+            const SizedBox(width: AppSpacing.md),
           ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // The title is Flexible so a long one wraps under the badge
-                // instead of pushing past the card edge — layout-neutral
-                // wherever it already fit on one line.
+                // instead of pushing past the card edge.
                 Row(
                   children: [
                     Flexible(
-                      child: Text(title, style: AppTypography.sectionTitle),
+                      child: Text(
+                        widget.title,
+                        style:
+                            (phone
+                                    ? AppTypography.bodyOf(context)
+                                    : AppTypography.body)
+                                .copyWith(
+                                  color: s.ink,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                      ),
                     ),
                     if (badge != null) ...[
                       const SizedBox(width: AppSpacing.sm),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.sm,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.warningLight,
-                          borderRadius: BorderRadius.circular(
-                            AppSpacing.radiusSm,
-                          ),
-                        ),
-                        child: Text(
-                          badge,
-                          style: AppTypography.label.copyWith(
-                            color: AppColors.warning,
-                          ),
-                        ),
-                      ),
+                      QuietTag(label: badge),
                     ],
                   ],
                 ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  description,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: isDark
-                        ? AppColors.textSecondaryDark
-                        : AppColors.textSecondary,
+                if (widget.description.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    widget.description,
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            width: 20,
-            height: 20,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isSelected ? AppColors.accent : Colors.transparent,
-              border: Border.all(
-                color: isSelected
-                    ? AppColors.accent
-                    : (isDark ? AppColors.borderDark : AppColors.borderLight),
-                width: 2,
-              ),
-            ),
-            child: isSelected
-                ? const Icon(Icons.check, size: 12, color: Colors.white)
-                : null,
-          ),
+          OptionRadio(selected: isSelected),
         ],
       ),
     );
-    if (!phone) {
-      return MouseRegion(
-        cursor: onTap != null
+
+    return Semantics(
+      button: true,
+      inMutuallyExclusiveGroup: true,
+      selected: isSelected,
+      enabled: enabled,
+      child: FocusableActionDetector(
+        enabled: enabled,
+        mouseCursor: enabled
             ? SystemMouseCursors.click
             : SystemMouseCursors.basic,
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        child: GestureDetector(onTap: onTap, child: card),
-      );
-    }
-    // Touch gets a ripple; the desktop cursor/colour change stays as is.
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        child: card,
+        onShowHoverHighlight: (v) => setState(() {
+          _hover = v;
+          if (!v) _down = false;
+        }),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              onTap?.call();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          onTapDown: enabled ? (_) => setState(() => _down = true) : null,
+          onTapUp: enabled ? (_) => setState(() => _down = false) : null,
+          onTapCancel: enabled ? () => setState(() => _down = false) : null,
+          child: Opacity(opacity: enabled ? 1 : 0.5, child: card),
+        ),
       ),
     );
   }

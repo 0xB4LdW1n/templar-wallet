@@ -60,7 +60,7 @@ void main() {
     final amount = tester.getRect(find.text('0.00010000 BTC'));
     expect(amount.top, greaterThanOrEqualTo(address.bottom));
     // Change keeps its chip and amount on one line, address beneath.
-    final chip = tester.getRect(find.text('CHANGE'));
+    final chip = tester.getRect(find.text('Change'));
     final changeAddr = tester.getRect(find.byType(HexText).last);
     expect(changeAddr.top, greaterThanOrEqualTo(chip.bottom));
   });

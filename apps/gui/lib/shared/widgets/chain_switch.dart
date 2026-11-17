@@ -5,7 +5,11 @@ import 'segmented_switch.dart';
 
 /// The Bitcoin / Liquid switch that sits top-right on every screen whose
 /// content is per chain (UTXOs, Activity, Receive) — the same control in the
-/// same place, in the chain's own colour.
+/// same place.
+///
+/// It is the plain [SegmentedSwitch]: the chain is named by its label and
+/// identified by a 6 px dot in its hue, whether chosen or not. The hue never
+/// fills, outlines or colours the label.
 ///
 /// Always drawn, even for a wallet with one chain: the chain the wallet lacks
 /// is shown dimmed with a tooltip instead of vanishing. A missing control
@@ -49,7 +53,8 @@ class ChainSwitch<T> extends StatelessWidget {
   final bool expand;
 
   /// Icons only, names in the tooltip / semantics — for a phone row the
-  /// switch has to share with other controls.
+  /// switch has to share with other controls. The chain icons appear only in
+  /// this mode; with labels the dot is enough.
   final bool iconOnly;
 
   @override
@@ -62,25 +67,28 @@ class ChainSwitch<T> extends StatelessWidget {
       iconOnly: iconOnly,
       options: [
         if (all != null)
-          SegOption(value: all as T, label: 'All', icon: Icons.all_inclusive),
+          SegOption(
+            value: all as T,
+            label: 'All',
+            icon: iconOnly ? Icons.all_inclusive : null,
+          ),
         SegOption(
           value: bitcoin,
           label: 'Bitcoin',
-          icon: Icons.currency_bitcoin,
-          color: s.bitcoin,
+          icon: iconOnly ? Icons.currency_bitcoin : null,
+          dot: s.bitcoin,
           enabled: bitcoinEnabled,
-          tooltip:
-              bitcoinEnabled ? null : 'This wallet has no Bitcoin side',
+          tooltip: bitcoinEnabled ? null : 'This wallet has no Bitcoin side',
         ),
         SegOption(
           value: liquid,
           label: 'Liquid',
-          icon: Icons.water_drop_outlined,
-          color: s.liquid,
+          icon: iconOnly ? Icons.water_drop_outlined : null,
+          dot: s.liquid,
           enabled: liquidEnabled,
           tooltip: liquidEnabled
               ? null
-              : 'Liquid is not enabled for this wallet — turn it on from Wallet Info',
+              : 'Liquid is not enabled for this wallet — turn it on from Wallet info',
         ),
       ],
     );

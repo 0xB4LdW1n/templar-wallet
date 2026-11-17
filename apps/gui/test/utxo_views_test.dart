@@ -110,8 +110,8 @@ void main() {
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(t.getSize(find.byType(UtxoBanknote)).width, 337);
-    // The tier and its share are one tag now: "WHALE · 0%".
-    expect(find.textContaining('WHALE'), findsOneWidget);
+    // The tier and its share are one quiet word: "Whale · 0%".
+    expect(find.textContaining('Whale'), findsOneWidget);
     expect(find.text('12345.67890000 USDT'), findsOneWidget);
     await t.tap(find.byType(UtxoBanknote));
     expect(taps, 1);
@@ -128,9 +128,86 @@ void main() {
     );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
-    expect(find.text(_coin.shortOutpoint), findsOneWidget);
+    // A labelled coin: the outpoint leads its second line, before its age.
+    expect(find.textContaining(_coin.shortOutpoint), findsOneWidget);
     expect(find.text(_coin.midOutpoint), findsNothing);
     expect(find.text('42%'), findsOneWidget);
+    // The row leads with the coin's note in miniature.
+    expect(find.byType(MiniNote), findsOneWidget);
+  });
+
+  testWidgets('a wide desktop CoinRow names the address and edits its label', (
+    t,
+  ) async {
+    const address = 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx';
+    const onAddress = Utxo(
+      outpoint: '$_txid:4',
+      amount: 90000,
+      displayAmount: '90000 sats',
+      confirmations: 3,
+      state: UtxoState.available,
+      ticker: 'BTC',
+      address: address,
+    );
+    var edits = 0;
+    var taps = 0;
+    t.view.physicalSize = const Size(1200, 600);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(
+      host(
+        CoinRow(
+          utxo: onAddress,
+          share: 0.42,
+          compact: false,
+          onTap: () => taps++,
+          onEditAddressLabel: () => edits++,
+        ),
+        width: 1000,
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(t.takeException(), isNull);
+    expect(find.text(onAddress.shortAddress!), findsOneWidget);
+    // The address cell is its own editor: it does not toggle the row.
+    await t.tap(find.text(onAddress.shortAddress!));
+    expect(edits, 1);
+    expect(taps, 0);
+  });
+
+  testWidgets('a CoinRow too narrow for the address column leaves it out', (
+    t,
+  ) async {
+    const onAddress = Utxo(
+      outpoint: '$_txid:4',
+      amount: 90000,
+      displayAmount: '90000 sats',
+      confirmations: 3,
+      state: UtxoState.available,
+      ticker: 'BTC',
+      address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
+    );
+    await t.pumpWidget(
+      host(
+        CoinRow(utxo: onAddress, share: 0.42, compact: false, onTap: () {}),
+        width: 600,
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(t.takeException(), isNull);
+    expect(find.text(onAddress.shortAddress!), findsNothing);
+  });
+
+  test('every note is one height and a bigger tier is a longer note', () {
+    var last = 0.0;
+    var lastMini = 0.0;
+    for (final tier in BanknoteTier.values) {
+      expect(tier.size.height, kNoteHeight);
+      expect(tier.size.width, greaterThan(last));
+      expect(tier.miniWidth, greaterThan(lastMini));
+      last = tier.size.width;
+      lastMini = tier.miniWidth;
+    }
   });
 
   // ── Tiers ────────────────────────────────────────────────────────────────
@@ -218,8 +295,7 @@ void main() {
     await t.pump();
     expect(t.takeException(), isNull);
     expect(find.text('Pending'), findsOneWidget);
-    expect(find.textContaining('Incoming'), findsOneWidget);
-    expect(find.byIcon(Icons.radio_button_unchecked), findsNothing);
+    expect(find.text(pendingCoin.midOutpoint), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     await t.tap(find.byType(CoinRow));
     await t.pump();
@@ -235,7 +311,7 @@ void main() {
     await t.pump();
     expect(t.takeException(), isNull);
     expect(find.byType(ProvisionalNote), findsOneWidget);
-    expect(find.text('Incoming'), findsOneWidget);
+    expect(find.text('Pending'), findsOneWidget);
     expect(find.text('Waiting for confirmation'), findsOneWidget);
     expect(find.text('0.0015 BTC'), findsOneWidget);
     // No banknote paper for money that has not landed.
@@ -272,34 +348,75 @@ void main() {
       ),
     );
     await t.pumpAndSettle();
-    await t.tap(find.byIcon(Icons.info_outline_rounded));
+    await t.tap(find.byIcon(Icons.info_outline));
     await t.pumpAndSettle();
     expect(taps, 0);
     expect(find.byType(UtxoDetailsDialog), findsOneWidget);
     expect(find.text('Coin details'), findsOneWidget);
     // The whole outpoint, the tier and its rule.
     expect(find.text(_coin.outpoint), findsOneWidget);
-    expect(find.textContaining('HUGE'), findsWidgets);
+    expect(find.textContaining('Huge'), findsWidgets);
     expect(find.textContaining('42% of your USDT'), findsOneWidget);
   });
 
   testWidgets('a banknote carries its share and an info button', (t) async {
     await t.pumpWidget(
       host(
-        UtxoBanknote(
-          utxo: _coin,
-          tier: BanknoteTier.big,
-          share: 0.12,
-          onTap: () {},
+        // Loose, as the wall's Wrap lays it out.
+        Align(
+          alignment: Alignment.topLeft,
+          child: UtxoBanknote(
+            utxo: _coin,
+            tier: BanknoteTier.big,
+            share: 0.12,
+            onTap: () {},
+          ),
         ),
         width: 900,
       ),
     );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
-    expect(find.textContaining('BIG'), findsOneWidget);
+    expect(find.textContaining('Big'), findsOneWidget);
     expect(find.textContaining('12%'), findsOneWidget);
-    expect(find.byIcon(Icons.info_outline_rounded), findsOneWidget);
-    expect(find.byType(ShareMeter), findsOneWidget);
+    expect(find.byIcon(Icons.info_outline), findsOneWidget);
+    // On the wall the note's length is the share: no meter, and one height
+    // whatever the note carries.
+    expect(find.byType(ShareMeter), findsNothing);
+    expect(t.getSize(find.byType(UtxoBanknote)), BanknoteTier.big.size);
+  });
+
+  testWidgets('a wall note shows its controls once it is picked', (t) async {
+    Widget note(bool selected) => host(
+      UtxoBanknote(
+        utxo: _coin.copyWith(isSelected: selected),
+        tier: BanknoteTier.big,
+        share: 0.12,
+        onTap: () {},
+        onEditLabel: () {},
+      ),
+      width: 900,
+    );
+    double opacityOf(IconData icon) => t
+        .widget<AnimatedOpacity>(
+          find
+              .ancestor(
+                of: find.byIcon(icon),
+                matching: find.byType(AnimatedOpacity),
+              )
+              .first,
+        )
+        .opacity;
+
+    // At rest a note is paper: its two controls are there, not drawn.
+    await t.pumpWidget(note(false));
+    await t.pumpAndSettle();
+    expect(opacityOf(Icons.info_outline), 0);
+    expect(opacityOf(Icons.sell_outlined), 0);
+
+    await t.pumpWidget(note(true));
+    await t.pumpAndSettle();
+    expect(opacityOf(Icons.info_outline), 1);
+    expect(opacityOf(Icons.sell_outlined), 1);
   });
 }

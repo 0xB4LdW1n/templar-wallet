@@ -6,13 +6,15 @@ import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
 import '../../features/psbt/models/psbt_inspection.dart';
 import '../../services/file_export.dart';
-import '../../theme/app_colors.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'app_password_gate.dart';
+import 'banners.dart';
 import 'buttons.dart';
-import 'glass_dialog.dart';
+import 'app_dialog.dart';
+import 'live_edge.dart';
+import 'seal_mark.dart';
 import 'ur_qr.dart';
 
 /// Review → sign → review → broadcast, for a transaction this app can sign
@@ -214,11 +216,11 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
         title: Text(_isSigned ? 'Signed transaction' : 'Unsigned transaction'),
         content: phone
             ? Center(child: panel)
-            : SizedBox(width: 260, child: panel),
+            : SizedBox(width: side + 2 * AppSpacing.lg, child: panel),
         actions: [
-          TextButton(
+          SecondaryButton(
+            label: 'Close',
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
           ),
         ],
       ),
@@ -268,17 +270,35 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
     final hiddenHow = i?.utxoCheck == PsbtUtxoStatus.conflicting
         ? 'inconsistent'
         : 'missing';
+    // The seal lands only once the engine, re-reading the signed copy, says
+    // it carries a signature.
+    final sealed = _isSigned && i != null && i.carriesSignature;
 
     final body = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _PhaseSteps(signed: _isSigned, busy: _busy),
+        const SizedBox(height: AppSpacing.lg),
+        if (sealed) ...[
+          Row(
+            children: [
+              const SealMark(stamped: true, size: 32),
+              const SizedBox(width: AppSpacing.md),
+              Text(
+                'Signed',
+                style: AppTypography.sectionTitle.copyWith(color: s.ink),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         if (widget.summary != null) ...[
           Text(
             widget.summary!,
-            style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+            style: AppTypography.body.copyWith(color: s.inkSecondary),
           ),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.sm),
         ],
         Text(
           _isSigned
@@ -288,33 +308,30 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
                     'where it goes; signing asks for your app password.',
           style: AppTypography.caption.copyWith(color: s.inkSecondary),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.xl),
         _details(i, s, phone),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.xl),
         if (phone) _phoneExportRow() else _desktopExportMenu(s),
         if (hidesSpend) ...[
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'This transaction hides what it spends — do not sign. Its '
-            'previous outputs are $hiddenHow, so the amount and fee on '
-            'screen cannot be trusted.',
-            style: AppTypography.bodySmall.copyWith(color: AppColors.danger),
+          const SizedBox(height: AppSpacing.md),
+          DangerBanner(
+            message:
+                'This transaction hides what it spends — do not sign. Its '
+                'previous outputs are $hiddenHow, so the amount and fee on '
+                'screen cannot be trusted.',
           ),
         ],
         if (unsignedAfterSigning) ...[
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'No signature was added. This wallet may need co-signers — '
-            'broadcasting now would fail.',
-            style: AppTypography.caption.copyWith(color: AppColors.danger),
+          const SizedBox(height: AppSpacing.md),
+          const DangerBanner(
+            message:
+                'No signature was added. This wallet may need co-signers — '
+                'broadcasting now would fail.',
           ),
         ],
         if (_error != null) ...[
           const SizedBox(height: AppSpacing.md),
-          SelectableText(
-            _error!,
-            style: AppTypography.caption.copyWith(color: AppColors.danger),
-          ),
+          DangerBanner(message: _error!),
         ],
       ],
     );
@@ -325,61 +342,21 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
     final primaryLabel = _busy
         ? (_isSigned ? 'Broadcasting…' : 'Signing…')
         : (_isSigned ? 'Broadcast' : 'Sign');
-    final primaryIcon = _isSigned ? Icons.send : Icons.draw_outlined;
+    final primaryIcon = _isSigned ? Icons.send_outlined : Icons.draw_outlined;
+    final cancel = _busy ? null : () => Navigator.of(context).pop();
 
-    final actions = phone
-        ? <Widget>[
-            // Stacked, full width: the primary action on top where the thumb
-            // lands, Cancel below it.
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                PrimaryButton(
-                  label: primaryLabel,
-                  icon: primaryIcon,
-                  isLoading: _busy,
-                  isFullWidth: true,
-                  onPressed: primary,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                SecondaryButton(
-                  label: 'Cancel',
-                  isFullWidth: true,
-                  onPressed: _busy ? null : () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-          ]
-        : <Widget>[
-            TextButton(
-              onPressed: _busy ? null : () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton.icon(
-              onPressed: primary,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.accent,
-              ),
-              icon: _busy
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Icon(primaryIcon, size: 16, color: Colors.white),
-              label: Text(
-                primaryLabel,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ];
+    // Quiet action first, the primary last; on a phone the sheet stacks
+    // them reversed, the primary on top where the thumb lands.
+    final actions = <Widget>[
+      GhostButton(label: 'Cancel', isFullWidth: phone, onPressed: cancel),
+      PrimaryButton(
+        label: primaryLabel,
+        icon: primaryIcon,
+        isLoading: _busy,
+        isFullWidth: phone,
+        onPressed: primary,
+      ),
+    ];
 
     // The Android back gesture must not do what the disabled Cancel refuses:
     // popping mid-broadcast would drop the txid on the floor and leave the
@@ -387,12 +364,15 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
     return PopScope(
       canPop: !_busy,
       child: AppDialog(
-        title: Row(
-          children: [
-            Expanded(child: Text(widget.title)),
-            _PhaseBadge(signed: _isSigned),
-          ],
-        ),
+        // The dialog's own edge says what is happening to the transaction
+        // in it: a green stroke runs round it while it is being signed or
+        // broadcast, and closes into a full outline once the signature has
+        // landed — the same moment the seal stamps.
+        edge: _busy
+            ? LiveEdgeMode.working
+            : (sealed ? LiveEdgeMode.done : LiveEdgeMode.off),
+        edgeColor: s.success,
+        title: Text(widget.title),
         // The sheet scrolls its own content; the desktop dialog needs a width
         // and a scroll view of its own.
         content: phone
@@ -405,33 +385,74 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
 
   /// Phone: the three export routes as plain buttons, each a real touch
   /// target. A popup menu would hide the air-gap QR — the one thing an
-  /// external signer needs — behind a 36 dp trigger.
+  /// external signer needs — behind a small trigger.
   Widget _phoneExportRow() {
     final shares = FileExport.sharesInsteadOfSaves;
-    return Wrap(
-      spacing: AppSpacing.sm,
-      runSpacing: AppSpacing.sm,
+    Widget cell(Widget b) => Expanded(child: b);
+    return Row(
       children: [
-        SecondaryButton(label: 'Copy', icon: Icons.copy, onPressed: _copy),
-        SecondaryButton(
-          label: shares ? 'Share' : 'Save',
-          icon: shares ? Icons.ios_share : Icons.save_alt,
-          onPressed: _save,
+        cell(
+          SecondaryButton(
+            label: 'QR code',
+            icon: Icons.qr_code_2_outlined,
+            dense: true,
+            isFullWidth: true,
+            onPressed: _showQr,
+          ),
         ),
-        SecondaryButton(
-          label: 'QR code',
-          icon: Icons.qr_code_2,
-          onPressed: _showQr,
+        const SizedBox(width: AppSpacing.sm),
+        cell(
+          SecondaryButton(
+            label: 'Copy',
+            icon: Icons.content_copy_outlined,
+            dense: true,
+            isFullWidth: true,
+            onPressed: _copy,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        cell(
+          SecondaryButton(
+            label: shares ? 'Share' : 'Save',
+            icon: shares ? Icons.ios_share_outlined : Icons.save_alt_outlined,
+            dense: true,
+            isFullWidth: true,
+            onPressed: _save,
+          ),
         ),
       ],
     );
   }
 
   Widget _desktopExportMenu(AppScheme s) {
+    Widget item(IconData icon, String title, [String? subtitle]) => Row(
+      children: [
+        Icon(icon, size: AppSpacing.icon, color: s.inkSecondary),
+        const SizedBox(width: AppSpacing.md),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(title, style: AppTypography.body.copyWith(color: s.ink)),
+            if (subtitle != null)
+              Text(
+                subtitle,
+                style: AppTypography.caption.copyWith(color: s.inkFaint),
+              ),
+          ],
+        ),
+      ],
+    );
     return Align(
       alignment: Alignment.centerLeft,
       child: PopupMenuButton<_ExportAction>(
         tooltip: 'Export this transaction',
+        color: s.panel,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+          side: BorderSide(color: s.edge),
+        ),
         onSelected: (a) {
           switch (a) {
             case _ExportAction.copy:
@@ -442,55 +463,49 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
               _showQr();
           }
         },
-        itemBuilder: (_) => const [
+        itemBuilder: (_) => [
           PopupMenuItem(
             value: _ExportAction.copy,
-            child: ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.copy, size: 18),
-              title: Text('Copy PSBT'),
-            ),
+            child: item(Icons.content_copy_outlined, 'Copy PSBT'),
           ),
           PopupMenuItem(
             value: _ExportAction.file,
-            child: ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.save_alt, size: 18),
-              title: Text('Save as file'),
-            ),
+            child: item(Icons.save_alt_outlined, 'Save as file'),
           ),
           PopupMenuItem(
             value: _ExportAction.qr,
-            child: ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.qr_code_2, size: 18),
-              title: Text('QR code'),
-              subtitle: Text('For air-gapped signing'),
+            child: item(
+              Icons.qr_code_2_outlined,
+              'QR code',
+              'For air-gapped signing',
             ),
           ),
         ],
+        // Drawn as the kit's secondary button: the menu is a secondary
+        // action beside the dialog's one primary.
         child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
-          ),
+          height: AppSpacing.controlHeight,
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           decoration: BoxDecoration(
+            color: s.panelInset,
             border: Border.all(color: s.edge),
-            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.ios_share, size: 16, color: s.inkSecondary),
+              Icon(
+                Icons.ios_share_outlined,
+                size: AppSpacing.iconSmall,
+                color: s.ink,
+              ),
               const SizedBox(width: AppSpacing.sm),
               Text(
                 'Export',
-                style: AppTypography.bodySmall.copyWith(color: s.ink),
+                style: AppTypography.button.copyWith(color: s.ink),
               ),
-              Icon(Icons.arrow_drop_down, size: 18, color: s.inkSecondary),
+              const SizedBox(width: AppSpacing.xs),
+              Icon(Icons.expand_more, size: AppSpacing.iconSmall, color: s.ink),
             ],
           ),
         ),
@@ -502,7 +517,13 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
     if (i == null) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
       );
     }
     // One unknown input makes the total unknown: a sum over the priced ones
@@ -512,31 +533,51 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
     final inTotal = priced
         ? '${i.inputs.fold<int>(0, (sum, x) => sum + x.amountSats!)} sats'
         : 'amount unknown';
-    final ownLabel = Text(
-      'CHANGE',
-      style: AppTypography.label.copyWith(color: s.inkSecondary),
+    Widget eyebrow(String t) => Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Text(t, style: AppTypography.eyebrow.copyWith(color: s.inkFaint)),
+    );
+    final amountStyle = AppTypography.numeric.copyWith(color: s.ink);
+    Widget changeTag() => Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: s.panelInset,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
+      ),
+      child: Text(
+        'Change',
+        style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+      ),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('SPENDS', style: AppTypography.navSection),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          '${i.inputs.length} coin${i.inputs.length == 1 ? '' : 's'} · $inTotal',
-          style: AppTypography.bodySmall.copyWith(
-            color: priced ? null : AppColors.danger,
-          ),
+        eyebrow('Spends'),
+        Row(
+          children: [
+            Text(
+              '${i.inputs.length} coin${i.inputs.length == 1 ? '' : 's'}',
+              style: AppTypography.body.copyWith(color: s.inkSecondary),
+            ),
+            const Spacer(),
+            Text(
+              inTotal,
+              style: priced
+                  ? amountStyle
+                  : AppTypography.body.copyWith(color: s.danger),
+            ),
+          ],
         ),
-        const SizedBox(height: AppSpacing.lg),
-        Text('PAYS', style: AppTypography.navSection),
-        const SizedBox(height: AppSpacing.xs),
+        const SizedBox(height: AppSpacing.xl),
+        eyebrow('Pays'),
         // Own outputs are the change this wallet built into the transaction;
         // saying so leaves the recipient as the one line to check.
         ...i.outputs.map(
           (o) => Padding(
-            padding: EdgeInsets.only(
-              bottom: phone ? AppSpacing.sm : AppSpacing.xs,
-            ),
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
             child: phone
                 // The whole address, wrapped: the tail is the checksum, the
                 // part the user is asked to check before signing, and an
@@ -546,17 +587,17 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
                     children: [
                       Text(
                         o.address,
-                        style: AppTypography.monoSmall,
+                        style: AppTypography.mono.copyWith(color: s.ink),
                         softWrap: true,
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: AppSpacing.xs),
                       Row(
                         children: [
-                          if (i.ownershipKnown && o.isMine == true) ownLabel,
+                          if (i.ownershipKnown && o.isMine == true) changeTag(),
                           const Spacer(),
                           Text(
                             o.displayAmount,
-                            style: AppTypography.bodySmall,
+                            style: amountStyle,
                             textAlign: TextAlign.right,
                           ),
                         ],
@@ -568,22 +609,22 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
                       Expanded(
                         child: Text(
                           o.address,
-                          style: AppTypography.monoSmall,
+                          style: AppTypography.mono.copyWith(color: s.ink),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       if (i.ownershipKnown && o.isMine == true) ...[
                         const SizedBox(width: AppSpacing.sm),
-                        ownLabel,
+                        changeTag(),
                       ],
                       const SizedBox(width: AppSpacing.md),
-                      Text(o.displayAmount, style: AppTypography.bodySmall),
+                      Text(o.displayAmount, style: amountStyle),
                     ],
                   ),
           ),
         ),
-        const Divider(height: AppSpacing.xl),
-        _row('Fee', i.feeLabel, s, phone),
+        Divider(height: AppSpacing.xl, color: s.edge),
+        _row('Fee', i.feeLabel, s, phone, figure: i.feeSats != null),
         _row(
           'Signatures',
           i.sigsRequired != null
@@ -591,70 +632,126 @@ class _PsbtSignFlowDialogState extends State<_PsbtSignFlowDialog> {
               : '${i.sigsPresent}',
           s,
           phone,
+          figure: true,
         ),
         if (i.policyHint.isNotEmpty) _row('Policy', i.policyHint, s, phone),
       ],
     );
   }
 
-  Widget _row(String label, String value, AppScheme s, bool phone) => Padding(
-    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-    child: Row(
-      // Top-aligned only where the value can wrap to several lines.
-      crossAxisAlignment: phone
-          ? CrossAxisAlignment.start
-          : CrossAxisAlignment.center,
-      children: [
-        Text(label, style: AppTypography.label.copyWith(color: s.inkSecondary)),
-        if (phone) ...[
-          // A policy hint can be a sentence; let it wrap instead of
-          // ellipsising the part that says what the wallet requires.
+  Widget _row(
+    String label,
+    String value,
+    AppScheme s,
+    bool phone, {
+    bool figure = false,
+  }) {
+    final valueStyle = (figure ? AppTypography.numeric : AppTypography.body)
+        .copyWith(color: s.ink);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Row(
+        // Top-aligned only where the value can wrap to several lines.
+        crossAxisAlignment: phone
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
+        children: [
+          Text(
+            label,
+            style: AppTypography.label.copyWith(color: s.inkSecondary),
+          ),
           const SizedBox(width: AppSpacing.md),
+          // A policy hint can be a sentence; on a phone it wraps instead of
+          // ellipsising the part that says what the wallet requires.
           Expanded(
             child: Text(
               value,
-              style: AppTypography.bodySmall,
+              style: valueStyle,
               textAlign: TextAlign.right,
-              softWrap: true,
-            ),
-          ),
-        ] else ...[
-          const Spacer(),
-          Flexible(
-            child: Text(
-              value,
-              style: AppTypography.bodySmall,
-              overflow: TextOverflow.ellipsis,
+              softWrap: phone,
+              overflow: phone ? null : TextOverflow.ellipsis,
             ),
           ),
         ],
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
 
-/// Which of the two passes the user is looking at. The QR alone cannot say —
-/// an unsigned and a signed PSBT look identical as a block of squares.
-class _PhaseBadge extends StatelessWidget {
-  const _PhaseBadge({required this.signed});
+/// Where the flow stands, as a quiet step list: Sign, then Broadcast. Done
+/// is a check in the success green, the step in hand is ink (a small green
+/// spinner while it runs), the one after it is faint. The QR alone cannot say which pass
+/// this is — an unsigned and a signed PSBT look identical as squares.
+class _PhaseSteps extends StatelessWidget {
+  const _PhaseSteps({required this.signed, required this.busy});
   final bool signed;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
-    final color = signed ? AppColors.success : AppColors.warning;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: 2,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Text(
-        signed ? 'SIGNED' : 'UNSIGNED',
-        style: AppTypography.label.copyWith(color: color),
+    final s = AppScheme.of(context);
+    Widget step(String label, {required bool done, required bool current}) {
+      final Widget mark;
+      if (done) {
+        // A step that landed: the check in the success green.
+        mark = Icon(Icons.check, size: AppSpacing.iconSmall, color: s.success);
+      } else if (current && busy) {
+        mark = SizedBox(
+          width: 12,
+          height: 12,
+          child: CircularProgressIndicator(
+            strokeWidth: 1.5,
+            valueColor: AlwaysStoppedAnimation(s.success),
+          ),
+        );
+      } else {
+        mark = Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: current ? s.ink : s.inkFaint,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        );
+      }
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: AppSpacing.iconSmall,
+            height: AppSpacing.iconSmall,
+            child: Center(child: mark),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Text(
+            label,
+            style: AppTypography.label.copyWith(
+              color: done
+                  ? s.inkSecondary
+                  : current
+                  ? s.ink
+                  : s.inkFaint,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Semantics(
+      label: signed ? 'Signed; broadcast next' : 'Not signed yet',
+      excludeSemantics: true,
+      child: Row(
+        children: [
+          step('Sign', done: signed, current: !signed),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            child: SizedBox(
+              width: AppSpacing.xl,
+              child: Divider(height: 1, thickness: 1, color: s.edge),
+            ),
+          ),
+          step('Broadcast', done: false, current: signed),
+        ],
       ),
     );
   }
@@ -683,14 +780,20 @@ class _QrPanel extends StatelessWidget {
         width: size,
         child: Text(
           'QR unavailable: $error',
-          style: AppTypography.caption.copyWith(color: AppColors.danger),
+          style: AppTypography.caption.copyWith(color: s.danger),
         ),
       );
     } else if (parts == null) {
       body = SizedBox(
         width: size,
         height: size,
-        child: const Center(child: CircularProgressIndicator()),
+        child: const Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
       );
     } else {
       body = UrAnimatedQr(parts: parts!, size: size);
@@ -699,7 +802,7 @@ class _QrPanel extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         body,
-        const SizedBox(height: AppSpacing.xs),
+        const SizedBox(height: AppSpacing.sm),
         Text(
           signed ? 'Signed transaction' : 'Unsigned transaction',
           style: AppTypography.caption.copyWith(color: s.inkSecondary),

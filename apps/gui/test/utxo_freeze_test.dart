@@ -1,7 +1,11 @@
 // Freezing coins: the coin screen's selection bar and details sheet ask the
 // engine to freeze, and the send wizard's picker shows a frozen coin without
-// letting it be picked.
+// letting it be picked. Labelling coins: the label action on a row and on a
+// note opens the prompt, and the label lands at once and in the store.
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -13,6 +17,7 @@ import 'package:templar_wallet/features/utxos/utxo_screen.dart';
 import 'package:templar_wallet/services/utxo_label_store.dart';
 import 'package:templar_wallet/shared/widgets/utxo_details.dart';
 import 'package:templar_wallet/shared/widgets/utxo_views.dart';
+import 'package:templar_wallet/theme/app_layout.dart';
 
 const _a = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0';
 const _b = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:1';
@@ -101,10 +106,10 @@ void main() {
       await t.pumpAndSettle();
       expect(bridge.calls.single.$1, [_a]);
       expect(bridge.calls.single.$2, isTrue);
-      // Reloaded from the engine: the row wears the chip, the stat counts it,
-      // and the selection is gone.
+      // Reloaded from the engine: the row wears the tag, the summary line
+      // counts it, and the selection is gone.
       expect(find.text('Frozen'), findsOneWidget);
-      expect(find.text('UTXOs · 1 frozen'), findsOneWidget);
+      expect(find.textContaining('1 frozen'), findsOneWidget);
       expect(find.text('Freeze'), findsNothing);
       // Let the confirmation snackbar go: it floats over the bar.
       await t.pump(const Duration(seconds: 5));
@@ -128,7 +133,7 @@ void main() {
     await t.tap(find.text('List'));
     await t.pumpAndSettle();
 
-    await t.tap(find.byIcon(Icons.info_outline_rounded).last);
+    await t.tap(find.byIcon(Icons.info_outline).last);
     await t.pumpAndSettle();
     expect(find.byType(UtxoDetailsDialog), findsOneWidget);
     await t.tap(find.text('Freeze'));
@@ -136,6 +141,38 @@ void main() {
     expect(find.byType(UtxoDetailsDialog), findsNothing);
     expect(bridge.calls.single.$2, isTrue);
     expect(bridge.calls.single.$1, hasLength(1));
+  });
+
+  testWidgets('phone: the checkbox selects, the bar freezes, the row opens '
+      'the sheet', (t) async {
+    AppLayout.debugMobileOverride = true;
+    addTearDown(() => AppLayout.debugMobileOverride = null);
+    t.view.physicalSize = const Size(411, 914);
+    t.view.devicePixelRatio = 1.0;
+    addTearDown(t.view.reset);
+    final semantics = t.ensureSemantics();
+    final bridge = _FreezeBridge();
+    await _open(t, bridge);
+
+    expect(find.text('Coins'), findsOneWidget);
+    expect(find.text('Notes'), findsNothing);
+    expect(find.text('Freeze'), findsNothing);
+
+    await t.tap(find.bySemanticsLabel('Select').first);
+    await t.pumpAndSettle();
+    expect(find.textContaining('1 selected'), findsOneWidget);
+    expect(find.text('Freeze'), findsOneWidget);
+    await t.tap(find.text('Freeze'));
+    await t.pumpAndSettle();
+    expect(bridge.calls.single.$1, [_a]);
+    expect(bridge.calls.single.$2, isTrue);
+
+    await t.pump(const Duration(seconds: 5));
+    await t.pumpAndSettle();
+    await t.tap(find.text('40000 sats'));
+    await t.pumpAndSettle();
+    expect(find.byType(UtxoDetailsDialog), findsOneWidget);
+    semantics.dispose();
   });
 
   testWidgets('the send picker shows a frozen coin but will not pick it', (
@@ -167,5 +204,91 @@ void main() {
     await t.tap(find.text('40000 sats'));
     await t.pump();
     expect(picked, [1], reason: 'only the unfrozen coin is pickable');
+  });
+
+  // ── Labels ─────────────────────────────────────────────────────────────────
+
+  group('labels', () {
+    late Directory support;
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+
+    setUp(() async {
+      support = Directory.systemTemp.createTempSync('utxo_labels_test');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async => support.path);
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      support.deleteSync(recursive: true);
+    });
+
+    /// Lets the store's real file write finish outside the fake clock.
+    Future<String?> stored(WidgetTester t, String outpoint) async {
+      await t.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      return t.runAsync<String?>(
+        () => UtxoLabelStore.instance.getLabel(outpoint),
+      );
+    }
+
+    testWidgets('a row labels its coin, the note shows it and clears it', (
+      t,
+    ) async {
+      _desktopWindow(t);
+      await _open(t, _FreezeBridge());
+      await t.tap(find.text('List'));
+      await t.pumpAndSettle();
+
+      // Biggest first: the first row's label action is coin _a's.
+      await t.tap(find.byTooltip('Add label').first);
+      await t.pumpAndSettle();
+      expect(find.byType(UtxoLabelPrompt), findsOneWidget);
+      await t.enterText(find.byType(TextField), '  Cold storage ');
+      await t.tap(find.text('Save'));
+      await t.pumpAndSettle();
+
+      // On the row at once, trimmed, and the coin was not selected by it.
+      expect(find.byType(UtxoLabelPrompt), findsNothing);
+      expect(find.text('Cold storage'), findsOneWidget);
+      expect(find.text('Freeze'), findsNothing);
+      expect(find.textContaining('Could not save'), findsNothing);
+      expect(await stored(t, _a), 'Cold storage');
+
+      // The same label on the note; its text is the way back into it.
+      await t.tap(find.text('Notes'));
+      await t.pumpAndSettle();
+      expect(find.text('Cold storage'), findsOneWidget);
+      await t.tap(find.text('Cold storage'));
+      await t.pumpAndSettle();
+      expect(find.text('Edit label'), findsWidgets);
+      expect(find.text('Freeze'), findsNothing);
+      await t.tap(find.text('Clear label'));
+      await t.pumpAndSettle();
+      expect(find.text('Cold storage'), findsNothing);
+      expect(await stored(t, _a), isNull);
+    });
+
+    testWidgets('phone: a row\'s label action opens the prompt', (t) async {
+      AppLayout.debugMobileOverride = true;
+      addTearDown(() => AppLayout.debugMobileOverride = null);
+      t.view.physicalSize = const Size(411, 914);
+      t.view.devicePixelRatio = 1.0;
+      addTearDown(t.view.reset);
+      await _open(t, _FreezeBridge());
+
+      await t.tap(find.byTooltip('Add label').last);
+      await t.pumpAndSettle();
+      // The details sheet did not open: the label action is its own target.
+      expect(find.byType(UtxoDetailsDialog), findsNothing);
+      await t.enterText(find.byType(TextField), 'Rent');
+      await t.tap(find.text('Save'));
+      await t.pumpAndSettle();
+      expect(find.text('Rent'), findsOneWidget);
+      expect(await stored(t, _b), 'Rent');
+      await t.runAsync(() => UtxoLabelStore.instance.setLabel(_b, ''));
+    });
   });
 }

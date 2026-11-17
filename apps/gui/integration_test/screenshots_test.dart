@@ -96,15 +96,37 @@ Future<void> _go(WidgetTester tester, String route, {int ms = 1200}) async {
   await _wait(tester, ms);
 }
 
-/// Types into the field that carries [hint] as its hint or label.
+/// Types into the field that carries [hint] as its hint, or that sits under
+/// [hint] as its label (design.md: a field's label is above it, not inside).
 Future<bool> _type(WidgetTester tester, String hint, String text) async {
-  final field =
+  var field =
       find.ancestor(of: find.text(hint), matching: find.byType(TextField));
+  if (field.evaluate().isEmpty && find.text(hint).evaluate().isNotEmpty) {
+    field = find.descendant(
+      of: find
+          .ancestor(of: find.text(hint).first, matching: find.byType(Column))
+          .first,
+      matching: find.byType(TextField),
+    );
+  }
   if (field.evaluate().isEmpty) {
     debugPrint('MISS field "$hint"');
     return false;
   }
   await tester.enterText(field.first, text);
+  await _wait(tester, 400);
+  return true;
+}
+
+/// Scrolls the page until [label] is on screen (a form taller than the
+/// window). False when it does not exist.
+Future<bool> _reveal(WidgetTester tester, String label) async {
+  final finder = find.text(label);
+  if (finder.evaluate().isEmpty) {
+    debugPrint('MISS text "$label"');
+    return false;
+  }
+  await tester.ensureVisible(finder.first);
   await _wait(tester, 400);
   return true;
 }
@@ -175,25 +197,16 @@ void main() {
     }
 
     if (_want('send')) {
-      // Six steps: type → asset → inputs → outputs → fee → review. The type
-      // step has no Continue button; picking a card advances it.
+      // Two steps: Compose (recipient, fee, coins on one page) and Review.
       await _go(tester, AppRoutes.send, ms: 1600);
-      await _shot(tester, 'send', 'send-1-type');
-      await _tapText(tester, 'Standard transaction', ms: 1400);
-      await _shot(tester, 'send', 'send-2-asset');
-      await _tapText(tester, 'Bitcoin', ms: 1200);
-      await _tapText(tester, 'Continue', ms: 1600);
-      await _shot(tester, 'send', 'send-3-inputs');
-      await _tapText(tester, 'Continue', ms: 1600);
-      await _shot(tester, 'send', 'send-4-outputs');
-      await _type(tester, 'Enter, paste, or scan address',
+      await _shot(tester, 'send', 'send-1-compose');
+      await _type(tester, 'Paste, scan or type',
           'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx');
       await _type(tester, '0.00000000', '0.0025');
-      await _shot(tester, 'send', 'send-4-outputs-filled');
-      await _tapText(tester, 'Continue', ms: 1800);
-      await _shot(tester, 'send', 'send-5-fee');
-      await _tapText(tester, 'Continue', ms: 2500);
-      await _shot(tester, 'send', 'send-6-review');
+      await _shot(tester, 'send', 'send-2-compose-filled');
+      await _reveal(tester, 'Review');
+      await _tapText(tester, 'Review', ms: 2500);
+      await _shot(tester, 'send', 'send-3-review');
     }
 
     for (final scene in const <List<String>>[

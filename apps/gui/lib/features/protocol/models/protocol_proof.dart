@@ -23,10 +23,10 @@ class ProtocolCheck {
   final String fingerprint;
 
   factory ProtocolCheck.fromJson(Map<String, dynamic> j) => ProtocolCheck(
-        psetBase64: (j['pset_base64'] as String?)?.trim() ?? '',
-        loanKey: (j['loan_key'] as String?)?.trim() ?? '',
-        fingerprint: (j['fingerprint'] as String?)?.trim() ?? '',
-      );
+    psetBase64: (j['pset_base64'] as String?)?.trim() ?? '',
+    loanKey: (j['loan_key'] as String?)?.trim() ?? '',
+    fingerprint: (j['fingerprint'] as String?)?.trim() ?? '',
+  );
 }
 
 /// Whether a PSET is exactly the check of a challenge for this wallet's
@@ -48,7 +48,8 @@ class ProtocolCheckVerdict {
       ProtocolCheckVerdict(
         isCheck: j['is_check'] == true,
         reason: (j['reason'] as String?)?.trim(),
-        loanKeyFingerprint: (j['loan_key_fingerprint'] as String?)?.trim() ?? '',
+        loanKeyFingerprint:
+            (j['loan_key_fingerprint'] as String?)?.trim() ?? '',
       );
 }
 

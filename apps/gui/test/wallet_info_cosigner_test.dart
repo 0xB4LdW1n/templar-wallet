@@ -2,10 +2,11 @@
 // with a copy AND a QR way out.
 //
 // A singlesig wallet has to spell out BOTH keys it hands to a multisig
-// coordinator — BIP48 for Bitcoin, BIP87 for Liquid — and has to stop the
-// singlesig XPUB above them being mistaken for one: pasting the wrong key
-// builds a multisig nobody can spend, and the wizard cannot tell. A multisig
-// (or a policy wallet) has no such keys to give, so the card is not there.
+// coordinator — BIP48 for Bitcoin, BIP87 for Liquid — and must not offer its
+// singlesig account key as a thing to copy beside them: pasting the wrong
+// key builds a multisig nobody can spend, and the wizard cannot tell. So the
+// Bitcoin card is the receive descriptor alone. A multisig (or a policy
+// wallet) has no such keys to give, so the cosigner card is not there.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -15,7 +16,9 @@ import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/bridge/wallet_bridge.dart';
 import 'package:templar_wallet/features/wallet_info/models/wallet_info.dart';
 import 'package:templar_wallet/features/wallet_info/wallet_info_screen.dart';
+import 'package:templar_wallet/shared/widgets/asset_logo.dart';
 import 'package:templar_wallet/shared/widgets/code_box.dart';
+import 'package:templar_wallet/shared/widgets/cosigner_ring.dart';
 
 const _bip48 = "[cafebabe/48'/1'/0'/2']tpubDBip48Example";
 const _bip87 = "[cafebabe/87'/1'/0']tpubDBip87Example";
@@ -123,11 +126,29 @@ void main() {
       await t.pumpAndSettle();
 
       expect(find.text('Use this wallet as a cosigner'), findsOneWidget);
-      // Desktop draws a CodeBox label verbatim; the phone uppercases it.
+      // A CodeBox label is drawn verbatim, in sentence case.
       expect(find.text('Cosigner xpub — Bitcoin (BIP48)'), findsOneWidget);
       expect(find.text('Cosigner Liquid key (BIP87)'), findsOneWidget);
       expect(find.textContaining(_bip48), findsWidgets);
       expect(find.textContaining(_bip87), findsWidgets);
+    });
+
+    testWidgets('the Liquid descriptor comes before the cosigner card, which '
+        'wears the multisig mark', (t) async {
+      _desktopWindow(t);
+      await t.pumpWidget(host(_StubBridge(), type: 'Software'));
+      await t.pumpAndSettle();
+
+      final liquid = t.getTopLeft(find.text('Liquid descriptor')).dy;
+      final bitcoin = t.getTopLeft(find.text('Bitcoin descriptor')).dy;
+      final cosigner = t
+          .getTopLeft(find.text('Use this wallet as a cosigner'))
+          .dy;
+      expect(bitcoin, lessThan(liquid));
+      expect(liquid, lessThan(cosigner));
+      // The key ring and the word: the card is about a multisig.
+      expect(find.byType(KeyRingMark), findsOneWidget);
+      expect(find.text('Multisig'), findsOneWidget);
     });
 
     testWidgets('each key names the wizard field it belongs in', (t) async {
@@ -142,20 +163,20 @@ void main() {
       );
     });
 
-    testWidgets('the singlesig XPUB is labelled as not a cosigner key', (
-      t,
-    ) async {
+    testWidgets('the Bitcoin card is the receive descriptor alone, under '
+        "its chain's glyph", (t) async {
       _desktopWindow(t);
       await t.pumpWidget(host(_StubBridge()));
       await t.pumpAndSettle();
 
-      // Named by its account, so it cannot read as "the" xpub to hand over.
-      expect(find.text("XPUB · m/84'/1'/0'"), findsOneWidget);
-      expect(find.textContaining('not a cosigner key'), findsOneWidget);
-      expect(
-        find.textContaining('hand over the two keys below'),
-        findsOneWidget,
-      );
+      // The singlesig account key is not a cosigner key and is not offered
+      // as a thing to copy: only the descriptor is.
+      expect(find.textContaining('Account key'), findsNothing);
+      expect(find.text('Receive descriptor'), findsOneWidget);
+      expect(find.text('Multipath descriptor'), findsNothing);
+      // Each chain's card leads with that chain's logo.
+      final logos = t.widgetList<AssetLogo>(find.byType(AssetLogo)).toList();
+      expect(logos.map((l) => l.ticker), containsAll(['BTC', 'LIQUID']));
     });
 
     testWidgets('a missing Liquid key still leaves the Bitcoin one usable', (
@@ -183,13 +204,13 @@ void main() {
       );
       expect(box, findsOneWidget);
       expect(
-        find.descendant(of: box, matching: find.byIcon(Icons.copy)),
+        find.descendant(of: box, matching: find.byIcon(Icons.copy_outlined)),
         findsOneWidget,
       );
       await t.tap(
         find.descendant(
           of: box,
-          matching: find.byIcon(Icons.qr_code_2_rounded),
+          matching: find.byIcon(Icons.qr_code_2_outlined),
         ),
       );
       await t.pumpAndSettle();
@@ -238,7 +259,7 @@ void main() {
       expect(find.textContaining('BIP87'), findsNothing);
       expect(bridge.cosignerCalls, 0);
       // The keys it is built from are still listed.
-      expect(find.text('Cosigner Keys in this wallet'), findsOneWidget);
+      expect(find.text('Cosigner keys in this wallet'), findsOneWidget);
     });
 
     testWidgets('a multisig is recognised from its keys alone', (t) async {
@@ -262,15 +283,19 @@ void main() {
     });
   });
 
-  testWidgets('every box has a QR button beside its copy button', (t) async {
+  testWidgets('every copyable value has a QR button beside its copy button', (
+    t,
+  ) async {
     _desktopWindow(t);
     await t.pumpWidget(host(_StubBridge()));
     await t.pumpAndSettle();
 
-    // Six identity rows + XPUB + receive descriptor + the two cosigner keys
-    // + CT descriptor: each carries a QR glyph.
-    final qrGlyphs = find.byIcon(Icons.qr_code_2_rounded);
-    expect(qrGlyphs, findsNWidgets(11));
+    // Fingerprint + derivation path (the identity rows worth copying) +
+    // receive descriptor + the two cosigner keys + CT descriptor each carry
+    // a QR glyph, plus the Export card's "Show QR". Names and networks do
+    // not.
+    final qrGlyphs = find.byIcon(Icons.qr_code_2_outlined);
+    expect(qrGlyphs, findsNWidgets(7));
   });
 
   testWidgets('the QR button opens a code carrying exactly that value', (
@@ -280,11 +305,11 @@ void main() {
     await t.pumpWidget(host(_StubBridge()));
     await t.pumpAndSettle();
 
-    // The receive descriptor's CodeBox is the one right under the XPUB box.
+    // The receive descriptor's CodeBox is the Bitcoin card's only one.
     final box = find.widgetWithText(CodeBox, 'Receive descriptor');
     expect(box, findsOneWidget);
     await t.tap(
-      find.descendant(of: box, matching: find.byIcon(Icons.qr_code_2_rounded)),
+      find.descendant(of: box, matching: find.byIcon(Icons.qr_code_2_outlined)),
     );
     await t.pumpAndSettle();
 

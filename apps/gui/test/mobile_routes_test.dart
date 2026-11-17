@@ -1,4 +1,4 @@
-// The phone shell's route map and the header it drives: which carousel slot a
+// The phone shell's route map and the header it drives: which tab a
 // path keeps centred, where its back arrow goes, and what the header calls
 // it — plus the header itself switching between the wallet and "‹ Title".
 
@@ -10,7 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/app/routes.dart';
 import 'package:templar_wallet/app/shell.dart';
-import 'package:templar_wallet/shared/widgets/carousel_nav.dart';
+import 'package:templar_wallet/shared/widgets/mobile_tab_bar.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +21,7 @@ void main() {
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  group('carousel items', () {
+  group('tabs', () {
     test('a Bitcoin-only wallet browses four places', () {
       final ids = mobileNavItems(liquid: false).map((i) => i.id).toList();
       expect(ids, ['dashboard', 'history', 'utxos', 'settings']);
@@ -52,7 +52,7 @@ void main() {
     });
   });
 
-  test('Loans is a carousel page of its own', () {
+  test('Loans is a tab of its own', () {
     expect(mobileNavRouteFor(AppRoutes.loans), AppRoutes.loans);
     expect(mobileParentRouteFor(AppRoutes.loans), isNull);
     expect(mobileSubPageTitle(AppRoutes.loans), isNull);
@@ -66,7 +66,7 @@ void main() {
   });
 
   group('mobileNavRouteFor', () {
-    test('a carousel page is its own slot', () {
+    test('a tab is its own slot', () {
       for (final r in [
         AppRoutes.dashboard,
         AppRoutes.history,
@@ -116,7 +116,7 @@ void main() {
   });
 
   group('mobileParentRouteFor', () {
-    test('a carousel page and a hub tab have no parent (back = Dashboard)', () {
+    test('a tab and a hub segment have no parent (back = Dashboard)', () {
       for (final r in [
         AppRoutes.dashboard,
         AppRoutes.history,
@@ -148,13 +148,13 @@ void main() {
   });
 
   group('mobileSubPageTitle', () {
-    test('names every sub-page and no carousel page', () {
+    test('names every sub-page and no tab', () {
       expect(mobileSubPageTitle(AppRoutes.send), 'Send');
       expect(mobileSubPageTitle(AppRoutes.receive), 'Receive');
       expect(mobileSubPageTitle(AppRoutes.receiveAddresses), 'All addresses');
       expect(mobileSubPageTitle(AppRoutes.loanDetail), 'Loan detail');
       expect(mobileSubPageTitle(AppRoutes.walletInfo), 'Wallet info');
-      expect(mobileSubPageTitle(AppRoutes.settingsSecurity), 'Vault & backup');
+      expect(mobileSubPageTitle(AppRoutes.settingsSecurity), 'Vault and backup');
       expect(mobileSubPageTitle(AppRoutes.settingsAdvanced), 'Advanced');
       expect(
         mobileSubPageTitle(AppRoutes.settingsProtocol),
@@ -212,30 +212,30 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('a carousel page shows the wallet, not an arrow', (
+    testWidgets('a tab shows the wallet, not an arrow', (
       tester,
     ) async {
       await pump(tester, AppRoutes.dashboard);
       expect(find.text('Open wallet…'), findsOneWidget);
-      expect(find.byIcon(Icons.arrow_back_rounded), findsNothing);
-      expect(find.byType(CarouselNav), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_back), findsNothing);
+      expect(find.byType(MobileTabBar), findsOneWidget);
     });
 
-    testWidgets('a sub-page shows "‹ Title" and keeps the carousel', (
+    testWidgets('a sub-page shows "‹ Title" and keeps the tab bar', (
       tester,
     ) async {
       await pump(tester, AppRoutes.send);
-      expect(find.byIcon(Icons.arrow_back_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_back), findsOneWidget);
       expect(find.text('Send'), findsOneWidget);
       expect(find.text('Open wallet…'), findsNothing);
-      // The bar stays, centred on the parent.
-      expect(find.byType(CarouselNav), findsOneWidget);
+      // The bar stays, with the parent selected.
+      expect(find.byType(MobileTabBar), findsOneWidget);
       expect(find.text('Dashboard'), findsOneWidget);
       // The arrow is a full-height header target.
       final arrow = tester.getSize(
         find
             .ancestor(
-              of: find.byIcon(Icons.arrow_back_rounded),
+              of: find.byIcon(Icons.arrow_back),
               matching: find.byType(InkWell),
             )
             .first,
@@ -247,12 +247,12 @@ void main() {
       tester,
     ) async {
       await pump(tester, AppRoutes.swap, optionalLiquidTools: true);
-      expect(find.text('Assets'), findsOneWidget);
+      expect(find.text('Liquid assets'), findsOneWidget);
       expect(find.text('LiquiDEX'), findsOneWidget);
       expect(find.text('Peg'), findsOneWidget);
 
       await pump(tester, AppRoutes.issueAsset);
-      expect(find.text('Assets'), findsNothing);
+      expect(find.text('Liquid assets'), findsNothing);
       expect(find.text('Issue asset'), findsOneWidget);
     });
   });

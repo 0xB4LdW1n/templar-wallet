@@ -7,8 +7,9 @@ import '../../theme/app_typography.dart';
 import 'hex_text.dart';
 import 'hybrid_kit.dart';
 
-/// Everything a transaction does, in one panel: each recipient with its
-/// amount (and asset, on Liquid), the change, the fee and the total.
+/// Everything a transaction does, compactly: each recipient with its amount
+/// (and asset, on Liquid), the change, then the fee and the total under a
+/// hairline. Printed in a `well`, the box addresses are read in.
 ///
 /// Shown twice in the send flow — once to confirm before signing, once after
 /// the broadcast — so both read exactly the same.
@@ -42,151 +43,123 @@ class TxRecapPanel extends StatelessWidget {
     final recipients = preview.outputs.where((o) => !o.isChange).toList();
     final change = preview.outputs.where((o) => o.isChange).toList();
 
-    final amountStyle = AppTypography.monoSmall.copyWith(
-      color: s.ink,
-      fontWeight: FontWeight.w600,
-    );
-    final changeStyle = AppTypography.monoSmall.copyWith(color: s.inkSecondary);
+    final amountStyle = AppTypography.numeric.copyWith(color: s.ink);
+    final changeStyle = AppTypography.numeric.copyWith(color: s.inkSecondary);
+    final eyebrow = AppTypography.eyebrow.copyWith(color: s.inkSecondary);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        RailPanel(
-          title: recipients.length == 1
-              ? 'Recipient'
-              : 'Recipients (${recipients.length})',
-          rail: isLiquid ? s.liquid : s.bitcoin,
-          padding: phone
-              ? const EdgeInsets.all(AppSpacing.cardPaddingSmall)
-              : null,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final stacked = phone || constraints.maxWidth < _stackBelow;
+    return DataWell(
+      padding: EdgeInsets.all(phone ? AppSpacing.md : AppSpacing.lg),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stacked = phone || constraints.maxWidth < _stackBelow;
+
+          Widget line(Widget address, Widget amount, {Widget? tag}) {
+            if (stacked) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  for (var i = 0; i < recipients.length; i++) ...[
-                    if (i > 0) const SizedBox(height: AppSpacing.sm),
-                    if (stacked)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          HexText(recipients[i].address, truncate: true),
-                          const SizedBox(height: 2),
-                          Text(
-                            amountOf(recipients[i]),
-                            style: amountStyle,
-                            textAlign: TextAlign.right,
-                          ),
-                        ],
-                      )
-                    else
-                      Row(
-                        children: [
-                          Expanded(
-                            child: HexText(
-                              recipients[i].address,
-                              truncate: true,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          Text(amountOf(recipients[i]), style: amountStyle),
-                        ],
-                      ),
+                  if (tag != null)
+                    Row(children: [tag, const Spacer(), amount])
+                  else ...[
+                    address,
+                    const SizedBox(height: AppSpacing.xs),
+                    Align(alignment: Alignment.centerRight, child: amount),
                   ],
-                  for (final c in change) ...[
-                    const SizedBox(height: AppSpacing.sm),
-                    if (stacked)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            children: [
-                              TagChip(label: 'CHANGE', color: s.inkSecondary),
-                              const Spacer(),
-                              Text(amountOf(c), style: changeStyle),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          HexText(c.address, truncate: true),
-                        ],
-                      )
-                    else
-                      Row(
-                        children: [
-                          TagChip(label: 'CHANGE', color: s.inkSecondary),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(child: HexText(c.address, truncate: true)),
-                          Text(amountOf(c), style: changeStyle),
-                        ],
-                      ),
+                  if (tag != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    address,
                   ],
                 ],
               );
-            },
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        DataWell(
-          child: Column(
+            }
+            return Row(
+              children: [
+                if (tag != null) ...[tag, const SizedBox(width: AppSpacing.sm)],
+                Expanded(child: address),
+                const SizedBox(width: AppSpacing.md),
+                amount,
+              ],
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Text(
+                recipients.length == 1
+                    ? 'Recipient'
+                    : 'Recipients (${recipients.length})',
+                style: eyebrow,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              for (var i = 0; i < recipients.length; i++) ...[
+                if (i > 0) const SizedBox(height: AppSpacing.sm),
+                line(
+                  HexText(recipients[i].address, truncate: true),
+                  Text(amountOf(recipients[i]), style: amountStyle),
+                ),
+              ],
+              for (final c in change) ...[
+                const SizedBox(height: AppSpacing.sm),
+                line(
+                  HexText(c.address, truncate: true),
+                  Text(amountOf(c), style: changeStyle),
+                  tag: const QuietTag(label: 'Change'),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.md),
+              Divider(height: 1, thickness: 1, color: s.edge),
+              const SizedBox(height: AppSpacing.sm),
               TxKvLine(label: 'Fee', value: preview.feeDisplay),
               const SizedBox(height: AppSpacing.xs),
-              TxKvLine(label: 'Total spend', value: preview.totalDisplay),
+              TxKvLine(
+                label: 'Total',
+                value: preview.totalDisplay,
+                total: true,
+              ),
             ],
-          ),
-        ),
-      ],
+          );
+        },
+      ),
     );
   }
 }
 
-/// Right-aligned label/value line used inside the recap.
+/// A key on the left in the secondary ink, its figure right-aligned in the
+/// primary ink, used inside the recap.
 class TxKvLine extends StatelessWidget {
-  const TxKvLine({required this.label, required this.value, super.key});
+  const TxKvLine({
+    required this.label,
+    required this.value,
+    this.total = false,
+    super.key,
+  });
 
   final String label;
   final String value;
 
+  /// The total: its figure one size up.
+  final bool total;
+
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final valueStyle = AppTypography.monoSmall.copyWith(
-      color: s.ink,
-      fontWeight: FontWeight.w600,
-    );
-    final labelStyle = AppTypography.caption.copyWith(color: s.inkFaint);
-    final phone = AppLayout.isPhone(context);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Same rule as the recipient rows: on a phone, or in a body narrower
-        // than a desktop dialog gives, the value wraps (never overflows)
-        // when a Liquid amount with a long ticker does not fit. Desktop
-        // dialogs are wider than the threshold, so their row is unchanged.
-        if (phone || constraints.maxWidth < TxRecapPanel._stackBelow) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: labelStyle),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Text(
-                  value,
-                  textAlign: TextAlign.right,
-                  style: valueStyle,
-                ),
-              ),
-            ],
-          );
-        }
-        return Row(
-          children: [
-            Text(label, style: labelStyle),
-            const Spacer(),
-            Text(value, style: valueStyle),
-          ],
+    final valueStyle =
+        (total ? AppTypography.numericLarge : AppTypography.numeric).copyWith(
+          color: s.ink,
         );
-      },
+    final labelStyle = AppTypography.label.copyWith(color: s.inkSecondary);
+    // The value wraps (never overflows) when a Liquid amount with a long
+    // ticker does not fit beside its key.
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(label, style: labelStyle),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: Text(value, textAlign: TextAlign.right, style: valueStyle),
+        ),
+      ],
     );
   }
 }

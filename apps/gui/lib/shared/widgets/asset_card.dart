@@ -3,51 +3,14 @@ import 'package:flutter/material.dart';
 import '../../features/dashboard/models/dashboard_data.dart';
 import '../../services/asset_registry_service.dart';
 import '../../services/issued_asset_store.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
-import '../../theme/asset_palette.dart';
 import 'asset_logo.dart';
 import 'badges.dart';
-import 'glass_card.dart';
+import 'hybrid_kit.dart';
 import 'privacy.dart';
-
-/// The RT pill drawn on an asset card that owns a reissuance token. Small and
-/// non-interactive — the token's details live in the detail sheet.
-class _ReissuancePill extends StatelessWidget {
-  const _ReissuancePill();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: 2,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.liquid.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: AppColors.liquid.withValues(alpha: 0.40)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.refresh, size: 9, color: AppColors.liquidDark),
-          const SizedBox(width: 2),
-          Text(
-            'RT',
-            style: AppTypography.caption.copyWith(
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-              color: AppColors.liquidDark,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 /// A parent asset together with its optional reissuance token (nested inside).
 class AssetGroup {
@@ -96,9 +59,10 @@ List<AssetGroup> groupAssets(
   return groups;
 }
 
-/// Glassy, chain-tinted card for an [AssetGroup]. Shows only the parent asset.
-/// If the group has a reissuance token, a small RT indicator pill appears;
-/// full RT details are revealed inside the bottom-sheet opened by [onTap].
+/// The card for an [AssetGroup]: a plain card (`panel`, hairline, radius 12)
+/// showing the parent asset. The asset's chain is told by its glyph alone.
+/// If the group has a reissuance token, a quiet "Reissuance token" tag
+/// appears; its details are in the sheet opened by [onTap].
 class GroupedAssetCard extends StatelessWidget {
   const GroupedAssetCard({
     super.key,
@@ -111,6 +75,9 @@ class GroupedAssetCard extends StatelessWidget {
   });
 
   final AssetGroup group;
+
+  /// The user has hidden this asset from the overview: its name and figure
+  /// drop to the secondary ink and an eye-off glyph says why.
   final bool isHidden;
 
   /// One full-width row instead of the vertical grid tile: logo, name and
@@ -133,193 +100,269 @@ class GroupedAssetCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final s = AppScheme.of(context);
     final asset = group.main;
     final hasToken = group.reissuanceToken != null;
-    final palette = AssetPalette.forTicker(asset.ticker);
     final info = AssetRegistryService.instance.get(asset.assetId);
     final displayName = info?.name ?? asset.name;
     final displayTicker = info?.ticker ?? asset.ticker;
-    final mutedText = isDark
-        ? AppColors.textSecondaryDark
-        : AppColors.textSecondary;
-    final primaryText = isDark
-        ? AppColors.textPrimaryDark
-        : AppColors.textPrimary;
+    final ink = isHidden ? s.inkSecondary : s.ink;
+    final utxos = '${asset.utxoCount} UTXO${asset.utxoCount == 1 ? '' : 's'}';
+    final (figure, unit) = _splitUnit(amountOverride ?? asset.displayAmount);
+
+    final name = Text(
+      displayName,
+      style: (compact ? AppTypography.bodyOf(context) : AppTypography.body)
+          .copyWith(color: ink, fontWeight: FontWeight.w500),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+    final hiddenGlyph = Icon(
+      Icons.visibility_off_outlined,
+      size: AppSpacing.iconSmall,
+      color: s.inkFaint,
+    );
+    final meta = AppTypography.caption.copyWith(color: s.inkFaint);
+
+    // The figure in the medium balance size, its unit one step down and
+    // quiet beside it (design.md, "Type").
+    Widget balance(TextAlign align) => Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Flexible(
+          child: Amount(
+            figure,
+            style: AppTypography.balanceMediumOf(context).copyWith(color: ink),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: align,
+          ),
+        ),
+        if (unit != null) ...[
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            unit,
+            maxLines: 1,
+            style: AppTypography.numericSmall.copyWith(color: s.inkFaint),
+          ),
+        ],
+      ],
+    );
+
+    Widget? fiat(TextAlign align) => showFiat == null
+        ? null
+        : Amount(
+            showFiat!,
+            style: AppTypography.numericSmall.copyWith(color: s.inkFaint),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: align,
+          );
 
     if (compact) {
-      return GlassCard(
-        tint: palette.base,
+      return _AssetSurface(
         onTap: onTap,
         padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.sm + 2,
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md,
         ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            minHeight: AppLayout.minTouchTarget - 2 * (AppSpacing.sm + 2),
-          ),
-          child: Row(
-            children: [
-              AssetLogo(ticker: asset.ticker, size: 28),
-              const SizedBox(width: AppSpacing.sm + 2),
-              Expanded(
-                flex: 3,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            displayName,
-                            style: AppTypography.bodySmall.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: isHidden ? mutedText : primaryText,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (isHidden) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          Icon(
-                            Icons.visibility_off,
-                            size: 14,
-                            color: mutedText,
-                          ),
-                        ],
+        child: Row(
+          children: [
+            AssetLogo(ticker: asset.ticker, size: 32),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(child: name),
+                      if (isHidden) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        hiddenGlyph,
                       ],
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        AssetBadge(ticker: displayTicker),
-                        const SizedBox(width: AppSpacing.sm),
-                        Flexible(
-                          child: Text(
-                            info?.domain ??
-                                '${asset.utxoCount} UTXO'
-                                    '${asset.utxoCount == 1 ? '' : 's'}',
-                            style: AppTypography.caption.copyWith(
-                              color: mutedText,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                flex: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Amount(
-                      amountOverride ?? asset.displayAmount,
-                      style: AppTypography.balanceMedium.copyWith(
-                        fontSize: 16,
-                        color: isHidden ? mutedText : primaryText,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.end,
-                    ),
-                    if (showFiat != null)
-                      Amount(
-                        showFiat!,
-                        style: AppTypography.caption,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.end,
-                      ),
-                    if (hasToken) ...[
-                      const SizedBox(height: 2),
-                      const _ReissuancePill(),
                     ],
-                  ],
-                ),
+                  ),
+                  Row(
+                    children: [
+                      AssetBadge(ticker: displayTicker),
+                      const SizedBox(width: AppSpacing.sm),
+                      Flexible(
+                        child: Text(
+                          info?.domain ?? utxos,
+                          style: meta,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              flex: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  balance(TextAlign.end),
+                  ?fiat(TextAlign.end),
+                  if (hasToken) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    const _ReissuanceTag(),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
       );
     }
 
-    return GlassCard(
-      tint: palette.base,
+    return _AssetSurface(
       onTap: onTap,
       padding: const EdgeInsets.all(AppSpacing.cardPaddingSmall),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: logo + ticker badge + hidden indicator.
           Row(
             children: [
-              AssetLogo(ticker: asset.ticker, size: 28),
+              AssetLogo(ticker: asset.ticker, size: 32),
               const SizedBox(width: AppSpacing.sm),
               Flexible(child: AssetBadge(ticker: displayTicker)),
               const Spacer(),
-              if (isHidden)
-                Icon(Icons.visibility_off, size: 14, color: mutedText),
+              if (isHidden) hiddenGlyph,
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            displayName,
-            style: AppTypography.bodySmall.copyWith(
-              fontWeight: FontWeight.w600,
-              color: isHidden
-                  ? mutedText
-                  : (isDark
-                        ? AppColors.textPrimaryDark
-                        : AppColors.textPrimary),
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
+          const SizedBox(height: AppSpacing.md),
+          name,
           if (info?.domain != null)
-            Text(
-              info!.domain!,
-              style: AppTypography.caption,
-              overflow: TextOverflow.ellipsis,
-            ),
+            Text(info!.domain!, style: meta, overflow: TextOverflow.ellipsis),
           const SizedBox(height: AppSpacing.xs),
-          Amount(
-            amountOverride ?? asset.displayAmount,
-            style: AppTypography.balanceMedium.copyWith(
-              fontSize: 17,
-              color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (showFiat != null)
-            Amount(
-              showFiat!,
-              style: AppTypography.caption,
-              overflow: TextOverflow.ellipsis,
-            ),
-          const SizedBox(height: AppSpacing.xs),
-          Row(
+          balance(TextAlign.start),
+          ?fiat(TextAlign.start),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Text(
-                '${asset.utxoCount} UTXO${asset.utxoCount == 1 ? '' : 's'}',
-                style: AppTypography.caption.copyWith(color: mutedText),
-              ),
-              if (hasToken) ...[
-                const SizedBox(width: AppSpacing.sm),
-                // Small non-interactive pill — RT details live in the sheet.
-                const _ReissuancePill(),
-              ],
+              Text(utxos, style: meta),
+              // Non-interactive — the token's details live in the sheet.
+              if (hasToken) const _ReissuanceTag(),
             ],
           ),
         ],
       ),
     );
   }
+
+  /// "1,234.5 USDT" → ("1,234.5", "USDT"): the unit is drawn quieter than
+  /// the figure. A string without a trailing word stays whole.
+  static (String, String?) _splitUnit(String amount) {
+    final t = amount.trim();
+    final i = t.lastIndexOf(' ');
+    if (i <= 0) return (t, null);
+    final unit = t.substring(i + 1);
+    // Only a word is a unit; "1 234" (a grouped figure) is not.
+    if (!RegExp(r'^[A-Za-z][A-Za-z0-9\-]*$').hasMatch(unit)) return (t, null);
+    return (t.substring(0, i), unit);
+  }
+}
+
+/// A card that knows the pointer: the hover and press layers over `panel`,
+/// a focus ring, and nothing at all when it has no [onTap].
+class _AssetSurface extends StatefulWidget {
+  const _AssetSurface({
+    required this.onTap,
+    required this.padding,
+    required this.child,
+  });
+
+  final VoidCallback? onTap;
+  final EdgeInsets padding;
+  final Widget child;
+
+  @override
+  State<_AssetSurface> createState() => _AssetSurfaceState();
+}
+
+class _AssetSurfaceState extends State<_AssetSurface> {
+  bool _hover = false;
+  bool _down = false;
+  bool _focus = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final onTap = widget.onTap;
+    final enabled = onTap != null;
+    final radius = BorderRadius.circular(AppSpacing.radiusLg);
+    final lit = enabled && (_hover || _down);
+    final card = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.instant),
+      curve: AppMotion.settle,
+      padding: widget.padding,
+      decoration: BoxDecoration(
+        color: lit
+            ? Color.alphaBlend(_down ? s.pressed : s.hover, s.panel)
+            : s.panel,
+        borderRadius: radius,
+        border: Border.all(color: lit ? s.edgeStrong : s.edge),
+        boxShadow: s.panelShadow,
+      ),
+      foregroundDecoration: _focus && enabled
+          ? BoxDecoration(
+              borderRadius: radius,
+              border: Border.all(color: s.focus, width: 2),
+            )
+          : null,
+      child: widget.child,
+    );
+    if (!enabled) return card;
+    return Semantics(
+      button: true,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowHoverHighlight: (v) => setState(() {
+          _hover = v;
+          if (!v) _down = false;
+        }),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              onTap();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          onTapDown: (_) => setState(() => _down = true),
+          onTapUp: (_) => setState(() => _down = false),
+          onTapCancel: () => setState(() => _down = false),
+          child: card,
+        ),
+      ),
+    );
+  }
+}
+
+/// Says the asset carries a reissuance token. A fact, so a quiet tag.
+class _ReissuanceTag extends StatelessWidget {
+  const _ReissuanceTag();
+
+  @override
+  Widget build(BuildContext context) => const Tooltip(
+    message: 'Has a reissuance token',
+    child: QuietTag(label: 'RT', icon: Icons.autorenew_outlined),
+  );
 }

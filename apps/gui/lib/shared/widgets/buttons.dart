@@ -1,219 +1,135 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 
-/// Tactile shell shared by every button: presses compress slightly, hover
-/// lifts with a soft glow. Purely decorative — hit-testing and semantics stay
-/// on the wrapped Material button. No-ops when disabled or reduced-motion.
-class _Tactile extends StatefulWidget {
-  const _Tactile({required this.child, required this.enabled, this.glow});
+// The buttons (design.md, "Controls").
+//
+// One body, four voices. A screen has exactly one [PrimaryButton] — the thing
+// the screen exists for, filled with the accent. Everything beside it is a
+// neutral surface: [SecondaryButton] is the raised surface with a hairline,
+// [GhostButton] is bare text until the pointer finds it, and [DangerButton]
+// is the secondary surface with its label in the danger ink — destructive by
+// its words and its icon, never by being a second red slab next to the first.
+// The icon of a secondary or ghost button is drawn in the accent
+// (`AppScheme.accentGlyph`): a small mark of the wallet's colour beside an
+// ink label, never a second filled control.
+//
+// Nothing glows. Hover is a surface step, press is a 2% squeeze, keyboard
+// focus is a ring.
 
-  final Widget child;
-  final bool enabled;
+enum _Voice { primary, secondary, ghost, danger }
 
-  /// Hover glow color; null = shadow-only lift (secondary/ghost buttons).
-  final Color? glow;
-
-  @override
-  State<_Tactile> createState() => _TactileState();
-}
-
-class _TactileState extends State<_Tactile> {
-  bool _hover = false;
-  bool _down = false;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!widget.enabled) return widget.child;
-    final reduced = AppMotion.reduced(context);
-    final phone = AppLayout.isPhone(context);
-    final scale = _down ? 0.97 : 1.0;
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() {
-        _hover = false;
-        _down = false;
-      }),
-      child: Listener(
-        onPointerDown: (_) => setState(() => _down = true),
-        onPointerUp: (_) => setState(() => _down = false),
-        onPointerCancel: (_) => setState(() => _down = false),
-        child: AnimatedScale(
-          scale: reduced ? 1.0 : scale,
-          duration: AppMotion.of(context, AppMotion.instant),
-          curve: AppMotion.settle,
-          child: AnimatedContainer(
-            duration: AppMotion.of(context, AppMotion.quick),
-            curve: AppMotion.settle,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(
-                phone ? AppSpacing.radiusPhoneControl : AppSpacing.radiusSm,
-              ),
-              // A phone has no pointer, so the glow that the desktop earns on
-              // hover is simply on: it is the app's one shadow, under its one
-              // filled action.
-              boxShadow: (_hover || phone) && widget.glow != null
-                  ? [
-                      BoxShadow(
-                        color: widget.glow!.withValues(alpha: 0.35),
-                        blurRadius: 18,
-                        offset: const Offset(0, 4),
-                      ),
-                    ]
-                  : const [],
-            ),
-            child: widget.child,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Icon + label for the solid buttons. The label is Flexible so a narrow
-/// host (a two-up Row on a phone) ellipsises it instead of throwing.
-Widget _iconLabel(IconData? icon, String label, {double size = 16}) {
-  final text = Text(label, maxLines: 1, overflow: TextOverflow.ellipsis);
-  if (icon == null) return text;
-  return Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Icon(icon, size: size),
-      const SizedBox(width: AppSpacing.sm),
-      Flexible(child: text),
-    ],
-  );
-}
-
-/// The wallet-tile material, shrunk to button size.
-///
-/// The home gallery tile is the app's calmest interactive object: a translucent
-/// card surface, a hairline border, and a hover that only steps the surface up
-/// and firms the hairline — no fill, no glow, no colour. Every secondary action
-/// in the app reuses exactly that material, because the loud outlined-accent
-/// button it replaced made "Copy descriptor" shout as loudly as "Send".
-///
-/// [quiet] drops it one more step (no resting surface, no resting border) for
-/// tertiary actions, where the control should be nearly invisible until the
-/// pointer finds it.
-///
-/// A PHONE INVERTS THE GRAMMAR (design.md): there the tile is filled, not
-/// outlined, and carries no border at all — accent is a crimson slab with
-/// white ink and the app's one glow, plain is the inset grey, quiet is a
-/// 4.5% wash. It stands [AppSpacing.phoneControlHeight] (54 dp) tall at
-/// [AppSpacing.radiusPhoneControl], or 44 dp when [dense] is set for a run
-/// of inline actions. The desktop metrics and the hover choreography above
-/// are unchanged.
-class _TileButton extends StatefulWidget {
-  const _TileButton({
+class _Button extends StatefulWidget {
+  const _Button({
+    required this.voice,
     required this.label,
     required this.onPressed,
     this.icon,
+    this.leading,
     this.isFullWidth = false,
-    this.quiet = false,
-    this.accent = false,
     this.dense = false,
     this.isLoading = false,
+    this.large = false,
   });
 
+  final _Voice voice;
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
-  final bool isFullWidth;
-  final bool quiet;
 
-  /// Work is running: the icon slot becomes a spinner and the tile goes
+  /// Drawn in the icon's slot in place of [icon]: a glyph the icon font
+  /// does not carry, in a colour of its own (the double bolt of "Speed up").
+  final Widget? leading;
+  final bool isFullWidth;
+
+  /// Phone only: a 44 dp slab for a run of inline actions that must share a
+  /// row. Desktop buttons are already that compact and ignore it.
+  final bool dense;
+
+  /// Work is running: the icon slot becomes a spinner and the button goes
   /// inert. The caller keeps owning the label ("Reading…"), because only it
   /// knows what the wait is for.
   final bool isLoading;
 
-  /// A phone-only smaller slab — 44 dp, tighter padding, one radius step
-  /// down. For a run of inline actions that must share a row: at the full 54
-  /// dp the three under an address field wrapped onto two lines. Desktop
-  /// ignores it, where the tile was always this size.
-  final bool dense;
-
-  /// The tile in brand colours: accent hairline, accent icon, accent label,
-  /// on the same surface as every other tile. This is what "the primary
-  /// action" looks like now — the old solid crimson slab shouted next to the
-  /// quiet controls it sat beside, and on Home it made "New Wallet" louder
-  /// than the wallets.
-  final bool accent;
+  /// Desktop only: the screen's lead pair (Send and Receive, Restore and New
+  /// wallet) — 48 tall, radius 12, a 16 px label. A phone button is already
+  /// that size and ignores it.
+  final bool large;
 
   @override
-  State<_TileButton> createState() => _TileButtonState();
+  State<_Button> createState() => _ButtonState();
 }
 
-class _TileButtonState extends State<_TileButton> {
+class _ButtonState extends State<_Button> {
   bool _hover = false;
   bool _down = false;
+  bool _focus = false;
+
+  bool get _enabled => widget.onPressed != null && !widget.isLoading;
+
+  void _activate() {
+    if (_enabled) widget.onPressed!();
+  }
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final enabled = widget.onPressed != null && !widget.isLoading;
-    final motion = AppMotion.of(context, AppMotion.quick);
-    final reduced = AppMotion.reduced(context);
     final phone = AppLayout.isPhone(context);
     final dense = phone && widget.dense;
-    final active = enabled && _hover;
+    final large = !phone && widget.large;
+    final enabled = _enabled;
+    final lit = enabled && (_hover || _down);
 
-    // The phone's grammar is fill, the desktop's is outline (design.md).
-    // Every desktop expression below is the one that was always there.
-    final fill = phone
-        ? (!enabled
-            ? s.panelInset
-            : widget.accent
-                ? s.accent
-                : widget.quiet
-                    ? s.ink.withValues(alpha: 0.045)
-                    : s.panelInset)
-        : !enabled
-        ? Colors.transparent
-        : widget.accent
-        ? (active
-              ? s.accent.withValues(alpha: s.isDark ? 0.22 : 0.16)
-              : s.accentSoft)
-        : widget.quiet
-        ? (active ? s.cardBase : Colors.transparent)
-        : (active ? s.cardHover : s.cardBase);
+    // A state layer of the button's own ink: lifts a dark fill, deepens a
+    // light one, and steps a neutral surface the same way a hovered row does.
+    Color layered(Color base, Color over) => Color.alphaBlend(
+      over.withValues(alpha: _down ? 0.14 : (_hover ? 0.08 : 0)),
+      base,
+    );
 
-    final border = phone
-        ? Colors.transparent
-        : !enabled
-        ? s.edge
-        : widget.accent
-        ? s.accent.withValues(alpha: active ? 0.95 : 0.6)
-        : widget.quiet
-        ? (active ? s.edge : Colors.transparent)
-        : (active ? s.edgeStrong : s.edge);
+    final Color fill;
+    final Color edge;
+    final Color ink;
+    // The glyph's ink. A neutral button's icon is the one place it wears
+    // the accent (design.md, "The accent"): the label stays ink, the mark
+    // beside it is the wallet's colour.
+    final Color glyphInk;
+    switch (widget.voice) {
+      case _Voice.primary:
+        fill = enabled ? layered(s.accent, s.onAccent) : s.panelInset;
+        edge = Colors.transparent;
+        ink = enabled ? s.onAccent : s.inkFaint;
+        glyphInk = ink;
+      case _Voice.secondary:
+        fill = enabled ? layered(s.panelInset, s.ink) : Colors.transparent;
+        // Under the pointer the outline takes the accent too.
+        edge = lit ? s.accentGlyph.withValues(alpha: 0.6) : s.edge;
+        ink = enabled ? s.ink : s.inkFaint;
+        glyphInk = enabled ? s.accentGlyph : ink;
+      case _Voice.danger:
+        fill = enabled ? layered(s.panelInset, s.danger) : Colors.transparent;
+        edge = enabled ? s.danger.withValues(alpha: lit ? 0.6 : 0.32) : s.edge;
+        ink = enabled ? s.danger : s.inkFaint;
+        glyphInk = ink;
+      case _Voice.ghost:
+        fill = lit ? (_down ? s.pressed : s.hover) : Colors.transparent;
+        edge = Colors.transparent;
+        ink = !enabled ? s.inkFaint : (lit ? s.ink : s.inkSecondary);
+        glyphInk = enabled ? s.accentGlyph : ink;
+    }
 
-    final ink = phone
-        ? (!enabled
-            ? s.inkFaint
-            : widget.accent
-                ? Colors.white
-                : widget.quiet
-                    ? s.inkSecondary
-                    : s.ink)
-        : !enabled
-        ? s.inkFaint
-        : widget.accent
-        ? s.accent
-        : widget.quiet && !active
-        ? s.inkSecondary
-        : s.ink;
-
-    // The tile's one flash of brand: on the gallery it is a red rule under the
-    // headline, here it is the icon. On a plain tile the text stays ink so the
-    // button never reads as a primary action; an accent tile is the primary
-    // action, so everything on it goes red together.
-    final iconColor =
-        phone ? ink : (widget.accent ? s.accent : (active ? s.accent : ink));
+    final height = phone
+        ? (dense ? AppLayout.minTouchTarget - 4 : AppSpacing.phoneControlHeight)
+        : (large ? AppSpacing.controlHeightLarge : AppSpacing.controlHeight);
+    final radius = phone || large
+        ? AppSpacing.radiusPhoneControl
+        : AppSpacing.radiusMd;
+    final iconSize = phone && !dense
+        ? 20.0
+        : (large ? AppSpacing.icon : AppSpacing.iconSmall);
+    final ghost = widget.voice == _Voice.ghost;
 
     final content = Row(
       mainAxisSize: widget.isFullWidth ? MainAxisSize.max : MainAxisSize.min,
@@ -221,16 +137,19 @@ class _TileButtonState extends State<_TileButton> {
       children: [
         if (widget.isLoading) ...[
           SizedBox(
-            width: phone && !dense ? 18 : 14,
-            height: phone && !dense ? 18 : 14,
+            width: iconSize - 2,
+            height: iconSize - 2,
             child: CircularProgressIndicator(
               strokeWidth: 2,
               valueColor: AlwaysStoppedAnimation(ink),
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
+        ] else if (widget.leading != null) ...[
+          widget.leading!,
+          const SizedBox(width: AppSpacing.sm),
         ] else if (widget.icon != null) ...[
-          Icon(widget.icon, size: phone && !dense ? 20 : 16, color: iconColor),
+          Icon(widget.icon, size: iconSize, color: glyphInk),
           const SizedBox(width: AppSpacing.sm),
         ],
         // Flexible + ellipsis: a narrow host shortens the label rather than
@@ -240,109 +159,85 @@ class _TileButtonState extends State<_TileButton> {
             widget.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.body.copyWith(
-              fontSize: phone && !dense ? 16.5 : 14.5,
-              fontWeight: phone && !dense ? FontWeight.w700 : FontWeight.w600,
-              color: ink,
-            ),
+            style:
+                (phone && !dense
+                        ? AppTypography.buttonOf(context)
+                        : (large
+                              ? AppTypography.buttonLarge
+                              : AppTypography.button))
+                    .copyWith(color: ink),
           ),
         ),
       ],
     );
 
-    final padding = EdgeInsets.symmetric(
-      horizontal: phone
-          ? (dense ? AppSpacing.md : AppSpacing.lg)
-          : (widget.quiet ? AppSpacing.md : AppSpacing.lg),
-      vertical: phone ? AppSpacing.md : AppSpacing.md - 1,
-    );
-    final decoration = BoxDecoration(
-      color: fill,
-      borderRadius: BorderRadius.circular(
-        phone
-            ? (dense ? AppSpacing.radiusLg : AppSpacing.radiusPhoneControl)
-            : AppSpacing.radiusMd,
-      ),
-      border: Border.all(color: border),
-      // The same glow _Tactile gives the solid buttons, so an accent tile and
-      // a PrimaryButton bloom identically on a phone.
-      boxShadow: phone && widget.accent && enabled
-          ? [
-              BoxShadow(
-                color: s.accent.withValues(alpha: 0.35),
-                blurRadius: 18,
-                offset: const Offset(0, 4),
-              ),
-            ]
-          : null,
-    );
-
-    final Widget tile;
-    if (phone) {
-      // Ripple inside the decorated box (so it shows over the fill) and a
-      // 48 dp floor; the GestureDetector's job moves to the InkWell.
-      tile = AnimatedContainer(
-        duration: motion,
-        curve: AppMotion.settle,
-        width: widget.isFullWidth ? double.infinity : null,
-        constraints: BoxConstraints(
-          minHeight: dense
-              ? AppLayout.minTouchTarget - 4
-              : AppSpacing.phoneControlHeight,
-        ),
-        decoration: decoration,
-        child: Material(
-          type: MaterialType.transparency,
-          child: InkWell(
-            onTap: enabled ? widget.onPressed : null,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            child: Padding(padding: padding, child: content),
-          ),
-        ),
-      );
-    } else {
-      tile = AnimatedContainer(
-        duration: motion,
-        curve: AppMotion.settle,
-        width: widget.isFullWidth ? double.infinity : null,
-        padding: padding,
-        decoration: decoration,
-        child: content,
-      );
-    }
-
-    final scaled = AnimatedScale(
-      scale: reduced || !enabled || !_down ? 1.0 : 0.97,
+    final body = AnimatedContainer(
       duration: AppMotion.of(context, AppMotion.instant),
       curve: AppMotion.settle,
-      child: tile,
+      width: widget.isFullWidth ? double.infinity : null,
+      height: height,
+      padding: EdgeInsets.symmetric(
+        horizontal: phone
+            ? (dense ? AppSpacing.md : AppSpacing.lg)
+            : (large ? AppSpacing.xl : (ghost ? AppSpacing.md : AppSpacing.lg)),
+      ),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: edge),
+      ),
+      // The ring sits outside the fill, so it reads on any voice.
+      foregroundDecoration: _focus && enabled
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(color: s.focus, width: 2),
+            )
+          : null,
+      child: content,
     );
 
-    return MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() {
-        _hover = false;
-        _down = false;
-      }),
-      child: Listener(
-        onPointerDown: (_) => setState(() => _down = true),
-        onPointerUp: (_) => setState(() => _down = false),
-        onPointerCancel: (_) => setState(() => _down = false),
-        // Desktop keeps the detector outside the scale, exactly as before;
-        // on a phone the InkWell inside the tile owns the tap.
-        child: phone
-            ? scaled
-            : GestureDetector(
-                onTap: enabled ? widget.onPressed : null,
-                behavior: HitTestBehavior.opaque,
-                child: scaled,
-              ),
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: widget.label,
+      excludeSemantics: true,
+      child: FocusableActionDetector(
+        enabled: enabled,
+        mouseCursor: enabled
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
+        onShowHoverHighlight: (v) => setState(() {
+          _hover = v;
+          if (!v) _down = false;
+        }),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              _activate();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled ? _activate : null,
+          onTapDown: enabled ? (_) => setState(() => _down = true) : null,
+          onTapUp: enabled ? (_) => setState(() => _down = false) : null,
+          onTapCancel: enabled ? () => setState(() => _down = false) : null,
+          child: AnimatedScale(
+            scale: AppMotion.reduced(context) || !_down ? 1.0 : 0.98,
+            duration: AppMotion.of(context, AppMotion.instant),
+            curve: AppMotion.settle,
+            child: body,
+          ),
+        ),
       ),
     );
   }
 }
 
+/// The screen's one action: filled with the accent. One per screen.
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
     super.key,
@@ -351,6 +246,7 @@ class PrimaryButton extends StatelessWidget {
     this.icon,
     this.isLoading = false,
     this.isFullWidth = false,
+    this.large = false,
   });
 
   final String label;
@@ -359,97 +255,69 @@ class PrimaryButton extends StatelessWidget {
   final bool isLoading;
   final bool isFullWidth;
 
+  /// Desktop only — the screen's lead pair: 48 tall, a 16 px label.
+  final bool large;
+
   @override
-  Widget build(BuildContext context) {
-    final Widget child = isLoading
-        ? const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation(Colors.white),
-            ),
-          )
-        : _iconLabel(icon, label,
-            size: AppLayout.isPhone(context) ? 20 : 16);
-
-    final btn = _Tactile(
-      enabled: onPressed != null && !isLoading,
-      glow: AppColors.accent,
-      // Height, corner and text size on a phone come from the theme overlay
-      // (AppTheme.phoneBuilder), so they are stated once for every Material
-      // button in the app, this one included.
-      child: ElevatedButton(
-        onPressed: isLoading ? null : onPressed,
-        child: child,
-      ),
-    );
-
-    return isFullWidth ? SizedBox(width: double.infinity, child: btn) : btn;
-  }
+  Widget build(BuildContext context) => _Button(
+    voice: _Voice.primary,
+    label: label,
+    onPressed: onPressed,
+    icon: icon,
+    isLoading: isLoading,
+    isFullWidth: isFullWidth,
+    large: large,
+  );
 }
 
-/// Secondary action — the wallet-tile material at button scale.
+/// Every other action: the raised surface and a hairline.
 class SecondaryButton extends StatelessWidget {
   const SecondaryButton({
     super.key,
     required this.label,
     this.onPressed,
     this.icon,
+    this.leading,
     this.isFullWidth = false,
     this.dense = false,
     this.isLoading = false,
+    this.large = false,
   });
 
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
+
+  /// A glyph of its own in the icon's slot; see [_Button.leading].
+  final Widget? leading;
   final bool isFullWidth;
 
-  /// See [_TileButton.dense] — a 44 dp slab for a row of inline actions.
+  /// Phone only — a 44 dp slab for a row of inline actions.
   final bool dense;
 
-  /// See [_TileButton.isLoading] — spinner in the icon slot, tile inert.
+  /// Spinner in the icon slot, button inert.
   final bool isLoading;
 
+  /// Desktop only — the screen's lead pair: 48 tall, a 16 px label.
+  final bool large;
+
   @override
-  Widget build(BuildContext context) => _TileButton(
+  Widget build(BuildContext context) => _Button(
+    voice: _Voice.secondary,
     label: label,
     onPressed: onPressed,
     icon: icon,
+    leading: leading,
     isFullWidth: isFullWidth,
     dense: dense,
     isLoading: isLoading,
+    large: large,
   );
 }
 
-/// The lead action on a screen, built from the same tile as everything around
-/// it and separated only by colour. Use where [PrimaryButton]'s solid slab
-/// broke the row it sat in — "New Wallet" on Home, "Send" on the balance hero.
-class AccentButton extends StatelessWidget {
-  const AccentButton({
-    super.key,
-    required this.label,
-    this.onPressed,
-    this.icon,
-    this.isFullWidth = false,
-  });
-
-  final String label;
-  final VoidCallback? onPressed;
-  final IconData? icon;
-  final bool isFullWidth;
-
-  @override
-  Widget build(BuildContext context) => _TileButton(
-    label: label,
-    onPressed: onPressed,
-    icon: icon,
-    isFullWidth: isFullWidth,
-    accent: true,
-  );
-}
-
+/// A destructive action: delete, burn, forget. Its label is a verb and it
+/// carries an icon wherever there is room — the colour is the third signal,
+/// not the only one.
 class DangerButton extends StatelessWidget {
   const DangerButton({
     super.key,
@@ -465,40 +333,16 @@ class DangerButton extends StatelessWidget {
   final bool isFullWidth;
 
   @override
-  Widget build(BuildContext context) {
-    final phone = AppLayout.isPhone(context);
-    final btn = _Tactile(
-      enabled: onPressed != null,
-      glow: AppColors.danger,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.danger,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          minimumSize:
-              phone ? const Size(64, AppSpacing.phoneControlHeight) : null,
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.xl,
-            vertical: AppSpacing.md,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(
-              phone ? AppSpacing.radiusPhoneControl : AppSpacing.radiusSm,
-            ),
-          ),
-        ),
-        child: _iconLabel(icon, label, size: phone ? 20 : 16),
-      ),
-    );
-
-    return isFullWidth ? SizedBox(width: double.infinity, child: btn) : btn;
-  }
+  Widget build(BuildContext context) => _Button(
+    voice: _Voice.danger,
+    label: label,
+    onPressed: onPressed,
+    icon: icon,
+    isFullWidth: isFullWidth,
+  );
 }
 
-/// Tertiary action — the same material, one step quieter still: nothing but
-/// the label until the pointer lands on it (on a phone: a resting hairline,
-/// since nothing lands).
+/// A tertiary action: bare text until the pointer lands on it.
 class GhostButton extends StatelessWidget {
   const GhostButton({
     super.key,
@@ -514,24 +358,21 @@ class GhostButton extends StatelessWidget {
   final bool isFullWidth;
 
   @override
-  Widget build(BuildContext context) => _TileButton(
-        label: label,
-        onPressed: onPressed,
-        icon: icon,
-        quiet: true,
-        isFullWidth: isFullWidth,
-      );
+  Widget build(BuildContext context) => _Button(
+    voice: _Voice.ghost,
+    label: label,
+    onPressed: onPressed,
+    icon: icon,
+    isFullWidth: isFullWidth,
+  );
 }
 
-/// One option in a row of choices — the app's chip, and a [SegmentedSwitch]
+/// One option in a row of choices — the app's chip, and a segmented control
 /// that ran out of room.
 ///
-/// Where a control has three to five options with real names, a joined track
-/// overflows the 640 dp wizard column and Material's own `SegmentedButton` /
-/// `ChoiceChip` each bring their own palette, radius and height into a screen
-/// built from tiles. This is the material everything else here is made of: a
-/// hairline chip on the desktop, a filled `panelInset` slab on a phone, and
-/// the accent reserved for the one option that is chosen.
+/// Unselected it is an outline; selected it is the raised surface with a
+/// firmer edge, the primary ink and — the user's mark on what they chose —
+/// the accent dot of a chosen radio. Never an accent fill or ring.
 class ChoiceTile extends StatefulWidget {
   const ChoiceTile({
     super.key,
@@ -560,6 +401,7 @@ class ChoiceTile extends StatefulWidget {
 class _ChoiceTileState extends State<ChoiceTile> {
   bool _hover = false;
   bool _down = false;
+  bool _focus = false;
 
   /// Phone stand-in for the hover tooltip on a dimmed chip.
   void _explainDisabled() {
@@ -576,124 +418,119 @@ class _ChoiceTileState extends State<ChoiceTile> {
     final phone = AppLayout.isPhone(context);
     final enabled = widget.onSelected != null;
     final selected = widget.selected;
-    final active = enabled && _hover;
+    final lit = enabled && _hover;
 
-    // Phone fills, desktop outlines — the same split every other control in
-    // the app makes (design.md, "The phone's controls").
-    final fill = phone
-        ? (selected
-            ? s.accent.withValues(alpha: s.isDark ? 0.24 : 0.16)
-            : s.panelInset)
-        : !enabled
-        ? Colors.transparent
-        : selected
-        ? s.accentSoft
-        : active
-        ? s.cardHover
-        : s.cardBase;
-
-    final border = phone
-        ? Colors.transparent
-        : selected
-        ? s.accent.withValues(alpha: active ? 0.95 : 0.65)
-        : !enabled
-        ? s.edge
-        : active
-        ? s.edgeStrong
-        : s.edge;
-
+    final fill = selected
+        ? s.selected
+        : lit
+        ? s.hover
+        : Colors.transparent;
+    final edge = selected || lit ? s.edgeStrong : s.edge;
     final ink = !enabled
         ? s.inkFaint.withValues(alpha: 0.6)
-        : selected
-        ? s.accent
-        : phone || active
+        : selected || lit
         ? s.ink
         : s.inkSecondary;
+    final radius = phone ? AppSpacing.radiusPhoneControl : AppSpacing.radiusMd;
 
-    final content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (widget.icon != null) ...[
-          Icon(widget.icon, size: phone ? 17 : 15, color: ink),
-          const SizedBox(width: AppSpacing.sm - 2),
-        ],
-        Text(
-          widget.label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppTypography.bodySmall.copyWith(
-            color: ink,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-
-    final padding = EdgeInsets.symmetric(
-      horizontal: phone ? AppSpacing.md + 2 : AppSpacing.lg - 2,
-      vertical: phone ? AppSpacing.md : AppSpacing.sm + 1,
-    );
-    final decoration = BoxDecoration(
-      color: fill,
-      borderRadius: BorderRadius.circular(
-        phone ? AppSpacing.radiusLg : AppSpacing.radiusMd,
-      ),
-      border: Border.all(color: border),
-    );
-
-    final Widget chip;
-    if (phone) {
-      // Ripple inside the decorated box so it shows over the fill, and a
-      // 48 dp floor for the touch target.
-      chip = AnimatedContainer(
-        duration: AppMotion.of(context, AppMotion.quick),
-        curve: AppMotion.settle,
-        constraints: const BoxConstraints(minHeight: AppLayout.minTouchTarget),
-        decoration: decoration,
-        child: Material(
-          type: MaterialType.transparency,
-          child: InkWell(
-            onTap: enabled ? widget.onSelected : _explainDisabled,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-            child: Padding(padding: padding, child: content),
-          ),
-        ),
-      );
-    } else {
-      chip = AnimatedContainer(
-        duration: AppMotion.of(context, AppMotion.quick),
-        curve: AppMotion.settle,
-        padding: padding,
-        decoration: decoration,
-        child: content,
-      );
-    }
-
-    final scaled = AnimatedScale(
-      scale: AppMotion.reduced(context) || !enabled || !_down ? 1.0 : 0.97,
+    final chip = AnimatedContainer(
       duration: AppMotion.of(context, AppMotion.instant),
       curve: AppMotion.settle,
-      child: chip,
+      constraints: BoxConstraints(
+        minHeight: phone ? AppLayout.minTouchTarget : 32,
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: phone ? AppSpacing.lg : AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: edge),
+      ),
+      foregroundDecoration: _focus && enabled
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(color: s.focus, width: 2),
+            )
+          : null,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Chosen, the chip carries the dot of a chosen radio, in the
+          // accent: the user's own mark. The fill, the edge and the ink
+          // still say it without the colour. (A ring in the accent would
+          // read as an error while the accent is red.)
+          if (selected) ...[
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: s.accent,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+          ],
+          if (widget.icon != null) ...[
+            Icon(
+              widget.icon,
+              size: phone ? AppSpacing.icon : AppSpacing.iconSmall,
+              color: ink,
+            ),
+            const SizedBox(width: AppSpacing.sm),
+          ],
+          Flexible(
+            child: Text(
+              widget.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: (selected ? AppTypography.label : AppTypography.caption)
+                  .copyWith(color: ink),
+            ),
+          ),
+        ],
+      ),
     );
 
-    final tappable = MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() {
-        _hover = false;
-        _down = false;
-      }),
-      child: Listener(
-        onPointerDown: (_) => setState(() => _down = true),
-        onPointerUp: (_) => setState(() => _down = false),
-        onPointerCancel: (_) => setState(() => _down = false),
-        child: phone
-            ? scaled
-            : GestureDetector(
-                onTap: enabled ? widget.onSelected : null,
-                behavior: HitTestBehavior.opaque,
-                child: scaled,
-              ),
+    final tappable = Semantics(
+      button: true,
+      selected: selected,
+      enabled: enabled,
+      label: widget.label,
+      excludeSemantics: true,
+      child: FocusableActionDetector(
+        enabled: enabled,
+        mouseCursor: enabled
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
+        onShowHoverHighlight: (v) => setState(() {
+          _hover = v;
+          if (!v) _down = false;
+        }),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onSelected?.call();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled
+              ? widget.onSelected
+              : (phone ? _explainDisabled : null),
+          onTapDown: enabled ? (_) => setState(() => _down = true) : null,
+          onTapUp: enabled ? (_) => setState(() => _down = false) : null,
+          onTapCancel: enabled ? () => setState(() => _down = false) : null,
+          child: AnimatedScale(
+            scale: AppMotion.reduced(context) || !_down ? 1.0 : 0.98,
+            duration: AppMotion.of(context, AppMotion.instant),
+            curve: AppMotion.settle,
+            child: chip,
+          ),
+        ),
       ),
     );
 
@@ -701,7 +538,7 @@ class _ChoiceTileState extends State<ChoiceTile> {
     if (tip == null) return tappable;
     // A phone tap on a dimmed chip already explains it; a long-press tooltip
     // would only add a second, undiscoverable path.
-    if (phone) return Semantics(label: tip, child: tappable);
+    if (phone) return tappable;
     return Tooltip(message: tip, child: tappable);
   }
 }

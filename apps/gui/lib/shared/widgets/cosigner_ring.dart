@@ -1,5 +1,6 @@
 // The wallet's keys, as a ring — one arc per co-signer, the quorum in the
-// centre, and each key's icon sitting on its own arc.
+// centre, and each key's glyph sitting on its own arc. Not a signing
+// picture: nothing here has signed, so no seal is drawn.
 //
 // A multisig's keys are otherwise only ever seen as `[f0b68896/48'/1'/0'/2']
 // tpub…` on the wallet-info page. That is the wrong shape for the question
@@ -19,7 +20,7 @@ import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import '../models/cosigner_label.dart';
-import 'glass_dialog.dart';
+import 'app_dialog.dart';
 import 'signer_donut.dart';
 
 /// Most icons the ring will draw. Beyond this the remainder becomes "+N".
@@ -48,10 +49,15 @@ class CosignerEntry {
   String get path => pathOf(key);
   String get name => label.displayName(index);
 
-  /// The colour this key is drawn in wherever it appears — its ring arc, its
-  /// badge, its wedge on a transaction's quorum chart. The label's choice,
-  /// else the app accent.
-  Color colorOn(AppScheme s) => label.color ?? s.accent;
+  /// The colour the user gave this key, else the secondary ink. Drawn at
+  /// full strength only as the small dot beside the key's name.
+  Color colorOn(AppScheme s) => label.color ?? s.inkSecondary;
+
+  /// This key's arc on a ring: the user's colour toned down — several keys
+  /// at full strength would turn the ring into a rainbow — or the hairline
+  /// ink of a key nobody coloured.
+  Color segmentOn(AppScheme s) =>
+      label.color?.withValues(alpha: s.isDark ? 0.5 : 0.55) ?? s.edgeStrong;
 }
 
 /// Pairs the wallet's keys with whatever they have been called.
@@ -104,7 +110,53 @@ List<SignerSlot> signerSlotsFor({
   ];
 }
 
+/// The mark of a multisig, small: the key ring with one arc of several in
+/// the accent — *this* key among the others — and a key in the middle.
+///
+/// It heads a block that is about joining or forming a multisig, where the
+/// full [CosignerRing] has no keys to draw yet. It counts nothing, so it
+/// carries no quorum and no seal.
+class KeyRingMark extends StatelessWidget {
+  const KeyRingMark({super.key, this.size = 40, this.keys = 3});
+
+  final double size;
+
+  /// How many arcs the ring is cut into. The first is this wallet's.
+  final int keys;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Semantics(
+      label: 'Multisig',
+      excludeSemantics: true,
+      child: SizedBox.square(
+        dimension: size,
+        child: CustomPaint(
+          painter: keyRingPainter(
+            colors: [s.accent, for (var i = 1; i < keys; i++) s.edgeStrong],
+            strokeFraction: 0.09,
+          ),
+          child: Center(
+            child: Icon(
+              Icons.vpn_key_outlined,
+              size: size * 0.42,
+              color: s.inkSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The ring itself: [entries] drawn around a quorum centre.
+///
+/// A key is an arc in the hairline ink. A key the user gave a colour draws
+/// its arc in that colour, toned down, so a wallet with several coloured
+/// keys reads as one ring rather than a rainbow; the colour at full strength
+/// belongs to the small dot beside the key's name in the roster. Nothing
+/// here is signed, so nothing here is a seal: the glyphs are the keys' own.
 class CosignerRing extends StatelessWidget {
   const CosignerRing({
     super.key,
@@ -137,7 +189,7 @@ class CosignerRing extends StatelessWidget {
 
     // The icons sit ON the ring, so the ring is inset by half an icon to keep
     // them inside the widget's own box.
-    const badge = 30.0;
+    const badge = 32.0;
     final ringSize = size - badge;
     final shown = math.min(total, maxRingIcons);
     final overflow = total - shown;
@@ -155,34 +207,34 @@ class CosignerRing extends StatelessWidget {
             width: ringSize,
             height: ringSize,
             child: CustomPaint(
-              // Every arc in its own key's colour — the same colour the
-              // badge on it and the wedge on a transaction's quorum chart
-              // use, so one key is one colour everywhere. The quorum is the
-              // number in the centre, not a length on the ring.
-              painter: _CosignerRingPainter(
-                colors: [for (final e in entries) e.colorOn(s)],
+              painter: keyRingPainter(
+                colors: [for (final e in entries) e.segmentOn(s)],
               ),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      requiredSigs == null ? '$total' : '$requiredSigs/$total',
-                      style: AppTypography.numericSmall.copyWith(
-                        color: s.ink,
-                        fontWeight: FontWeight.w700,
-                        height: 1.1,
-                      ),
+              child: Padding(
+                padding: EdgeInsets.all(ringSize * 0.2),
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          requiredSigs == null
+                              ? '$total'
+                              : '$requiredSigs of $total',
+                          style: AppTypography.balanceMedium.copyWith(
+                            color: s.ink,
+                          ),
+                        ),
+                        Text(
+                          requiredSigs == null ? 'keys' : 'to sign',
+                          style: AppTypography.caption.copyWith(
+                            color: s.inkFaint,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      requiredSigs == null ? 'keys' : 'to sign',
-                      style: AppTypography.caption.copyWith(
-                        color: s.inkFaint,
-                        fontSize: 9.5,
-                        height: 1.1,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -227,7 +279,8 @@ class CosignerRing extends StatelessWidget {
   }
 }
 
-/// One key's glyph, sitting on the ring.
+/// One key's glyph, sitting on the ring: the raised surface, a firm
+/// hairline, the glyph in the secondary ink.
 class _CosignerBadge extends StatelessWidget {
   const _CosignerBadge({required this.entry, required this.size, this.onTap});
 
@@ -238,9 +291,8 @@ class _CosignerBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final color = entry.colorOn(s);
     return Tooltip(
-      message: entry.isLocal ? '${entry.name} · this device' : entry.name,
+      message: entry.isLocal ? '${entry.name} · this wallet' : entry.name,
       child: Semantics(
         button: onTap != null,
         label: entry.name,
@@ -251,13 +303,16 @@ class _CosignerBadge extends StatelessWidget {
             width: size,
             height: size,
             decoration: BoxDecoration(
-              // Opaque: the badge sits on the ring's own stroke, and a
-              // translucent disc lets the arc show through the glyph.
-              color: s.surfaceSolid,
+              // Opaque: the badge sits on the ring's own stroke.
+              color: s.panelInset,
               shape: BoxShape.circle,
-              border: Border.all(color: color, width: 2),
+              border: Border.all(color: s.edgeStrong),
             ),
-            child: Icon(entry.label.icon, size: size * 0.5, color: color),
+            child: Icon(
+              entry.label.icon,
+              size: AppSpacing.iconSmall,
+              color: s.inkSecondary,
+            ),
           ),
         ),
       ),
@@ -295,9 +350,8 @@ class _MoreBadge extends StatelessWidget {
             child: Center(
               child: Text(
                 '+$count',
-                style: AppTypography.caption.copyWith(
+                style: AppTypography.numericSmall.copyWith(
                   color: s.inkSecondary,
-                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -305,60 +359,6 @@ class _MoreBadge extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _CosignerRingPainter extends CustomPainter {
-  const _CosignerRingPainter({required this.colors});
-
-  /// One colour per key, in key order.
-  final List<Color> colors;
-
-  int get total => colors.length;
-
-  static const _seamStrokes = 1.7;
-  static const _maxSeamFraction = 0.45;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (total == 0) return;
-    final stroke = size.shortestSide * 0.09;
-    final rect = Rect.fromCircle(
-      center: Offset(size.width / 2, size.height / 2),
-      radius: (size.shortestSide - stroke) / 2,
-    );
-    const start = -math.pi / 2;
-    final slot = (2 * math.pi) / total;
-    final gap = total == 1
-        ? 0.0
-        : math.min(
-            stroke * _seamStrokes / (rect.width / 2),
-            slot * _maxSeamFraction,
-          );
-
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..strokeCap = total == 1 ? StrokeCap.butt : StrokeCap.round;
-
-    for (var i = 0; i < total; i++) {
-      canvas.drawArc(
-        rect,
-        start + i * slot + gap / 2,
-        slot - gap,
-        false,
-        paint..color = colors[i],
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_CosignerRingPainter old) {
-    if (old.colors.length != colors.length) return true;
-    for (var i = 0; i < colors.length; i++) {
-      if (old.colors[i] != colors[i]) return true;
-    }
-    return false;
   }
 }
 
@@ -438,14 +438,15 @@ class _CosignerRosterBodyState extends State<_CosignerRosterBody> {
             child: Text(
               'Any ${widget.requiredSigs} of these ${_entries.length} '
               'keys can sign together.',
-              style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+              style: AppTypography.body.copyWith(color: s.inkSecondary),
             ),
           ),
         Flexible(
           child: ListView.separated(
             shrinkWrap: true,
             itemCount: _entries.length,
-            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
+            separatorBuilder: (_, _) =>
+                Divider(height: 1, thickness: 1, color: s.edge),
             itemBuilder: (context, i) => _CosignerRow(
               entry: _entries[i],
               expanded: _open == i,
@@ -465,6 +466,9 @@ class _CosignerRosterBodyState extends State<_CosignerRosterBody> {
   }
 }
 
+/// One key in the roster: its glyph on a raised tile, its name (with the
+/// user's colour as a dot, when it has one), where it comes from, and the
+/// full key on tap.
 class _CosignerRow extends StatelessWidget {
   const _CosignerRow({
     required this.entry,
@@ -481,16 +485,18 @@ class _CosignerRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final color = entry.colorOn(s);
+    final phone = AppLayout.isPhone(context);
+    final dot = entry.label.color;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-      child: Container(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        decoration: BoxDecoration(
-          color: s.panelInset,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-          border: Border.all(color: s.edge),
+      hoverColor: s.hover,
+      highlightColor: s.pressed,
+      splashFactory: NoSplash.splashFactory,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.md,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -501,63 +507,94 @@ class _CosignerRow extends StatelessWidget {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.14),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: color.withValues(alpha: 0.6)),
+                    color: s.panelInset,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                   ),
-                  child: Icon(entry.label.icon, size: 17, color: color),
+                  child: Icon(
+                    entry.label.icon,
+                    size: AppSpacing.iconSmall,
+                    color: s.inkSecondary,
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        entry.name,
-                        style: AppTypography.body.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                      Row(
+                        children: [
+                          if (dot != null) ...[
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: dot,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                          ],
+                          Flexible(
+                            child: Text(
+                              entry.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.body.copyWith(
+                                color: s.ink,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       Text(
                         entry.fingerprint.isEmpty
                             ? 'Key ${entry.index + 1}'
                             : '${entry.fingerprint} · m/${entry.path}',
-                        style: AppTypography.caption.copyWith(
-                          color: s.inkSecondary,
+                        style: AppTypography.monoSmall.copyWith(
+                          color: s.inkFaint,
                         ),
                       ),
                     ],
                   ),
                 ),
-                if (entry.isLocal)
+                if (entry.isLocal) ...[
+                  const SizedBox(width: AppSpacing.sm),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
+                      horizontal: AppSpacing.sm,
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: s.accent.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(4),
+                      color: s.panelInset,
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
                     ),
                     child: Text(
-                      'THIS DEVICE',
-                      style: AppTypography.caption.copyWith(
-                        color: s.accent,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.6,
+                      'This wallet',
+                      style: AppTypography.eyebrow.copyWith(
+                        color: s.inkSecondary,
                       ),
                     ),
                   ),
+                ],
                 if (onEdit != null)
                   IconButton(
                     tooltip: 'Rename',
-                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    constraints: BoxConstraints.tightFor(
+                      width: phone ? AppLayout.minTouchTarget : 32,
+                      height: phone ? AppLayout.minTouchTarget : 32,
+                    ),
+                    padding: EdgeInsets.zero,
+                    icon: Icon(
+                      Icons.edit_outlined,
+                      size: AppSpacing.iconSmall,
+                      color: s.inkSecondary,
+                    ),
                     onPressed: onEdit,
                   ),
                 Icon(
                   expanded ? Icons.expand_less : Icons.expand_more,
-                  size: 18,
+                  size: AppSpacing.icon,
                   color: s.inkFaint,
                 ),
               ],

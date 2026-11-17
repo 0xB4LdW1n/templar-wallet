@@ -9,13 +9,15 @@ import '../../shared/widgets/asset_logo.dart';
 import '../../shared/widgets/badges.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/glass_dialog.dart';
+import '../../shared/widgets/app_dialog.dart';
 import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/list_rows.dart';
-import '../../theme/app_colors.dart';
+import '../../shared/widgets/segmented_switch.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import '../liquid/form_parts.dart';
 import 'make_offer_flow.dart';
 import 'atomic_offer_flow.dart';
 import 'models/swap_offer.dart';
@@ -191,7 +193,7 @@ class _SwapScreenState extends State<SwapScreen> {
       await _bridge.atomicSwapJoin(walletId, offer.sourceId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Offer reserved. Maker must fund first.')),
+        const SnackBar(content: Text('Offer reserved — the maker funds first')),
       );
       await _refresh(silent: true);
     } catch (error) {
@@ -217,7 +219,7 @@ class _SwapScreenState extends State<SwapScreen> {
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Swap $action transaction broadcast.')),
+        SnackBar(content: Text('Swap $action transaction broadcast')),
       );
       await _refresh(silent: true);
     } catch (error) {
@@ -306,24 +308,29 @@ class _SwapScreenState extends State<SwapScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               SliverPadding(
-                padding: EdgeInsets.fromLTRB(
-                  pad,
-                  AppSpacing.lg,
-                  pad,
-                  AppSpacing.xxl,
-                ),
-                sliver: SliverList.list(
-                  children: [
-                    _marketHeader(),
-                    const SizedBox(height: AppSpacing.md),
-                    _orderBookExplainer(),
-                    const SizedBox(height: AppSpacing.lg),
-                    _filters(),
-                    const SizedBox(height: AppSpacing.md),
-                    _marketSection(),
-                    const SizedBox(height: AppSpacing.xl),
-                    _myOffersSection(),
-                  ],
+                padding: EdgeInsets.all(pad),
+                sliver: SliverToBoxAdapter(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: AppSpacing.contentMaxWidth,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _marketHeader(),
+                          _orderBookExplainer(),
+                          const SizedBox(height: AppSpacing.xl),
+                          _filters(),
+                          const SizedBox(height: AppSpacing.xl),
+                          _marketSection(),
+                          const SizedBox(height: AppSpacing.xl),
+                          _myOffersSection(),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -333,234 +340,155 @@ class _SwapScreenState extends State<SwapScreen> {
     );
   }
 
+  /// The page's name, the market's state as one quiet line of meta, the four
+  /// tools as outlined icon buttons and the one thing the page exists for:
+  /// "New offer". On a phone the tools take their own row and "New offer"
+  /// spans the column under them.
   Widget _marketHeader() {
     final s = AppScheme.of(context);
-    final compact = AppLayout.isCompact(context);
+    final phone = AppLayout.isPhone(context);
     final network =
         context.watch<AppState>().liquidNetwork?.shortName ?? 'testnet';
+    final networkLabel = network.isEmpty
+        ? network
+        : '${network[0].toUpperCase()}${network.substring(1)}';
     final openRoutes = _markets.where((offer) => offer.available).length;
-    final (status, statusColor) = _loading
-        ? ('Connecting', s.inkFaint)
+    // Only a reported live state earns the green dot; connecting and empty
+    // say so in words, an offline book in the danger ink.
+    final (status, Color? dot) = _loading
+        ? ('Connecting', null)
         : _error != null
         ? ('Market offline', s.danger)
         : openRoutes == 0
-        ? ('No open routes', s.inkFaint)
+        ? ('No open routes', null)
         : ('$openRoutes open route${openRoutes == 1 ? '' : 's'}', s.success);
 
-    final identity = Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    final meta = Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.xs,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        _compactRouteMark(),
-        const SizedBox(width: AppSpacing.md),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'LOCAL ROUTING · ${network.toUpperCase()}',
-                style: AppTypography.navSection.copyWith(
-                  color: s.inkFaint,
-                  fontSize: 10,
-                  letterSpacing: 1.25,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                'Local order book',
-                style: AppTypography.sectionTitle.copyWith(
-                  color: s.ink,
-                  fontSize: compact ? 19 : 21,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Row(
-                children: [
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      color: statusColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    status,
-                    style: AppTypography.caption.copyWith(
-                      color: s.inkSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (dot != null) ...[
+              StatusDot(dot),
+              const SizedBox(width: AppSpacing.sm),
             ],
-          ),
-        ),
-      ],
-    );
-
-    final utilityActions = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _utilityAction(
-          label: _justRefreshed ? 'Market updated' : 'Refresh market',
-          icon: _justRefreshed ? Icons.check_rounded : Icons.refresh_rounded,
-          iconColor: _justRefreshed ? s.success : null,
-          onPressed: _loading ? null : () => _refresh(silent: true),
-        ),
-        const SizedBox(width: AppSpacing.xs),
-        _utilityAction(
-          label: 'Import proposal',
-          icon: Icons.input_rounded,
-          onPressed: _importProposal,
-        ),
-        const SizedBox(width: AppSpacing.xs),
-        _utilityAction(
-          label: 'How it works',
-          icon: Icons.info_outline_rounded,
-          onPressed: _showOrderBookGuide,
-        ),
-        const SizedBox(width: AppSpacing.xs),
-        _utilityAction(
-          label: 'Local admin',
-          icon: Icons.tune_rounded,
-          onPressed: _openAdmin,
-        ),
-      ],
-    );
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: s.panel,
-        border: Border.all(color: s.edge),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (compact) ...[
-            identity,
-            const SizedBox(height: AppSpacing.md),
-            Divider(height: 1, color: s.edge),
-            const SizedBox(height: AppSpacing.md),
-            utilityActions,
-            const SizedBox(height: AppSpacing.sm),
-            PrimaryButton(
-              label: 'New offer',
-              icon: Icons.add_rounded,
-              isFullWidth: true,
-              onPressed: _makeOffer,
+            Text(
+              status,
+              style: AppTypography.caption.copyWith(color: s.inkSecondary),
             ),
-          ] else ...[
+          ],
+        ),
+        Text('·', style: AppTypography.caption.copyWith(color: s.inkFaint)),
+        Text(
+          'Local order book',
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+        ),
+        Text('·', style: AppTypography.caption.copyWith(color: s.inkFaint)),
+        Text(
+          networkLabel,
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+        ),
+      ],
+    );
+
+    final tools = <Widget>[
+      OutlinedIconAction(
+        icon: _justRefreshed ? Icons.check : Icons.refresh,
+        tooltip: _justRefreshed ? 'Market updated' : 'Refresh market',
+        onPressed: _loading ? null : () => _refresh(silent: true),
+      ),
+      OutlinedIconAction(
+        icon: Icons.input_outlined,
+        tooltip: 'Import proposal',
+        onPressed: _importProposal,
+      ),
+      OutlinedIconAction(
+        icon: Icons.info_outline,
+        tooltip: 'How it works',
+        onPressed: _showOrderBookGuide,
+      ),
+      OutlinedIconAction(
+        icon: Icons.tune_outlined,
+        tooltip: 'Local admin',
+        onPressed: _openAdmin,
+      ),
+    ];
+
+    final newOffer = PrimaryButton(
+      label: 'New offer',
+      icon: Icons.add,
+      isFullWidth: phone,
+      onPressed: _makeOffer,
+    );
+
+    final title = Text(
+      'LiquiDEX',
+      style: AppTypography.pageTitleOf(context).copyWith(color: s.ink),
+    );
+
+    if (phone) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            title,
+            const SizedBox(height: AppSpacing.xs),
+            meta,
+            const SizedBox(height: AppSpacing.lg),
+            newOffer,
+            const SizedBox(height: AppSpacing.md),
             Row(
               children: [
-                Expanded(child: identity),
-                utilityActions,
-                const SizedBox(width: AppSpacing.sm),
-                PrimaryButton(
-                  label: 'New offer',
-                  icon: Icons.add_rounded,
-                  onPressed: _makeOffer,
-                ),
+                for (var i = 0; i < tools.length; i++) ...[
+                  if (i > 0) const SizedBox(width: AppSpacing.sm),
+                  tools[i],
+                ],
               ],
             ),
           ],
-          const SizedBox(height: AppSpacing.md),
-          Divider(height: 1, color: s.edge),
-          const SizedBox(height: AppSpacing.sm),
-          if (compact)
-            Column(
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xl),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _settlementFact(
-                  color: AppColors.liquid,
-                  text: 'Liquid swaps · live settlement',
-                  expanded: true,
-                ),
+                title,
                 const SizedBox(height: AppSpacing.xs),
-                _settlementFact(
-                  color: AppColors.bitcoin,
-                  text: 'Bitcoin routes · live HTLC testnet',
-                  expanded: true,
-                ),
-              ],
-            )
-          else
-            Wrap(
-              spacing: AppSpacing.lg,
-              runSpacing: AppSpacing.xs,
-              children: [
-                _settlementFact(
-                  color: AppColors.liquid,
-                  text: 'Liquid swaps · live settlement',
-                ),
-                _settlementFact(
-                  color: AppColors.bitcoin,
-                  text: 'Bitcoin routes · live HTLC testnet',
-                ),
+                meta,
               ],
             ),
+          ),
+          const SizedBox(width: AppSpacing.lg),
+          for (final t in tools) ...[t, const SizedBox(width: AppSpacing.sm)],
+          const SizedBox(width: AppSpacing.xs),
+          newOffer,
         ],
       ),
     );
   }
 
   Widget _orderBookExplainer() {
-    final s = AppScheme.of(context);
-    final compact = AppLayout.isCompact(context);
-    final copy = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Maker posts; taker completes',
-          style: AppTypography.label.copyWith(color: s.ink),
-        ),
-        const SizedBox(height: 3),
-        Text(
+    return InfoBanner(
+      title: 'Maker posts; taker completes',
+      message:
           'The local book stores signed public proposals, never keys or funds. '
-          'A Liquid taker verifies the proposal, pays the requested asset and '
+          'A Liquid taker checks the proposal, pays the requested asset and '
           'receives the offered asset in one atomic transaction.',
-          style: AppTypography.caption.copyWith(
-            color: s.inkSecondary,
-            height: 1.35,
-          ),
-        ),
-      ],
-    );
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: s.panelInset,
-        border: Border.all(color: s.edge),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      action: GhostButton(
+        label: 'Two-wallet test',
+        icon: Icons.account_balance_wallet_outlined,
+        onPressed: _showOrderBookGuide,
       ),
-      child: compact
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                copy,
-                const SizedBox(height: AppSpacing.sm),
-                GhostButton(
-                  label: 'Two-wallet test',
-                  icon: Icons.account_balance_wallet_outlined,
-                  onPressed: _showOrderBookGuide,
-                ),
-              ],
-            )
-          : Row(
-              children: [
-                Icon(Icons.shield_outlined, size: 20, color: s.liquid),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(child: copy),
-                const SizedBox(width: AppSpacing.md),
-                GhostButton(
-                  label: 'Two-wallet test',
-                  icon: Icons.account_balance_wallet_outlined,
-                  onPressed: _showOrderBookGuide,
-                ),
-              ],
-            ),
     );
   }
 
@@ -590,13 +518,13 @@ class _SwapScreenState extends State<SwapScreen> {
                 ),
                 _guideStep(
                   2,
-                  'Wallet B · verify',
+                  'Wallet B · check',
                   'Use the same testnet or regtest network, refresh, and open the offer. “Receive” is what B gets; “Pay” is what B spends.',
                 ),
                 _guideStep(
                   3,
                   'Wallet B · take',
-                  'Review the independently verified proposal, sign, and broadcast the completed atomic transaction.',
+                  'Review the checks the wallet ran on the proposal, sign, and broadcast the completed atomic transaction.',
                 ),
                 _guideStep(
                   4,
@@ -607,15 +535,18 @@ class _SwapScreenState extends State<SwapScreen> {
                 const SizedBox(height: AppSpacing.md),
                 Text(
                   'Both wallets need the asset they pay plus LBTC for fees. '
-                  'BTC routes marked HTLC v1 use two funding transactions, a shared preimage and recoverable timeouts.',
-                  style: AppTypography.caption,
+                  'BTC routes marked HTLC v1 use two funding transactions, a '
+                  'shared preimage and recoverable timeouts.',
+                  style: AppTypography.caption.copyWith(
+                    color: AppScheme.of(context).inkSecondary,
+                  ),
                 ),
               ],
             ),
           ),
         ),
         actions: [
-          PrimaryButton(
+          SecondaryButton(
             label: 'Got it',
             onPressed: () => Navigator.of(dialogContext).pop(),
           ),
@@ -624,6 +555,8 @@ class _SwapScreenState extends State<SwapScreen> {
     );
   }
 
+  /// One step of the guide: its number as quiet text in a raised tile, the
+  /// title, the sentence under it.
   Widget _guideStep(
     int number,
     String title,
@@ -641,27 +574,24 @@ class _SwapScreenState extends State<SwapScreen> {
             height: 24,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: s.accentSoft,
-              shape: BoxShape.circle,
+              color: s.panelInset,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
             ),
             child: Text(
               '$number',
-              style: AppTypography.label.copyWith(color: s.accent),
+              style: AppTypography.label.copyWith(color: s.inkSecondary),
             ),
           ),
-          const SizedBox(width: AppSpacing.sm),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: AppTypography.label),
+                Text(title, style: AppTypography.label.copyWith(color: s.ink)),
                 const SizedBox(height: 2),
                 Text(
                   body,
-                  style: AppTypography.caption.copyWith(
-                    color: s.inkSecondary,
-                    height: 1.35,
-                  ),
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
                 ),
               ],
             ),
@@ -671,174 +601,60 @@ class _SwapScreenState extends State<SwapScreen> {
     );
   }
 
-  Widget _compactRouteMark() {
-    final s = AppScheme.of(context);
-    return Semantics(
-      label: 'Bitcoin and Liquid',
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: AppSpacing.sm,
-        ),
-        decoration: BoxDecoration(
-          color: s.panelInset,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const AssetLogo(ticker: 'BTC', size: 30),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 5),
-              child: Icon(
-                Icons.swap_horiz_rounded,
-                size: 16,
-                color: s.inkFaint,
-              ),
-            ),
-            const AssetLogo(ticker: 'LBTC', size: 30),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _utilityAction({
-    required String label,
-    required IconData icon,
-    required VoidCallback? onPressed,
-    Color? iconColor,
-  }) {
-    final s = AppScheme.of(context);
-    return Tooltip(
-      message: label,
-      child: Semantics(
-        button: true,
-        label: label,
-        child: Material(
-          color: s.panelInset,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-          child: InkWell(
-            onTap: onPressed,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            child: SizedBox.square(
-              dimension: AppLayout.minTouchTarget,
-              child: Icon(
-                icon,
-                size: 18,
-                color: onPressed == null
-                    ? s.inkFaint
-                    : (iconColor ?? s.inkSecondary),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _settlementFact({
-    required Color color,
-    required String text,
-    bool expanded = false,
-  }) {
-    final s = AppScheme.of(context);
-    return Row(
-      mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
-      children: [
-        Container(
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 6),
-        if (expanded)
-          Expanded(
-            child: Text(
-              text,
-              style: AppTypography.caption.copyWith(
-                color: s.inkSecondary,
-                fontSize: 11.5,
-              ),
-            ),
-          )
-        else
-          Text(
-            text,
-            style: AppTypography.caption.copyWith(
-              color: s.inkSecondary,
-              fontSize: 11.5,
-            ),
-          ),
-      ],
-    );
-  }
-
   Widget _filters() {
-    final s = AppScheme.of(context);
-    return Row(
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _filterChip('All', _MarketFilter.all),
-                const SizedBox(width: AppSpacing.sm),
-                _filterChip('BTC routes', _MarketFilter.crossChain),
-                const SizedBox(width: AppSpacing.sm),
-                _filterChip('Liquid assets', _MarketFilter.liquid),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Tooltip(
-          message: 'Show closed and cancelled offers',
-          child: FilterChip(
-            label: const Text('Closed', style: TextStyle(fontSize: 12)),
-            selected: _includeUnavailable,
-            onSelected: _loading
-                ? null
-                : (value) {
-                    setState(() => _includeUnavailable = value);
-                    _loadMarkets();
-                  },
-            selectedColor: s.accentSoft,
-          ),
-        ),
+    final phone = AppLayout.isPhone(context);
+    final segments = SegmentedSwitch<_MarketFilter>(
+      options: const [
+        SegOption(value: _MarketFilter.all, label: 'All'),
+        SegOption(value: _MarketFilter.crossChain, label: 'BTC routes'),
+        SegOption(value: _MarketFilter.liquid, label: 'Liquid assets'),
       ],
+      selected: _filter,
+      onChanged: (value) => setState(() => _filter = value),
+      expand: phone,
     );
-  }
-
-  Widget _filterChip(String label, _MarketFilter value) {
-    final s = AppScheme.of(context);
-    return ChoiceChip(
-      label: Text(label, style: const TextStyle(fontSize: 12)),
-      selected: _filter == value,
-      selectedColor: s.accentSoft,
-      onSelected: (_) => setState(() => _filter = value),
+    final closed = ChoiceTile(
+      label: 'Closed',
+      selected: _includeUnavailable,
+      tooltip: 'Show closed and cancelled offers',
+      onSelected: _loading
+          ? null
+          : () {
+              setState(() => _includeUnavailable = !_includeUnavailable);
+              _loadMarkets();
+            },
     );
+    if (phone) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          segments,
+          const SizedBox(height: AppSpacing.sm),
+          Align(alignment: Alignment.centerLeft, child: closed),
+        ],
+      );
+    }
+    return Row(children: [segments, const Spacer(), closed]);
   }
 
   Widget _marketSection() {
     final markets = _visibleMarkets;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ListSectionLabel(
-          label: _loading
-              ? 'Markets'
-              : '${markets.length} market${markets.length == 1 ? '' : 's'}',
+          label: _loading ? 'Markets' : 'Markets · ${markets.length}',
           actionLabel: 'Local admin',
           onAction: _openAdmin,
         ),
         if (_loading)
-          const DataWell(
-            child: SizedBox(
-              height: 120,
-              child: Center(child: CircularProgressIndicator()),
-            ),
+          const ListCard(
+            children: [
+              SizedBox(
+                height: 120,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ],
           )
         else if (_error != null)
           _marketError()
@@ -852,207 +668,147 @@ class _SwapScreenState extends State<SwapScreen> {
 
   Widget _marketError() {
     final s = AppScheme.of(context);
-    return DataWell(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          children: [
-            Icon(Icons.cloud_off_outlined, size: 30, color: s.inkFaint),
-            const SizedBox(height: AppSpacing.sm),
-            Text('Local market is offline', style: AppTypography.sectionTitle),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: [
-                SecondaryButton(
-                  label: 'Retry',
-                  icon: Icons.refresh_rounded,
-                  onPressed: _loadMarkets,
-                ),
-                GhostButton(
-                  label: 'Open admin',
-                  icon: Icons.tune_rounded,
-                  onPressed: _openAdmin,
-                ),
-              ],
-            ),
-          ],
+    return ListCard(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            children: [
+              Icon(Icons.cloud_off_outlined, size: 24, color: s.inkFaint),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Local market is offline',
+                style: AppTypography.sectionTitle.copyWith(color: s.ink),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: AppTypography.caption.copyWith(color: s.inkSecondary),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                alignment: WrapAlignment.center,
+                children: [
+                  SecondaryButton(
+                    label: 'Retry',
+                    icon: Icons.refresh,
+                    onPressed: _loadMarkets,
+                  ),
+                  GhostButton(
+                    label: 'Open admin',
+                    icon: Icons.tune_outlined,
+                    onPressed: _openAdmin,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
   Widget _emptyMarkets() {
     final s = AppScheme.of(context);
-    return DataWell(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          children: [
-            Icon(Icons.swap_horiz_rounded, size: 32, color: s.inkFaint),
-            const SizedBox(height: AppSpacing.sm),
-            Text('No matching markets', style: AppTypography.sectionTitle),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'Use the local admin dashboard to post controlled test quotes.',
-              textAlign: TextAlign.center,
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-            ),
-          ],
+    return ListCard(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            children: [
+              Text(
+                'No matching markets',
+                style: AppTypography.body.copyWith(color: s.ink),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Use the local admin dashboard to post controlled test quotes',
+                textAlign: TextAlign.center,
+                style: AppTypography.caption.copyWith(color: s.inkSecondary),
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
+
+  /// The venue of a route, as a word: neutral, sentence case.
+  static String _venue(MarketOffer offer) => offer.demo
+      ? 'HTLC demo'
+      : offer.isAtomic
+      ? 'HTLC v1'
+      : 'LiquiDEX';
 
   Widget _marketRow(MarketOffer offer) {
     final s = AppScheme.of(context);
     final gives = offer.makerGives;
     final wants = offer.makerWants;
     final unavailable = !offer.available;
-    final statusColor = offer.demo
-        ? AppColors.warning
-        : offer.takeable
-        ? AppColors.success
-        : s.inkFaint;
+    final status = offer.status.replaceAll('_', ' ');
 
-    return Semantics(
-      button: true,
-      label:
+    return _SwapRow(
+      semanticLabel:
           'Receive ${gives.displayAmount} ${gives.ticker}; pay '
           '${wants.displayAmount} ${wants.ticker}',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _showMarketDetails(offer),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.cardPaddingSmall,
-              vertical: AppSpacing.md,
-            ),
-            child: Row(
-              children: [
-                _pairedLogos(gives.ticker, wants.ticker),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Receive ${gives.displayAmount} ${gives.ticker}',
-                        style: AppTypography.bodySmall.copyWith(
-                          color: unavailable ? s.inkFaint : s.ink,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Pay ${wants.displayAmount} ${wants.ticker}'
-                        '${offer.priceDisplay.isEmpty ? '' : ' · ${offer.priceDisplay}'}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.caption.copyWith(
-                          color: s.inkSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    TagChip(
-                      label: offer.demo
-                          ? 'HTLC demo'
-                          : offer.isAtomic
-                          ? 'HTLC v1'
-                          : 'LiquiDEX',
-                      color: offer.demo
-                          ? AppColors.warning
-                          : offer.isAtomic
-                          ? AppColors.bitcoin
-                          : AppColors.liquid,
-                    ),
-                    if (unavailable) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        offer.status.toUpperCase(),
-                        style: AppTypography.navSection.copyWith(
-                          color: statusColor,
-                          fontSize: 9,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Icon(Icons.chevron_right_rounded, color: s.inkFaint),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _pairedLogos(String first, String second) {
-    return SizedBox(
-      width: 48,
-      height: 36,
-      child: Stack(
+      leading: _PairedLogos(first: gives.ticker, second: wants.ticker),
+      title: 'Receive ${gives.displayAmount} ${gives.ticker}',
+      titleInk: unavailable ? s.inkFaint : s.ink,
+      subtitle:
+          'Pay ${wants.displayAmount} ${wants.ticker}'
+          '${offer.priceDisplay.isEmpty ? '' : ' · ${offer.priceDisplay}'}',
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          AssetLogo(ticker: first, size: 32),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-              child: AssetLogo(ticker: second, size: 24),
+          if (unavailable) ...[
+            Text(
+              status.isEmpty
+                  ? status
+                  : '${status[0].toUpperCase()}${status.substring(1)}',
+              style: AppTypography.caption.copyWith(color: s.inkFaint),
             ),
-          ),
+            const SizedBox(width: AppSpacing.sm),
+          ],
+          QuietTag(label: _venue(offer)),
         ],
       ),
+      chevron: true,
+      onTap: () => _showMarketDetails(offer),
     );
   }
 
   Widget _myOffersSection() {
     final s = AppScheme.of(context);
+    Widget note(String text, Color ink) => ListCard(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Text(text, style: AppTypography.caption.copyWith(color: ink)),
+        ),
+      ],
+    );
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const ListSectionLabel(label: 'My swaps'),
         if (_loadingMine)
-          const DataWell(
-            child: SizedBox(
-              height: 72,
-              child: Center(child: CircularProgressIndicator()),
-            ),
+          const ListCard(
+            children: [
+              SizedBox(
+                height: 72,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ],
           )
         else if (_mineError != null)
-          DataWell(
-            child: Text(
-              _mineError!,
-              style: AppTypography.caption.copyWith(color: AppColors.danger),
-            ),
-          )
+          note(_mineError!, s.danger)
         else if (_myOffers.isEmpty && _myAtomic.isEmpty)
-          DataWell(
-            child: Text(
-              'Offers and active HTLC swaps created by this wallet will appear here.',
-              style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
-            ),
+          note(
+            'Offers and active HTLC swaps created by this wallet appear here',
+            s.inkSecondary,
           )
         else
           ListCard(
@@ -1066,7 +822,6 @@ class _SwapScreenState extends State<SwapScreen> {
   }
 
   Widget _atomicSwapRow(AtomicSwap swap) {
-    final s = AppScheme.of(context);
     final action = swap.canFund
         ? 'fund'
         : swap.canClaim
@@ -1076,114 +831,92 @@ class _SwapScreenState extends State<SwapScreen> {
         : null;
     final gives = swap.role == 'maker' ? swap.offered : swap.wanted;
     final gets = swap.role == 'maker' ? swap.wanted : swap.offered;
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.cardPaddingSmall,
-        vertical: AppSpacing.md,
-      ),
-      child: Row(
-        children: [
-          _pairedLogos(gives.ticker, gets.ticker),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${gives.displayAmount} ${gives.ticker} → ${gets.displayAmount} ${gets.ticker}',
-                  style: AppTypography.bodySmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '#${swap.offerId} · ${swap.role} · ${swap.status.replaceAll('_', ' ')}',
-                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
-                ),
-              ],
-            ),
-          ),
-          if (action == null)
-            StatusBadge(label: swap.status.replaceAll('_', ' ').toUpperCase())
-          else
-            PrimaryButton(
+    final status = swap.status.replaceAll('_', ' ');
+    return _SwapRow(
+      semanticLabel:
+          '${gives.displayAmount} ${gives.ticker} to '
+          '${gets.displayAmount} ${gets.ticker}',
+      leading: _PairedLogos(first: gives.ticker, second: gets.ticker),
+      title:
+          '${gives.displayAmount} ${gives.ticker} → '
+          '${gets.displayAmount} ${gets.ticker}',
+      subtitle: '#${swap.offerId} · ${swap.role} · $status',
+      // The page's one filled control is "New offer"; a row's action is a
+      // quiet button beside its data.
+      trailing: action == null
+          ? StatusBadge(label: _sentence(status))
+          : SecondaryButton(
               label: action == 'fund'
                   ? 'Fund HTLC'
                   : action == 'claim'
                   ? 'Claim'
                   : 'Refund',
               icon: action == 'refund'
-                  ? Icons.undo_rounded
-                  : Icons.lock_open_rounded,
+                  ? Icons.undo_outlined
+                  : Icons.lock_open_outlined,
+              dense: true,
               onPressed: () => _atomicAction(swap, action),
             ),
-        ],
-      ),
     );
   }
 
   Widget _myOfferRow(MyOffer offer) {
-    final s = AppScheme.of(context);
     final open = offer.status == 'open';
-    final compact = AppLayout.isCompact(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.cardPaddingSmall,
-        vertical: AppSpacing.md,
-      ),
-      child: Row(
-        children: [
-          _pairedLogos(offer.offers.ticker, offer.wants.ticker),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${offer.offers.displayAmount} ${offer.offers.ticker} → '
-                  '${offer.wants.displayAmount} ${offer.wants.ticker}',
-                  style: AppTypography.bodySmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${offer.offerId} · ${offer.status}',
-                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
-                ),
-              ],
-            ),
-          ),
-          if (open && compact)
-            PopupMenuButton<String>(
-              tooltip: 'Offer actions',
-              onSelected: (action) {
-                if (action == 'publish') _publishOffer(offer);
-                if (action == 'cancel') _cancelOffer(offer);
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'publish', child: Text('Publish locally')),
-                PopupMenuItem(value: 'cancel', child: Text('Cancel offer')),
-              ],
-            )
-          else if (open) ...[
-            GhostButton(
-              label: 'Publish',
-              icon: Icons.publish_rounded,
-              onPressed: () => _publishOffer(offer),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            GhostButton(
-              label: 'Cancel',
-              icon: Icons.close_rounded,
-              onPressed: _cancelling ? null : () => _cancelOffer(offer),
-            ),
-          ] else
-            StatusBadge(label: offer.status.toUpperCase()),
+    final phone = AppLayout.isPhone(context);
+    final Widget trailing;
+    if (open && phone) {
+      trailing = PopupMenuButton<String>(
+        tooltip: 'Offer actions',
+        icon: const Icon(Icons.more_vert),
+        onSelected: (action) {
+          if (action == 'publish') _publishOffer(offer);
+          if (action == 'cancel') _cancelOffer(offer);
+        },
+        itemBuilder: (_) => const [
+          PopupMenuItem(value: 'publish', child: Text('Publish locally')),
+          PopupMenuItem(value: 'cancel', child: Text('Cancel offer')),
         ],
+      );
+    } else if (open) {
+      trailing = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SecondaryButton(
+            label: 'Publish',
+            icon: Icons.publish_outlined,
+            dense: true,
+            onPressed: () => _publishOffer(offer),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          GhostButton(
+            label: 'Cancel',
+            icon: Icons.close,
+            onPressed: _cancelling ? null : () => _cancelOffer(offer),
+          ),
+        ],
+      );
+    } else {
+      trailing = StatusBadge(label: _sentence(offer.status));
+    }
+    return _SwapRow(
+      semanticLabel:
+          '${offer.offers.displayAmount} ${offer.offers.ticker} to '
+          '${offer.wants.displayAmount} ${offer.wants.ticker}',
+      leading: _PairedLogos(
+        first: offer.offers.ticker,
+        second: offer.wants.ticker,
       ),
+      title:
+          '${offer.offers.displayAmount} ${offer.offers.ticker} → '
+          '${offer.wants.displayAmount} ${offer.wants.ticker}',
+      subtitle: '${offer.offerId} · ${offer.status}',
+      trailing: trailing,
     );
   }
+
+  static String _sentence(String text) => text.isEmpty
+      ? text
+      : '${text[0].toUpperCase()}${text.substring(1).replaceAll('_', ' ')}';
 
   Future<void> _showMarketDetails(MarketOffer offer) async {
     final gives = offer.makerGives;
@@ -1199,13 +932,10 @@ class _SwapScreenState extends State<SwapScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            const SizedBox(width: AppSpacing.sm),
             StatusBadge(
-              label: offer.demo
-                  ? 'HTLC DEMO'
-                  : offer.isAtomic
-                  ? 'HTLC V1'
-                  : 'LIQUIDEX',
-              variant: offer.demo ? BadgeVariant.warning : BadgeVariant.success,
+              label: _venue(offer),
+              variant: offer.demo ? BadgeVariant.warning : BadgeVariant.neutral,
             ),
           ],
         ),
@@ -1242,6 +972,8 @@ class _SwapScreenState extends State<SwapScreen> {
                         'amount are public. Keys stay in the wallet and mainnet is blocked.',
                   ),
                 ] else ...[
+                  // `verified` is the engine's own offline check of the
+                  // maker's signature, so the word is the engine's to say.
                   InfoBanner(
                     title: offer.verified
                         ? 'Proposal verified locally'
@@ -1255,7 +987,7 @@ class _SwapScreenState extends State<SwapScreen> {
                     const SizedBox(height: AppSpacing.md),
                     GhostButton(
                       label: 'Copy proposal',
-                      icon: Icons.copy_rounded,
+                      icon: Icons.copy_outlined,
                       onPressed: () {
                         Clipboard.setData(
                           ClipboardData(text: offer.proposalJson),
@@ -1269,7 +1001,12 @@ class _SwapScreenState extends State<SwapScreen> {
                 ],
                 if (offer.note.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.md),
-                  Text(offer.note, style: AppTypography.bodySmall),
+                  Text(
+                    offer.note,
+                    style: AppTypography.bodySmall.copyWith(
+                      color: AppScheme.of(context).inkSecondary,
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -1283,7 +1020,7 @@ class _SwapScreenState extends State<SwapScreen> {
           if (offer.demo)
             SecondaryButton(
               label: 'Open admin',
-              icon: Icons.tune_rounded,
+              icon: Icons.tune_outlined,
               onPressed: () {
                 Navigator.of(dialogContext).pop();
                 _openAdmin();
@@ -1294,7 +1031,7 @@ class _SwapScreenState extends State<SwapScreen> {
               label: offer.isAtomic ? 'Reserve offer' : 'Review and take',
               icon: offer.isAtomic
                   ? Icons.lock_clock_outlined
-                  : Icons.swap_horiz_rounded,
+                  : Icons.swap_horiz,
               onPressed: () {
                 Navigator.of(dialogContext).pop();
                 if (offer.isAtomic) {
@@ -1315,14 +1052,11 @@ class _SwapScreenState extends State<SwapScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label.toUpperCase(),
-            style: AppTypography.navSection.copyWith(color: s.inkFaint),
-          ),
+          Text(label, style: AppTypography.eyebrow.copyWith(color: s.inkFaint)),
           const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
-              AssetLogo(ticker: value.ticker, size: 34),
+              AssetLogo(ticker: value.ticker, size: 32),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Column(
@@ -1330,9 +1064,7 @@ class _SwapScreenState extends State<SwapScreen> {
                   children: [
                     Text(
                       '${value.displayAmount} ${value.ticker}',
-                      style: AppTypography.body.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: AppTypography.numeric.copyWith(color: s.ink),
                     ),
                     Text(
                       value.network,
@@ -1355,7 +1087,11 @@ class _SwapScreenState extends State<SwapScreen> {
           leg(offer.makerGives, 'You receive · maker gives'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-            child: Icon(Icons.arrow_forward_rounded, color: s.inkFaint),
+            child: Icon(
+              Icons.arrow_forward,
+              size: AppSpacing.icon,
+              color: s.inkFaint,
+            ),
           ),
           leg(offer.makerWants, 'You pay · maker wants'),
         ],
@@ -1363,6 +1099,8 @@ class _SwapScreenState extends State<SwapScreen> {
     );
   }
 
+  /// What a demo route would do, as neutral steps: the first one (the quote
+  /// is published) is a fact, the rest are future work.
   Widget _demoTimeline() {
     final s = AppScheme.of(context);
     const steps = [
@@ -1374,7 +1112,10 @@ class _SwapScreenState extends State<SwapScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('SETTLEMENT PREVIEW', style: AppTypography.navSection),
+        Text(
+          'Settlement preview',
+          style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
+        ),
         const SizedBox(height: AppSpacing.md),
         for (var index = 0; index < steps.length; index++)
           Padding(
@@ -1382,36 +1123,28 @@ class _SwapScreenState extends State<SwapScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: index == 0 ? s.accentSoft : s.panelInset,
-                    border: Border.all(
-                      color: index == 0 ? s.accent : s.edgeStrong,
-                    ),
+                // Centred on the first line of the label (20 tall).
+                SizedBox(
+                  height: 20,
+                  child: Center(
+                    child: StatusDot(index == 0 ? s.success : s.edgeStrong),
                   ),
-                  child: index == 0
-                      ? Icon(Icons.check_rounded, size: 14, color: s.accent)
-                      : Text(
-                          '${index + 1}',
-                          style: AppTypography.label.copyWith(
-                            color: s.inkFaint,
-                          ),
-                        ),
                 ),
-                const SizedBox(width: AppSpacing.sm),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(steps[index].$1, style: AppTypography.label),
+                      Text(
+                        steps[index].$1,
+                        style: AppTypography.label.copyWith(
+                          color: index == 0 ? s.ink : s.inkSecondary,
+                        ),
+                      ),
                       Text(
                         steps[index].$2,
                         style: AppTypography.caption.copyWith(
-                          color: s.inkSecondary,
+                          color: s.inkFaint,
                         ),
                       ),
                     ],
@@ -1421,6 +1154,186 @@ class _SwapScreenState extends State<SwapScreen> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Two assets of a pair: 24 px glyphs overlapping by 8, the second ringed in
+/// the card colour so the overlap reads as two coins, not one blot.
+class _PairedLogos extends StatelessWidget {
+  const _PairedLogos({required this.first, required this.second});
+
+  final String first;
+  final String second;
+
+  static const double _size = 24;
+  static const double _ring = 2;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return SizedBox(
+      width: _size * 2 - AppSpacing.sm + _ring,
+      height: _size + _ring * 2,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: _ring,
+            child: AssetLogo(ticker: first, size: _size),
+          ),
+          Positioned(
+            left: _size - AppSpacing.sm - _ring,
+            top: 0,
+            child: Container(
+              padding: const EdgeInsets.all(_ring),
+              decoration: BoxDecoration(
+                color: s.panel,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: AssetLogo(ticker: second, size: _size),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A market or swap row: the pair, a title over a tabular subtitle, and the
+/// venue / status / actions on the right. 60 tall (64 on a phone).
+class _SwapRow extends StatefulWidget {
+  const _SwapRow({
+    required this.semanticLabel,
+    required this.leading,
+    required this.title,
+    required this.subtitle,
+    this.titleInk,
+    this.trailing,
+    this.onTap,
+    this.chevron = false,
+  });
+
+  final String semanticLabel;
+  final Widget leading;
+  final String title;
+  final String subtitle;
+  final Color? titleInk;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  final bool chevron;
+
+  @override
+  State<_SwapRow> createState() => _SwapRowState();
+}
+
+class _SwapRowState extends State<_SwapRow> {
+  bool _hover = false;
+  bool _down = false;
+  bool _focus = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    final onTap = widget.onTap;
+    final trailing = widget.trailing;
+
+    final content = Row(
+      children: [
+        widget.leading,
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                widget.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.bodyOf(context).copyWith(
+                  color: widget.titleInk ?? s.ink,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                widget.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.numericSmall.copyWith(
+                  color: s.inkSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (trailing != null) ...[
+          const SizedBox(width: AppSpacing.md),
+          trailing,
+        ],
+        if (widget.chevron) ...[
+          const SizedBox(width: AppSpacing.xs),
+          Icon(
+            Icons.chevron_right_outlined,
+            size: AppSpacing.icon,
+            color: s.inkFaint,
+          ),
+        ],
+      ],
+    );
+
+    final body = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.instant),
+      curve: AppMotion.settle,
+      color: onTap == null
+          ? Colors.transparent
+          : _down
+          ? s.pressed
+          : _hover
+          ? s.hover
+          : Colors.transparent,
+      foregroundDecoration: _focus && onTap != null
+          ? BoxDecoration(border: Border.all(color: s.focus, width: 2))
+          : null,
+      constraints: BoxConstraints(minHeight: phone ? 64 : 60),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kListPad,
+        vertical: AppSpacing.sm,
+      ),
+      child: content,
+    );
+
+    if (onTap == null) {
+      return Semantics(label: widget.semanticLabel, child: body);
+    }
+    return Semantics(
+      button: true,
+      label: widget.semanticLabel,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowHoverHighlight: (v) => setState(() {
+          _hover = v;
+          if (!v) _down = false;
+        }),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              onTap();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          onTapDown: (_) => setState(() => _down = true),
+          onTapUp: (_) => setState(() => _down = false),
+          onTapCancel: () => setState(() => _down = false),
+          child: body,
+        ),
+      ),
     );
   }
 }

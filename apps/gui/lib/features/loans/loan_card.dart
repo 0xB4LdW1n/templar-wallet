@@ -1,32 +1,27 @@
-// One loan as a tile on the Loans screen: who you are in it and where it
-// stands, what the site expects next, how much of the term has run, where
-// the money sits, and the one or two things you can do from here.
+// One loan as a row: the reference, your role in it, where it stands, the
+// amounts at the right edge, and how far it has come — then, on demand, the
+// figures and identifiers behind it.
 //
-// The card is pure presentation over `ProtocolLoan`: it never fetches and
+// The row is pure presentation over `ProtocolLoan`: it never fetches and
 // never signs. "Sign now" hands the loan's `templar://sign` link back to the
-// screen, which feeds it to the app's own link handler — the same path a
+// caller, which feeds it to the app's own link handler — the same path a
 // link from the browser takes, with the same review and the same gate.
 //
-// Reading order, top to bottom: the glyph says the role (money coming to
-// you, or going out as a lender), the ring says how far the term has run,
-// the chips say the state; the next line is the site's own «what happens
-// now»; the flow strip shows collateral, principal and what closes the loan
-// as arrows between you, the escrow and the other party; the amounts follow.
-
-import 'dart:math' as math;
+// The pieces every loan surface shares — the status dot and word, the 2 px
+// progress line, the role tag — live here too, so the Loans list, a single
+// overview and the detail page say a loan's state in the same words.
 
 import 'package:flutter/material.dart';
 
-import '../../shared/widgets/badges.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/code_box.dart';
 import '../../shared/widgets/hybrid_kit.dart';
-import '../../shared/widgets/list_rows.dart';
 import '../../shared/widgets/privacy.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import '../protocol/models/protocol_portfolio.dart';
+import '../protocol/protocol_copy.dart';
 
 class LoanCard extends StatefulWidget {
   const LoanCard({
@@ -41,7 +36,7 @@ class LoanCard extends StatefulWidget {
 
   final ProtocolLoan loan;
 
-  /// The site's chain tip when the portfolio was computed — the ring's "now".
+  /// The site's chain tip when the portfolio was computed — the term's "now".
   final int tipHeight;
 
   /// Called with the pending request when "Sign now" is pressed. Null hides
@@ -63,6 +58,7 @@ class LoanCard extends StatefulWidget {
 
 class _LoanCardState extends State<LoanCard> {
   bool _details = false;
+  bool _hover = false;
 
   ProtocolLoan get loan => widget.loan;
 
@@ -70,552 +66,434 @@ class _LoanCardState extends State<LoanCard> {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
-    final pad = phone ? AppSpacing.cardPaddingSmall : AppSpacing.cardPadding;
     final pending = loan.pendingRequest;
     final next = loan.nextAction;
-    final open = loan.state.isOpen;
+    final status = loanStatus(s, loan, now: widget.now);
+    final sign = widget.onSign == null || pending == null
+        ? null
+        : SecondaryButton(
+            key: Key('loan-sign-${loan.id}'),
+            label: 'Sign now',
+            icon: Icons.draw_outlined,
+            dense: true,
+            isFullWidth: phone,
+            onPressed: widget.busy ? null : () => widget.onSign!(pending),
+          );
+
+    final head = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              LoanTitleLine(loan: loan, status: status),
+              if (next != null && next.label.isNotEmpty) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  next.label,
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
+                ),
+              ],
+              if (pending != null) ...[
+                const SizedBox(height: AppSpacing.xs),
+                _PendingLine(pending: pending, now: widget.now),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: AppSpacing.lg),
+        LoanAmounts(
+          primary: loan.principal?.display,
+          secondary: loan.collateral?.display,
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(
+            _details ? Icons.expand_less_outlined : Icons.expand_more_outlined,
+            size: AppSpacing.icon,
+            color: s.inkFaint,
+          ),
+        ),
+      ],
+    );
 
     return Container(
       key: Key('loan-card-${loan.id}'),
-      decoration: BoxDecoration(
-        color: s.surfaceGlass,
-        borderRadius: BorderRadius.circular(
-          phone ? AppSpacing.radiusLg : AppSpacing.radiusMd,
-        ),
-        border: Border.all(
-          // A waiting signature is the one thing on this screen the user has
-          // to act on; its card says so at the edge, not with a wash.
-          color: pending != null ? s.accent.withValues(alpha: 0.6) : s.edge,
-        ),
-        boxShadow: s.panelShadow,
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(pad),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _TitleRow(loan: loan, tipHeight: widget.tipHeight),
-            if (next != null && next.label.isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.md),
-              _NextLine(action: next, pending: pending, now: widget.now),
-            ],
-            if (open) ...[
-              const SizedBox(height: AppSpacing.md),
-              _TermBar(loan: loan, tipHeight: widget.tipHeight),
-            ],
-            const SizedBox(height: AppSpacing.md),
-            _FlowStrip(loan: loan),
-            const SizedBox(height: AppSpacing.md),
-            Divider(height: 1, color: s.edge),
-            const SizedBox(height: AppSpacing.sm),
-            _Amounts(loan: loan),
-            if (_details) ...[
-              const SizedBox(height: AppSpacing.md),
-              _Details(loan: loan),
-            ],
-            const SizedBox(height: AppSpacing.md),
-            _Actions(
-              loan: loan,
-              phone: phone,
-              busy: widget.busy,
-              details: _details,
-              onToggleDetails: () => setState(() => _details = !_details),
-              onSign: widget.onSign == null || pending == null
-                  ? null
-                  : () => widget.onSign!(pending),
-              onOpen: widget.onOpen,
+      color: _hover ? s.hover : Colors.transparent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => setState(() => _hover = true),
+            onExit: (_) => setState(() => _hover = false),
+            child: GestureDetector(
+              key: Key('loan-details-${loan.id}'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _details = !_details),
+              child: Semantics(
+                button: true,
+                expanded: _details,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      head,
+                      if (loan.state.isOpen) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        _TermLine(loan: loan, tipHeight: widget.tipHeight),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ],
-        ),
+          ),
+          if (sign != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                0,
+                AppSpacing.lg,
+                AppSpacing.md,
+              ),
+              child: Align(alignment: Alignment.centerRight, child: sign),
+            ),
+          if (_details)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                0,
+                AppSpacing.lg,
+                AppSpacing.lg,
+              ),
+              child: _Details(
+                loan: loan,
+                busy: widget.busy,
+                onOpen: widget.onOpen,
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
-// ── Pieces ────────────────────────────────────────────────────────────────────
+// ── Shared pieces ─────────────────────────────────────────────────────────────
 
-/// Glyph · reference · role and state chips · the term ring.
-class _TitleRow extends StatelessWidget {
-  const _TitleRow({required this.loan, required this.tipHeight});
-  final ProtocolLoan loan;
-  final int tipHeight;
+/// The colour of a loan state's dot: the status hues for what is going well,
+/// at risk or lost, the faint ink for what is over.
+Color loanStateColor(AppScheme s, ProtocolLoanState state) => switch (state) {
+  ProtocolLoanState.originating => s.warning,
+  ProtocolLoanState.active => s.success,
+  ProtocolLoanState.repaid => s.inkFaint,
+  ProtocolLoanState.defaulted => s.danger,
+  ProtocolLoanState.liquidated => s.danger,
+  ProtocolLoanState.unknown => s.inkFaint,
+};
+
+/// A loan's state as a dot and a word. An active loan is told more exactly
+/// from the facts the site sent: missed installments and a passed deadline
+/// are danger, a deadline within the week is a warning, anything else is
+/// current. Nothing is estimated beyond those facts.
+({Color color, String word}) loanStatus(
+  AppScheme s,
+  ProtocolLoan loan, {
+  DateTime? now,
+}) {
+  final ref = now ?? DateTime.now();
+  switch (loan.state) {
+    case ProtocolLoanState.active:
+      final plan = loan.repaymentPlan;
+      final missed = plan?.mMissed ?? 0;
+      if (missed > 0) {
+        return (
+          color: s.danger,
+          word: '$missed missed installment${missed == 1 ? '' : 's'}',
+        );
+      }
+      final deadline = plan?.deadlineEstimate ?? loan.dueAtEstimate;
+      if (deadline != null) {
+        final left = deadline.toLocal().difference(ref);
+        if (left.isNegative) return (color: s.danger, word: 'Overdue');
+        if (left.inDays < 7) {
+          return (
+            color: s.warning,
+            word: 'Due ${protocolDeadlineLabel(deadline, now: ref)}',
+          );
+        }
+      }
+      return (color: s.success, word: 'Current');
+    case ProtocolLoanState.originating:
+      return (
+        color: s.warning,
+        word: ProtocolCopy.english.state('originating'),
+      );
+    case ProtocolLoanState.repaid:
+    case ProtocolLoanState.defaulted:
+    case ProtocolLoanState.liquidated:
+    case ProtocolLoanState.unknown:
+      return (
+        color: loanStateColor(s, loan.state),
+        word: ProtocolCopy.english.state(
+          loan.state == ProtocolLoanState.unknown
+              ? loan.stateLabel
+              : loan.rawState,
+        ),
+      );
+  }
+}
+
+/// A 6 px dot and the word beside it in the secondary ink.
+class LoanStatusDot extends StatelessWidget {
+  const LoanStatusDot({super.key, required this.color, required this.word});
+
+  final Color color;
+  final String word;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final lender = loan.role == 'lender';
-    final stateColor = loanStateColor(s, loan.state);
-    final progress = loan.termProgress(tipHeight);
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // Money comes to a borrower and leaves a lender: the arrow says
-        // which, the hue says it is a Liquid thing.
-        ListIconTile(
-          icon: lender ? Icons.call_made_rounded : Icons.call_received_rounded,
-          tint: lender ? s.accent : s.liquid,
-        ),
-        const SizedBox(width: kListGap),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    loan.ref,
-                    style: AppTypography.sectionTitleOf(
-                      context,
-                    ).copyWith(color: s.ink),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  TagChip(label: loan.stateLabel, color: stateColor),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text(
-                lender ? 'You are the lender' : 'You are the borrower',
-                style: AppTypography.caption.copyWith(color: s.inkSecondary),
-              ),
-            ],
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(999),
           ),
         ),
-        if (loan.pendingRequest != null) ...[
-          const StatusBadge(
-            label: 'Your signature',
-            variant: BadgeVariant.accent,
-            dot: true,
+        const SizedBox(width: AppSpacing.sm),
+        Flexible(
+          child: Text(
+            word,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
           ),
-          const SizedBox(width: AppSpacing.sm),
-        ],
-        if (loan.state.isOpen)
-          _TermRing(
-            progress: progress,
-            label: progress == null ? '—' : '${(progress * 100).round()}%',
-            color: progress != null && progress >= 1 ? s.warning : s.liquid,
+        ),
+      ],
+    );
+  }
+}
+
+/// The reference in mono, the role as a quiet tag, the state as a dot.
+class LoanTitleLine extends StatelessWidget {
+  const LoanTitleLine({super.key, required this.loan, required this.status});
+
+  final ProtocolLoan loan;
+  final ({Color color, String word}) status;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Wrap(
+      spacing: AppSpacing.md,
+      runSpacing: AppSpacing.xs,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(loan.ref, style: AppTypography.mono.copyWith(color: s.ink)),
+        QuietTag(label: ProtocolCopy.english.role(loan.role)),
+        LoanStatusDot(color: status.color, word: status.word),
+      ],
+    );
+  }
+}
+
+/// The right-hand amounts of a loan row: the lead figure in `numeric` and
+/// the ink, the second one quieter beneath it. Both hide behind the privacy
+/// mask.
+class LoanAmounts extends StatelessWidget {
+  const LoanAmounts({super.key, this.primary, this.secondary});
+
+  final String? primary;
+  final String? secondary;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (primary != null)
+          Amount(
+            primary!,
+            textAlign: TextAlign.end,
+            style: AppTypography.numeric.copyWith(color: s.ink),
+          ),
+        if (secondary != null)
+          Amount(
+            secondary!,
+            textAlign: TextAlign.end,
+            style: AppTypography.numericSmall.copyWith(color: s.inkSecondary),
           ),
       ],
     );
   }
 }
 
-/// The chip colour of a loan state, shared with the Loans screen's summary.
-Color loanStateColor(AppScheme s, ProtocolLoanState state) => switch (state) {
-  ProtocolLoanState.originating => s.warning,
-  ProtocolLoanState.active => s.liquid,
-  ProtocolLoanState.repaid => s.success,
-  ProtocolLoanState.defaulted => s.danger,
-  ProtocolLoanState.liquidated => s.danger,
-  ProtocolLoanState.unknown => s.inkFaint,
-};
-
-/// A small ring: how much of the term has run, as the one glance figure.
-class _TermRing extends StatelessWidget {
-  const _TermRing({
-    required this.progress,
+/// A single goal's progress: its words above, a 2 px neutral line below.
+/// Null [fraction] prints the words alone.
+class LoanProgressLine extends StatelessWidget {
+  const LoanProgressLine({
+    super.key,
     required this.label,
-    required this.color,
+    this.fraction,
+    this.trailing,
+    this.trailingKey,
   });
-  final double? progress;
+
   final String label;
-  final Color color;
+  final double? fraction;
+  final String? trailing;
+  final Key? trailingKey;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    return Tooltip(
-      message: progress == null
-          ? 'The term has not started yet'
-          : 'Term run: ${(progress! * 100).round()}%',
-      child: SizedBox(
-        width: 44,
-        height: 44,
-        child: CustomPaint(
-          painter: _RingPainter(
-            progress: progress ?? 0,
-            track: s.panelInset,
-            fill: color,
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: AppTypography.caption.copyWith(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w700,
-                color: s.inkSecondary,
+    final faint = AppTypography.caption.copyWith(color: s.inkSecondary);
+    final f = fraction;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: faint,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (trailing != null && trailing!.isNotEmpty) ...[
+              const SizedBox(width: AppSpacing.sm),
+              Text(trailing!, key: trailingKey, style: faint),
+            ],
+          ],
+        ),
+        if (f != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: SizedBox(
+              height: 2,
+              child: Stack(
+                children: [
+                  Container(color: s.edge),
+                  FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: f.clamp(0.0, 1.0),
+                    child: Container(color: s.inkSecondary),
+                  ),
+                ],
               ),
             ),
           ),
-        ),
-      ),
+        ],
+      ],
     );
   }
 }
 
-class _RingPainter extends CustomPainter {
-  const _RingPainter({
-    required this.progress,
-    required this.track,
-    required this.fill,
-  });
-  final double progress;
-  final Color track;
-  final Color fill;
+// ── Row pieces ────────────────────────────────────────────────────────────────
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    const stroke = 4.0;
-    final rect = Offset.zero & size;
-    final r = rect.deflate(stroke / 2);
-    final base = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..color = track;
-    canvas.drawArc(r, 0, math.pi * 2, false, base);
-    if (progress > 0) {
-      final p = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke
-        ..strokeCap = StrokeCap.round
-        ..color = fill;
-      canvas.drawArc(
-        r,
-        -math.pi / 2,
-        math.pi * 2 * progress.clamp(0.0, 1.0),
-        false,
-        p,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_RingPainter old) =>
-      old.progress != progress || old.track != track || old.fill != fill;
-}
-
-/// The site's one-line «what happens now», with a glyph for its kind.
-class _NextLine extends StatelessWidget {
-  const _NextLine({required this.action, required this.pending, this.now});
-  final ProtocolNextAction action;
-  final ProtocolPendingRequest? pending;
+/// The request waiting for this wallet: what it is and how long it lives.
+class _PendingLine extends StatelessWidget {
+  const _PendingLine({required this.pending, this.now});
+  final ProtocolPendingRequest pending;
   final DateTime? now;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final (icon, tint) = switch (action.kind) {
-      ProtocolNextKind.sign => (Icons.draw_outlined, s.accent),
-      ProtocolNextKind.repay => (Icons.payments_outlined, s.liquid),
-      ProtocolNextKind.claim => (Icons.gavel_outlined, s.warning),
-      ProtocolNextKind.wait => (Icons.hourglass_empty_rounded, s.inkSecondary),
-      ProtocolNextKind.none => (Icons.check_circle_outline, s.inkFaint),
-      ProtocolNextKind.unknown => (Icons.help_outline, s.inkSecondary),
-    };
     final p = pending;
     String? expiry;
-    if (p?.expiresAt != null) {
+    if (p.expiresAt != null) {
       final ref = (now ?? DateTime.now()).toUtc();
-      final left = p!.expiresAt!.difference(ref);
+      final left = p.expiresAt!.difference(ref);
       expiry = left.isNegative
           ? 'request expired — the site will issue a new one'
           : left.inMinutes >= 1
           ? 'request expires in ${left.inMinutes} min'
           : 'request expires in under a minute';
     }
-    return DataWell(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm + 2,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: Icon(icon, size: 18, color: tint),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  action.label,
-                  style: AppTypography.body.copyWith(
-                    color: s.ink,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (expiry != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      '${protocolActionLabel(p!.action)} · $expiry',
-                      style: AppTypography.caption.copyWith(
-                        color: s.inkSecondary,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return LoanStatusDot(
+      color: s.warning,
+      word: [
+        'Your signature',
+        protocolActionLabel(p.action),
+        ?expiry,
+      ].join(' · '),
     );
   }
 }
 
 /// How much of the term has run, in blocks, with the time it stands for.
-class _TermBar extends StatelessWidget {
-  const _TermBar({required this.loan, required this.tipHeight});
+class _TermLine extends StatelessWidget {
+  const _TermLine({required this.loan, required this.tipHeight});
   final ProtocolLoan loan;
   final int tipHeight;
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
+    final plan = loan.repaymentPlan;
+    if (plan?.nTotal != null && plan!.nPaid != null && plan.nTotal! > 0) {
+      return LoanProgressLine(
+        label: '${plan.nPaid} of ${plan.nTotal} installments paid',
+        fraction: plan.nPaid! / plan.nTotal!,
+      );
+    }
     final progress = loan.termProgress(tipHeight);
     final left = protocolBlocksLeftLabel(loan.blocksLeft);
     final due = loan.dueAtEstimate;
-    final start = loan.startHeight;
-    final term = loan.termHeight;
-
-    final leftText = progress == null
+    final label = progress == null
         ? (loan.state == ProtocolLoanState.originating
               ? 'Term starts when the opening transaction confirms'
               : 'No term yet')
-        : 'Block ${_g(start)} → ${_g(term)}';
-    final rightText = [
+        : 'Block ${_g(loan.startHeight)} → ${_g(loan.termHeight)}';
+    final right = [
       if (left.isNotEmpty) left,
       if (due != null) 'due ≈ ${_localShort(due)}',
     ].join(' · ');
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.schedule_rounded, size: 14, color: s.inkFaint),
-            const SizedBox(width: AppSpacing.xs),
-            Expanded(
-              child: Text(
-                leftText,
-                style: AppTypography.caption.copyWith(color: s.inkFaint),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (rightText.isNotEmpty) ...[
-              const SizedBox(width: AppSpacing.sm),
-              Text(
-                rightText,
-                key: const Key('loan-time-left'),
-                style: AppTypography.caption.copyWith(
-                  color: progress != null && progress >= 1
-                      ? s.warning
-                      : s.inkSecondary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: SizedBox(
-            height: 6,
-            child: Stack(
-              children: [
-                Container(color: s.panelInset),
-                if (progress != null)
-                  FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: progress == 0 ? 0.004 : progress,
-                    child: Container(
-                      color: progress >= 1 ? s.warning : s.liquid,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ],
+    return LoanProgressLine(
+      label: label,
+      fraction: progress,
+      trailing: right,
+      trailingKey: const Key('loan-time-left'),
     );
   }
 
   static String _g(int? n) => n == null ? '—' : protocolGroupDigits('$n');
 }
 
-/// Where the money sits, as arrows: collateral into the escrow, principal
-/// to the borrower, what closes the loan back to the lender. Read from the
-/// role, so a lender and a borrower see the same loan from their own side.
-class _FlowStrip extends StatelessWidget {
-  const _FlowStrip({required this.loan});
+/// The figures and identifiers behind the row, folded until asked for:
+/// what is owed, the terms, the escrow and the transactions someone checks
+/// against an explorer, and the way to the loan on the site.
+class _Details extends StatelessWidget {
+  const _Details({required this.loan, required this.busy, this.onOpen});
   final ProtocolLoan loan;
+  final bool busy;
+  final VoidCallback? onOpen;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final lender = loan.role == 'lender';
-    final you = 'You';
-    final other = lender ? 'Borrower' : 'Lender';
-    final closed = !loan.state.isOpen;
-    final rows = <_FlowRowData>[
-      if (loan.collateral != null)
-        _FlowRowData(
-          icon: Icons.lock_outline_rounded,
-          tint: s.warning,
-          from: lender ? other : you,
-          to: 'Escrow',
-          what: 'Collateral',
-          amount: loan.collateral!.display,
-          done: loan.state != ProtocolLoanState.originating,
-        ),
-      if (loan.principal != null)
-        _FlowRowData(
-          icon: Icons.payments_outlined,
-          tint: s.liquid,
-          from: lender ? you : other,
-          to: lender ? other : you,
-          what: 'Principal',
-          amount: loan.principal!.display,
-          done: loan.state != ProtocolLoanState.originating,
-        ),
-      if (loan.owed != null && !closed)
-        _FlowRowData(
-          icon: Icons.undo_rounded,
-          tint: s.accent,
-          from: lender ? other : you,
-          to: lender ? you : other,
-          what: lender ? 'Repayment due' : 'To repay',
-          amount: loan.owed!.display,
-          done: false,
-        ),
-      if (closed && loan.state == ProtocolLoanState.repaid && loan.owed != null)
-        _FlowRowData(
-          icon: Icons.check_rounded,
-          tint: s.success,
-          from: lender ? other : you,
-          to: lender ? you : other,
-          what: 'Repaid',
-          amount: loan.principal?.display ?? '',
-          done: true,
-        ),
-      if (closed &&
-          (loan.state == ProtocolLoanState.liquidated ||
-              loan.state == ProtocolLoanState.defaulted) &&
-          loan.collateral != null)
-        _FlowRowData(
-          icon: Icons.gavel_outlined,
-          tint: s.danger,
-          from: 'Escrow',
-          to: lender ? you : other,
-          what: 'Collateral claimed',
-          amount: loan.collateral!.display,
-          done: true,
-        ),
-    ];
-    if (rows.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var i = 0; i < rows.length; i++) ...[
-          if (i > 0) const SizedBox(height: AppSpacing.xs),
-          _FlowRow(data: rows[i]),
-        ],
-      ],
-    );
-  }
-}
-
-class _FlowRowData {
-  const _FlowRowData({
-    required this.icon,
-    required this.tint,
-    required this.from,
-    required this.to,
-    required this.what,
-    required this.amount,
-    required this.done,
-  });
-  final IconData icon;
-  final Color tint;
-  final String from;
-  final String to;
-  final String what;
-  final String amount;
-
-  /// Already happened on chain (solid) or still ahead (dashed look).
-  final bool done;
-}
-
-class _FlowRow extends StatelessWidget {
-  const _FlowRow({required this.data});
-  final _FlowRowData data;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final d = data;
-    final faint = AppTypography.caption.copyWith(color: s.inkFaint);
-    final party = AppTypography.caption.copyWith(
-      color: s.ink,
-      fontWeight: FontWeight.w600,
-    );
-    return Row(
-      children: [
-        ListIconTile(icon: d.icon, tint: d.tint, size: 28),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(d.what, style: faint),
-              Row(
-                children: [
-                  Text(d.from, style: party),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    child: Icon(
-                      d.done
-                          ? Icons.arrow_forward_rounded
-                          : Icons.arrow_right_alt_rounded,
-                      size: 16,
-                      color: d.done ? d.tint : s.inkFaint,
-                    ),
-                  ),
-                  Text(d.to, style: party),
-                  if (!d.done) ...[
-                    const SizedBox(width: AppSpacing.xs),
-                    Text('pending', style: faint),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ),
-        Amount(
-          d.amount,
-          style: AppTypography.numericSmall.copyWith(
-            color: s.ink,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Owed first and largest; interest and the Templar fee as a quiet grid.
-class _Amounts extends StatelessWidget {
-  const _Amounts({required this.loan});
-  final ProtocolLoan loan;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
     final owed = loan.owed;
-    final rows = <(String, String)>[
+    final amounts = <(String, String)>[
+      if (owed != null && loan.state.isOpen)
+        (loan.role == 'lender' ? 'Owed to you' : 'You owe', owed.display),
       if (loan.principal != null) ('Principal', loan.principal!.display),
       if (loan.collateral != null) ('Collateral', loan.collateral!.display),
       if (loan.interest != null)
@@ -631,174 +509,92 @@ class _Amounts extends StatelessWidget {
               '${(loan.templarFee!.payer ?? '').isNotEmpty ? ' · paid by ${loan.templarFee!.payer}' : ''}',
         ),
     ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (owed != null && loan.state.isOpen)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Text(
-                  loan.role == 'lender' ? 'OWED TO YOU' : 'YOU OWE',
-                  style: AppTypography.navSection.copyWith(
-                    color: s.inkFaint,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                const Spacer(),
-                Amount(
-                  protocolGroupDigits(owed.amount),
-                  style: AppTypography.numericLarge.copyWith(
-                    color: s.ink,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Text(
-                  owed.ticker,
-                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
-                ),
-              ],
-            ),
-          ),
-        for (final (label, value) in rows)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 96,
-                  child: Text(
-                    label,
-                    style: AppTypography.caption.copyWith(
-                      color: s.inkSecondary,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Amount(
-                    value,
-                    textAlign: TextAlign.end,
-                    style: AppTypography.numericSmall.copyWith(color: s.ink),
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-/// Escrow address and transaction ids: the facts someone checks against an
-/// explorer, folded until asked for.
-class _Details extends StatelessWidget {
-  const _Details({required this.loan});
-  final ProtocolLoan loan;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
     final tx = loan.txids;
-    final rows = <(String, String)>[
+    final ids = <(String, String)>[
       if ((loan.escrowAddress ?? '').isNotEmpty)
         ('Escrow', loan.escrowAddress!),
       if ((tx.origination ?? '').isNotEmpty) ('Opened in', tx.origination!),
       if ((tx.repayment ?? '').isNotEmpty) ('Repaid in', tx.repayment!),
       if ((tx.liquidation ?? '').isNotEmpty) ('Liquidated in', tx.liquidation!),
-      if (loan.openedAt != null) ('Opened', _localShort(loan.openedAt!)),
     ];
-    if (rows.isEmpty) {
-      return Text(
-        'The site sent no details for this loan yet.',
-        style: AppTypography.caption.copyWith(color: s.inkSecondary),
-      );
-    }
-    return DataWell(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < rows.length; i++) ...[
-            if (i > 0) Divider(height: AppSpacing.md, color: s.edge),
-            CopyRow(
-              label: rows[i].$1,
-              value: rows[i].$2,
-              mono: rows[i].$1 != 'Opened',
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _Actions extends StatelessWidget {
-  const _Actions({
-    required this.loan,
-    required this.phone,
-    required this.busy,
-    required this.details,
-    required this.onToggleDetails,
-    this.onSign,
-    this.onOpen,
-  });
-  final ProtocolLoan loan;
-  final bool phone;
-  final bool busy;
-  final bool details;
-  final VoidCallback onToggleDetails;
-  final VoidCallback? onSign;
-  final VoidCallback? onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    final sign = onSign == null
-        ? null
-        : PrimaryButton(
-            key: Key('loan-sign-${loan.id}'),
-            label: 'Sign now',
-            icon: Icons.draw_outlined,
-            onPressed: busy ? null : onSign,
-            isFullWidth: phone,
-          );
-    final open = onOpen == null
-        ? null
-        : SecondaryButton(
-            key: Key('loan-open-${loan.id}'),
-            label: 'Open on Templar Protocol',
-            icon: Icons.open_in_new,
-            onPressed: busy ? null : onOpen,
-            isLoading: busy,
-            isFullWidth: phone,
-          );
-    final more = GhostButton(
-      key: Key('loan-details-${loan.id}'),
-      label: details ? 'Hide details' : 'Details',
-      icon: details ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-      onPressed: onToggleDetails,
-      isFullWidth: phone,
-    );
-    final buttons = <Widget>[?sign, ?open, more];
-    if (phone) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < buttons.length; i++) ...[
-            if (i > 0) const SizedBox(height: AppSpacing.sm),
-            buttons[i],
-          ],
-        ],
-      );
-    }
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (var i = 0; i < buttons.length; i++) ...[
-          if (i > 0) const SizedBox(width: AppSpacing.sm),
-          if (i == buttons.length - 1) const Spacer(),
-          buttons[i],
+        Divider(height: 1, color: s.edge),
+        const SizedBox(height: AppSpacing.sm),
+        for (final (label, value) in amounts)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    style: AppTypography.bodyOf(
+                      context,
+                    ).copyWith(color: s.inkSecondary),
+                  ),
+                ),
+                Amount(
+                  value,
+                  textAlign: TextAlign.end,
+                  style: AppTypography.numeric.copyWith(color: s.ink),
+                ),
+              ],
+            ),
+          ),
+        if (loan.openedAt != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Opened',
+                    style: AppTypography.bodyOf(
+                      context,
+                    ).copyWith(color: s.inkSecondary),
+                  ),
+                ),
+                Text(
+                  _localShort(loan.openedAt!),
+                  style: AppTypography.bodyOf(context).copyWith(color: s.ink),
+                ),
+              ],
+            ),
+          ),
+        if (ids.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.sm),
+          DataWell(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < ids.length; i++) ...[
+                  if (i > 0) Divider(height: AppSpacing.md, color: s.edge),
+                  CopyRow(label: ids[i].$1, value: ids[i].$2),
+                ],
+              ],
+            ),
+          ),
+        ],
+        if (amounts.isEmpty && ids.isEmpty && loan.openedAt == null)
+          Text(
+            'The site sent no details for this loan yet',
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
+          ),
+        if (onOpen != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          Align(
+            alignment: Alignment.centerRight,
+            child: SecondaryButton(
+              key: Key('loan-open-${loan.id}'),
+              label: 'Open on Templar Protocol',
+              icon: Icons.open_in_new_outlined,
+              onPressed: busy ? null : onOpen,
+              isLoading: busy,
+              isFullWidth: phone,
+            ),
+          ),
         ],
       ],
     );

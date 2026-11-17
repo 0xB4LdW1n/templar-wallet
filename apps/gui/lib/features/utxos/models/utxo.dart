@@ -1,5 +1,11 @@
 enum UtxoState { available, frozen, dusty, unconfirmed }
 
+/// `tb1qw508…xpjzsx` — enough of both ends of an address to tell two apart
+/// on a tight line.
+String shortCoinAddress(String address) => address.length <= 16
+    ? address
+    : '${address.substring(0, 8)}…${address.substring(address.length - 6)}';
+
 class Utxo {
   const Utxo({
     required this.outpoint,
@@ -68,6 +74,14 @@ class Utxo {
     final vout = parts.length > 1 ? parts[1] : '0';
     if (txid.length <= 18) return '$txid:$vout';
     return '${txid.substring(0, 10)}…${txid.substring(txid.length - 6)}:$vout';
+  }
+
+  /// Head and tail of the address this coin sits on ([shortCoinAddress]),
+  /// or null when the engine named none. The whole address is in the coin's
+  /// details.
+  String? get shortAddress {
+    final a = address;
+    return a == null || a.isEmpty ? null : shortCoinAddress(a);
   }
 
   /// [clearLabel] is what makes "erase the label" expressible: a plain

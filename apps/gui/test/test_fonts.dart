@@ -16,11 +16,7 @@ Future<void> loadTestFonts() async {
   final mono = FontLoader('IBMPlexMono')
     ..addFont(rootBundle.load('assets/fonts/IBMPlexMono-Regular.ttf'))
     ..addFont(rootBundle.load('assets/fonts/IBMPlexMono-Medium.ttf'));
-  final nunito = FontLoader('Nunito')
-    ..addFont(rootBundle.load('assets/fonts/Nunito-SemiBold.ttf'))
-    ..addFont(rootBundle.load('assets/fonts/Nunito-Bold.ttf'))
-    ..addFont(rootBundle.load('assets/fonts/Nunito-ExtraBold.ttf'));
-  await Future.wait([sans.load(), mono.load(), nunito.load()]);
+  await Future.wait([sans.load(), mono.load()]);
 }
 
 /// Lets google_fonts resolve its asset cache before a golden captures frame 1.
@@ -34,11 +30,8 @@ Future<void> warmUpWalletFonts(WidgetTester tester) async {
           children: [
             Text('Sans', style: AppTypography.body),
             Text('Medium', style: AppTypography.label),
-            Text('Semibold', style: AppTypography.numeric),
-            Text('Bold', style: AppTypography.navSection),
-            Text('Display', style: AppTypography.pageTitle),
-            Text('Display semibold', style: AppTypography.sectionTitle),
-            Text('Display extrabold', style: AppTypography.displayTitle),
+            Text('Figure', style: AppTypography.numeric),
+            Text('Title', style: AppTypography.pageTitle),
             Text('Mono', style: AppTypography.mono),
             Text('Mono medium', style: AppTypography.monoLarge),
           ],

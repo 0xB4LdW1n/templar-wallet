@@ -1,8 +1,12 @@
-/// Central human copy for Templar Lend surfaces.
+/// Central human copy for the Templar Protocol loan surfaces.
 ///
 /// English remains the app default. Italian is complete and ready for the
 /// app-wide locale switch; keeping both here prevents protocol vocabulary
 /// from drifting between overview, detail and signing review.
+///
+/// The covenant effects describe what the site's declared action does to the
+/// loan. They are this app's words for that action, not something it read
+/// from the transaction — hence no "verified" in them.
 class ProtocolCopy {
   const ProtocolCopy._(this.languageCode);
 
@@ -63,50 +67,49 @@ class ProtocolCopy {
   String covenantEffect(String action) => switch (action.trim()) {
     'origination' =>
       _it
-          ? 'Crea il covenant radice e blocca tutto il collaterale.'
-          : 'Creates the root covenant and locks all collateral.',
+          ? 'Crea il covenant radice e blocca tutto il collaterale'
+          : 'Creates the root covenant and locks all collateral',
     'payment_preparation' =>
       _it
-          ? 'Prepara l’UTXO di pagamento; non modifica ancora il covenant.'
-          : 'Prepares the payment UTXO; the covenant is unchanged.',
+          ? 'Prepara l’UTXO di pagamento; non modifica ancora il covenant'
+          : 'Prepares the payment UTXO; the covenant is unchanged',
     'installment' =>
       _it
           ? 'Spende il covenant corrente e crea il successore. Tutto il collaterale resta bloccato finché il saldo non raggiunge zero.'
           : 'Spends the current covenant and creates its successor. All collateral stays locked until the balance reaches zero.',
     'repayment' =>
       _it
-          ? 'Spende il covenant corrente senza successore e restituisce tutto il collaterale.'
-          : 'Spends the current covenant without a successor and returns all collateral.',
+          ? 'Spende il covenant corrente senza successore e restituisce tutto il collaterale'
+          : 'Spends the current covenant without a successor and returns all collateral',
     'payment_claim' =>
       _it
-          ? 'Incassa pagamenti già versati dal debitore; non modifica il saldo del prestito.'
-          : 'Claims payments already made by the borrower; the loan balance does not change.',
+          ? 'Incassa pagamenti già versati dal debitore; non modifica il saldo del prestito'
+          : 'Claims payments already made by the borrower; the loan balance does not change',
     'renewal' =>
       _it
-          ? 'Revoca la vecchia finestra, distrugge il covenant e crea il successore con una rata mancata in più.'
-          : 'Revokes the old window, destroys the covenant and creates a successor with one more missed installment.',
+          ? 'Revoca la vecchia finestra, distrugge il covenant e crea il successore con una rata mancata in più'
+          : 'Revokes the old window, destroys the covenant and creates a successor with one more missed installment',
     'default' =>
       _it
-          ? 'Distrugge il covenant senza successore e divide il collaterale tra le parti.'
-          : 'Destroys the covenant without a successor and splits the collateral between the parties.',
+          ? 'Distrugge il covenant senza successore e divide il collaterale tra le parti'
+          : 'Destroys the covenant without a successor and splits the collateral between the parties',
     'collateral_claim' =>
       _it
-          ? 'Ritira la quota di collaterale già assegnata al debitore.'
-          : 'Claims the collateral remainder already assigned to the borrower.',
+          ? 'Ritira la quota di collaterale già assegnata al debitore'
+          : 'Claims the collateral remainder already assigned to the borrower',
     'liquidation' =>
       _it
-          ? 'Trasferisce al creditore il collaterale assegnato dal regolamento.'
-          : 'Transfers the collateral assigned to the lender by settlement.',
+          ? 'Trasferisce al creditore il collaterale assegnato dal regolamento'
+          : 'Transfers the collateral assigned to the lender by settlement',
     'proof' =>
       _it
-          ? 'Prova il possesso della chiave; non muove fondi.'
-          : 'Proves key ownership; no funds move.',
-    'swap' =>
-      _it ? 'Esegue lo scambio verificato.' : 'Executes the verified swap.',
+          ? 'Prova il possesso della chiave; non muove fondi'
+          : 'Proves key ownership; no funds move',
+    'swap' => _it ? 'Esegue lo scambio atomico' : 'Executes the atomic swap',
     _ =>
       _it
-          ? 'Controlla l’effetto verificato dal wallet prima di firmare.'
-          : 'Review the wallet-verified effect before signing.',
+          ? 'Controlla l’effetto di questa transazione prima di firmare'
+          : 'Review the effect of this transaction before signing',
   };
 }
 

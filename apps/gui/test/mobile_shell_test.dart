@@ -1,6 +1,6 @@
 // The phone shell's chrome, laid out on a Pixel 6 class surface without a
 // device: the header takes the status bar once and stays one 48-dp row, the
-// sync pill's hit box spans that row, the carousel sits on the bottom inset
+// sync pill's hit box spans that row, the tab bar sits on the bottom inset
 // at its documented height, and nothing in the tree throws.
 
 import 'package:flutter/material.dart';
@@ -9,7 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/app/shell.dart';
-import 'package:templar_wallet/shared/widgets/carousel_nav.dart';
+import 'package:templar_wallet/shared/widgets/mobile_tab_bar.dart';
 
 const double _width = 411;
 const double _height = 914;
@@ -78,10 +78,10 @@ void main() {
     expect(pageTop, greaterThanOrEqualTo(header.bottom));
     expect(pageTop, lessThanOrEqualTo(header.bottom + 40));
 
-    // Carousel: its documented inset-aware height, flush with the bottom.
-    final bar = tester.getRect(find.byType(CarouselNav));
+    // Tab bar: its documented inset-aware height, flush with the bottom.
+    final bar = tester.getRect(find.byType(MobileTabBar));
     expect(bar.bottom, _height);
-    expect(bar.height, CarouselNav.heightFor(_gestureInset));
+    expect(bar.height, MobileTabBar.heightFor(_gestureInset));
     expect(bar.height, lessThanOrEqualTo(110));
   });
 }

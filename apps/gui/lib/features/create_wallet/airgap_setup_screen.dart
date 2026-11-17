@@ -10,7 +10,7 @@ import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/scan_button.dart';
 import '../../shared/widgets/step_flow_scaffold.dart';
-import '../../theme/app_colors.dart';
+import '../../shared/widgets/step_header.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
@@ -133,7 +133,6 @@ class _AirgapSetupScreenState extends State<AirgapSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return StepFlowScaffold(
       currentStep: widget.baseStep + _step,
       totalSteps: widget.baseStep + _totalSteps,
@@ -143,7 +142,7 @@ class _AirgapSetupScreenState extends State<AirgapSetupScreen> {
           ? (_step > 1 ? () => setState(() => _step--) : _exitToWizard)
           : null,
       onCancel: _step < 4 ? () => context.go(AppRoutes.walletPicker) : null,
-      body: _stepBody(isDark),
+      body: _stepBody(),
       actions: _stepActions,
     );
   }
@@ -151,7 +150,7 @@ class _AirgapSetupScreenState extends State<AirgapSetupScreen> {
   String get _stepTitle => switch (_step) {
     1 => 'Choose your device',
     2 => 'Export descriptor',
-    3 => 'Paste descriptor & name',
+    3 => 'Paste descriptor and name',
     _ => 'Pairing summary',
   };
 
@@ -162,21 +161,19 @@ class _AirgapSetupScreenState extends State<AirgapSetupScreen> {
     _ => 'What was created, and where it came from',
   };
 
-  Widget _stepBody(bool isDark) => switch (_step) {
+  Widget _stepBody() => switch (_step) {
     1 => _Step1Body(
       selected: _device,
       onSelect: (d) => setState(() => _device = d),
       liquidWanted: _liquidWanted,
-      isDark: isDark,
     ),
-    2 => _Step2Body(device: _device!, isDark: isDark),
+    2 => _Step2Body(device: _device!),
     3 => _Step3Body(
       nameController: _nameController,
       recvController: _recvController,
       changeController: _changeController,
       creating: _creating,
       error: _error,
-      isDark: isDark,
     ),
     _ => _RecapBody(
       wallet: _created!,
@@ -187,53 +184,43 @@ class _AirgapSetupScreenState extends State<AirgapSetupScreen> {
 
   Widget get _stepActions {
     if (_step == 4) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          SecondaryButton(
-            label: 'Get receive address',
-            onPressed: () => context.go(AppRoutes.receive),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          PrimaryButton(
-            label: 'Open Wallet',
-            onPressed: () => context.go(AppRoutes.dashboard),
-          ),
-        ],
+      return _StepActions(
+        label: 'Open wallet',
+        onPressed: () => context.go(AppRoutes.dashboard),
+        secondaryLabel: 'Get receive address',
+        onSecondary: () => context.go(AppRoutes.receive),
       );
     }
     if (_step == 3) {
-      final canCreate =
-          _recvController.text.trim().isNotEmpty &&
-          _nameController.text.trim().isNotEmpty;
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          GhostButton(label: 'Back', onPressed: () => setState(() => _step--)),
-          const SizedBox(width: AppSpacing.md),
-          PrimaryButton(
-            label: _creating ? 'Creating…' : 'Create Wallet',
-            onPressed: (canCreate && !_creating) ? _create : null,
-          ),
-        ],
+      final hasDescriptor = _recvController.text.trim().isNotEmpty;
+      final named = _nameController.text.trim().isNotEmpty;
+      return _StepActions(
+        label: _creating ? 'Creating…' : 'Create wallet',
+        onPressed: (hasDescriptor && named && !_creating) ? _create : null,
+        onBack: _creating ? null : () => setState(() => _step--),
+        reason: _creating
+            ? null
+            : !hasDescriptor
+            ? 'Paste the receive descriptor to continue'
+            : !named
+            ? 'Name the wallet to continue'
+            : null,
       );
     }
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        if (_step > 1)
-          GhostButton(label: 'Back', onPressed: () => setState(() => _step--)),
-        const SizedBox(width: AppSpacing.md),
-        PrimaryButton(
-          label: 'Continue',
-          onPressed: _step == 1 && _device == null
-              ? null
-              : () => setState(() => _step++),
-        ),
-      ],
+    final chosen = !(_step == 1 && _device == null);
+    return _StepActions(
+      label: 'Continue',
+      onPressed: chosen ? () => setState(() => _step++) : null,
+      onBack: _step > 1 ? () => setState(() => _step--) : _exitToWizard,
+      reason: chosen ? null : 'Choose a device to continue',
     );
   }
 }
+
+String _deviceName(_AirgapDevice d) => switch (d) {
+  _AirgapDevice.seedSigner => 'SeedSigner',
+  _AirgapDevice.jade => 'Jade',
+};
 
 // ── Step 1: device choice ─────────────────────────────────────────────────────
 
@@ -242,7 +229,6 @@ class _Step1Body extends StatelessWidget {
     required this.selected,
     required this.onSelect,
     required this.liquidWanted,
-    required this.isDark,
   });
   final _AirgapDevice? selected;
   final void Function(_AirgapDevice) onSelect;
@@ -251,14 +237,15 @@ class _Step1Body extends StatelessWidget {
   /// said here, before the user exports anything from the device, rather than
   /// discovered as a missing Liquid wallet after setup.
   final bool liquidWanted;
-  final bool isDark;
 
   @override
   Widget build(BuildContext context) {
-    if (liquidWanted) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    // One column of option cards, the same on a phone and a desktop: the
+    // choice is two rows, and a radio says which one is taken.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (liquidWanted) ...[
           const WarningBanner(
             title: 'This wallet will be Bitcoin-only',
             message:
@@ -269,150 +256,23 @@ class _Step1Body extends StatelessWidget {
                 'the same.',
           ),
           const SizedBox(height: AppSpacing.lg),
-          // Plain child, not Expanded: StepFlowScaffold scrolls the body, and
-          // an Expanded inside a scroll view has no height to fill.
-          _deviceCards(context),
         ],
-      );
-    }
-    return _deviceCards(context);
-  }
-
-  Widget _deviceCards(BuildContext context) {
-    if (AppLayout.isPhone(context)) {
-      // Two 250 dp cards side by side are 524 dp; stacked they each get the
-      // column.
-      return Padding(
-        padding: const EdgeInsets.only(top: AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _DeviceCard(
-              label: 'SeedSigner',
-              subtitle: 'Open-source DIY device',
-              icon: Icons.developer_board_rounded,
-              accent: AppColors.success,
-              isSelected: selected == _AirgapDevice.seedSigner,
-              onTap: () => onSelect(_AirgapDevice.seedSigner),
-              isDark: isDark,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _DeviceCard(
-              label: 'Jade',
-              subtitle: 'Blockstream hardware wallet',
-              icon: Icons.memory_rounded,
-              accent: AppColors.accent,
-              isSelected: selected == _AirgapDevice.jade,
-              onTap: () => onSelect(_AirgapDevice.jade),
-              isDark: isDark,
-            ),
-          ],
+        SelectableOptionCard(
+          title: 'SeedSigner',
+          description: 'Open-source DIY device',
+          icon: Icons.developer_board_outlined,
+          isSelected: selected == _AirgapDevice.seedSigner,
+          onTap: () => onSelect(_AirgapDevice.seedSigner),
         ),
-      );
-    }
-    // The device choice is the whole step — make the two cards big and
-    // centered instead of a cramped side row.
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.only(top: AppSpacing.xl),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 250,
-              child: _DeviceCard(
-                label: 'SeedSigner',
-                subtitle: 'Open-source DIY device',
-                icon: Icons.developer_board_rounded,
-                accent: AppColors.success,
-                isSelected: selected == _AirgapDevice.seedSigner,
-                onTap: () => onSelect(_AirgapDevice.seedSigner),
-                isDark: isDark,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.xl),
-            SizedBox(
-              width: 250,
-              child: _DeviceCard(
-                label: 'Jade',
-                subtitle: 'Blockstream hardware wallet',
-                icon: Icons.memory_rounded,
-                accent: AppColors.accent,
-                isSelected: selected == _AirgapDevice.jade,
-                onTap: () => onSelect(_AirgapDevice.jade),
-                isDark: isDark,
-              ),
-            ),
-          ],
+        const SizedBox(height: AppSpacing.md),
+        SelectableOptionCard(
+          title: 'Jade',
+          description: 'Blockstream hardware wallet, in QR mode',
+          icon: Icons.memory_outlined,
+          isSelected: selected == _AirgapDevice.jade,
+          onTap: () => onSelect(_AirgapDevice.jade),
         ),
-      ),
-    );
-  }
-}
-
-class _DeviceCard extends StatelessWidget {
-  const _DeviceCard({
-    required this.label,
-    required this.subtitle,
-    required this.icon,
-    required this.accent,
-    required this.isSelected,
-    required this.onTap,
-    required this.isDark,
-  });
-  final String label;
-  final String subtitle;
-  final IconData icon;
-  final Color accent;
-  final bool isSelected;
-  final VoidCallback onTap;
-  final bool isDark;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xl,
-          vertical: AppSpacing.xxl,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? accent.withValues(alpha: isDark ? 0.15 : 0.08)
-              : (isDark ? AppColors.surfaceDark : AppColors.surfaceLight),
-          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-          border: Border.all(
-            color: isSelected
-                ? accent
-                : (isDark ? AppColors.borderDark : AppColors.borderLight),
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: accent, size: 56),
-            const SizedBox(height: AppSpacing.lg),
-            Text(label, style: AppTypography.pageTitle.copyWith(fontSize: 20)),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: isDark
-                    ? AppColors.textSecondaryDark
-                    : AppColors.textSecondary,
-              ),
-            ),
-            if (isSelected) ...[
-              const SizedBox(height: AppSpacing.md),
-              Icon(Icons.check_circle, color: accent, size: 22),
-            ],
-          ],
-        ),
-      ),
+      ],
     );
   }
 }
@@ -420,12 +280,12 @@ class _DeviceCard extends StatelessWidget {
 // ── Step 2: on-device instructions ───────────────────────────────────────────
 
 class _Step2Body extends StatelessWidget {
-  const _Step2Body({required this.device, required this.isDark});
+  const _Step2Body({required this.device});
   final _AirgapDevice device;
-  final bool isDark;
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     final steps = device == _AirgapDevice.seedSigner
         ? [
             'Seeds → select your seed → Export Xpub',
@@ -447,48 +307,65 @@ class _Step2Body extends StatelessWidget {
           ];
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        InfoBanner(
-          message:
-              'Follow these steps on your ${device == _AirgapDevice.seedSigner ? "SeedSigner" : "Jade"} device:',
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          child: Text(
+            'On your ${_deviceName(device)}',
+            style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
+          ),
         ),
-        const SizedBox(height: AppSpacing.xl),
-        ...steps.asMap().entries.map(
-          (e) => Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: AppColors.accent.withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
+        Container(
+          decoration: BoxDecoration(
+            color: s.panel,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+            border: Border.all(color: s.edge),
+            boxShadow: s.panelShadow,
+          ),
+          child: Column(
+            children: [
+              for (var i = 0; i < steps.length; i++) ...[
+                if (i > 0)
+                  Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: s.edge,
+                    indent: AppSpacing.lg + AppSpacing.xl + AppSpacing.md,
                   ),
-                  child: Center(
-                    child: Text(
-                      '${e.key + 1}',
-                      style: AppTypography.label.copyWith(
-                        color: AppColors.accent,
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.md,
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // The step's number in the faint ink: an order, not a
+                      // badge.
+                      SizedBox(
+                        width: AppSpacing.xl,
+                        child: Text(
+                          '${i + 1}',
+                          style: AppTypography.numeric.copyWith(
+                            color: s.inkFaint,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Text(
-                    e.value,
-                    style: AppTypography.body.copyWith(
-                      color: isDark
-                          ? AppColors.textSecondaryDark
-                          : AppColors.textSecondary,
-                    ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Text(
+                          steps[i],
+                          style: AppTypography.bodyOf(
+                            context,
+                          ).copyWith(color: s.ink),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
-            ),
+            ],
           ),
         ),
       ],
@@ -505,14 +382,12 @@ class _Step3Body extends StatefulWidget {
     required this.changeController,
     required this.creating,
     this.error,
-    required this.isDark,
   });
   final TextEditingController nameController;
   final TextEditingController recvController;
   final TextEditingController changeController;
   final bool creating;
   final String? error;
-  final bool isDark;
 
   @override
   State<_Step3Body> createState() => _Step3BodyState();
@@ -523,115 +398,244 @@ class _Step3BodyState extends State<_Step3Body> {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     if (widget.creating) {
-      return Center(
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxxl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(),
+            const SizedBox(
+              width: AppSpacing.xl,
+              height: AppSpacing.xl,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
             const SizedBox(height: AppSpacing.lg),
-            Text('Creating wallet…', style: AppTypography.body),
+            Text(
+              'Creating wallet…',
+              style: AppTypography.body.copyWith(color: s.inkSecondary),
+            ),
           ],
         ),
       );
     }
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: widget.nameController,
-            decoration: const InputDecoration(labelText: 'Wallet name'),
+    // A plain Column: the step scaffold already scrolls its body.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _FieldLabel('Wallet name'),
+        TextField(controller: widget.nameController),
+        const SizedBox(height: AppSpacing.xl),
+        const _FieldLabel('Receive descriptor'),
+        _DescriptorField(
+          controller: widget.recvController,
+          hint: "wpkh([fingerprint/84'/1'/0']tpub…/0/*)",
+          // Shared widget rather than a bespoke IconButton: it hides itself
+          // where no camera plugin exists, so Windows/Linux see Paste alone
+          // instead of a button that only apologises.
+          scanTitle: 'Scan wallet QR (Jade: QR mode → Xpub export)',
+          scanTooltip: 'Scan QR (Jade: QR mode → Xpub export)',
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: GhostButton(
+            label: _showChange
+                ? 'Hide change descriptor'
+                : 'Add change descriptor (optional)',
+            icon: _showChange ? Icons.remove_outlined : Icons.add_outlined,
+            onPressed: () => setState(() => _showChange = !_showChange),
           ),
-          const SizedBox(height: AppSpacing.xl),
+        ),
+        if (_showChange) ...[
+          const SizedBox(height: AppSpacing.md),
+          const _FieldLabel('Change descriptor (optional)'),
+          _DescriptorField(
+            controller: widget.changeController,
+            hint: "wpkh([fingerprint/84'/1'/0']tpub…/1/*)",
+            scanTitle: 'Scan change descriptor',
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Change addresses live on a second descriptor chain (…/1/*), '
+            'derived automatically from the receive descriptor. Leave this '
+            'empty unless your device exports a separate change descriptor '
+            'that cannot be derived (different key or account).',
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
+          ),
+        ],
+        if (widget.error != null) ...[
+          const SizedBox(height: AppSpacing.lg),
+          DangerBanner(title: 'Creation failed', message: widget.error!),
+        ],
+      ],
+    );
+  }
+}
+
+/// A field's label: an `eyebrow` 8 above the field, never floating inside it.
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Text(
+        text,
+        style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+      ),
+    );
+  }
+}
+
+/// A descriptor field in `mono`, with Paste and — where a camera exists —
+/// Scan beside it.
+class _DescriptorField extends StatelessWidget {
+  const _DescriptorField({
+    required this.controller,
+    required this.hint,
+    required this.scanTitle,
+    this.scanTooltip = 'Scan QR',
+  });
+
+  final TextEditingController controller;
+  final String hint;
+  final String scanTitle;
+  final String scanTooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: TextField(
+            controller: controller,
+            decoration: InputDecoration(hintText: hint),
+            style: AppTypography.mono.copyWith(color: s.ink),
+            maxLines: 3,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Paste from clipboard',
+              iconSize: AppLayout.isPhone(context) ? 22 : AppSpacing.icon,
+              icon: const Icon(Icons.content_paste_outlined),
+              onPressed: () async {
+                final data = await Clipboard.getData('text/plain');
+                if (data?.text != null) controller.text = data!.text!.trim();
+              },
+            ),
+            ScanIconButton(
+              controller: controller,
+              title: scanTitle,
+              tooltip: scanTooltip,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// The step's action row (design.md, "Steps"): Back as a ghost with its
+/// arrow, the step's one primary on the right. A disabled primary says why
+/// beside it. On a phone the primary takes the width and the reason sits
+/// above the row.
+class _StepActions extends StatelessWidget {
+  const _StepActions({
+    required this.label,
+    required this.onPressed,
+    this.onBack,
+    this.reason,
+    this.secondaryLabel,
+    this.onSecondary,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final VoidCallback? onBack;
+  final String? reason;
+  final String? secondaryLabel;
+  final VoidCallback? onSecondary;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final why = reason;
+    final back = onBack;
+    final second = secondaryLabel;
+    final reasonStyle = AppTypography.caption.copyWith(color: s.inkFaint);
+    if (AppLayout.isPhone(context)) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (why != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Text(why, textAlign: TextAlign.center, style: reasonStyle),
+            ),
+          if (second != null) ...[
+            SecondaryButton(
+              label: second,
+              onPressed: onSecondary,
+              isFullWidth: true,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
           Row(
             children: [
-              Expanded(
-                child: TextField(
-                  controller: widget.recvController,
-                  decoration: const InputDecoration(
-                    labelText: 'Receive descriptor',
-                    hintText: 'wpkh([fingerprint/84\'/1\'/0\']tpub…/0/*)',
-                  ),
-                  maxLines: 3,
+              if (back != null) ...[
+                GhostButton(
+                  label: 'Back',
+                  icon: Icons.arrow_back_outlined,
+                  onPressed: back,
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              // Shared widget rather than a bespoke IconButton: it hides
-              // itself where no camera plugin exists, so Windows/Linux see
-              // Paste alone instead of a button that only apologises.
-              ScanIconButton(
-                controller: widget.recvController,
-                title: 'Scan wallet QR (Jade: QR mode → Xpub export)',
-                tooltip: 'Scan QR (Jade: QR mode → Xpub export)',
-              ),
-              IconButton(
-                tooltip: 'Paste from clipboard',
-                icon: const Icon(Icons.content_paste_rounded),
-                onPressed: () async {
-                  final data = await Clipboard.getData('text/plain');
-                  if (data?.text != null) {
-                    widget.recvController.text = data!.text!.trim();
-                  }
-                },
+                const SizedBox(width: AppSpacing.sm),
+              ],
+              Expanded(
+                child: PrimaryButton(
+                  label: label,
+                  onPressed: onPressed,
+                  isFullWidth: true,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
-          TextButton(
-            onPressed: () => setState(() => _showChange = !_showChange),
-            child: Text(
-              _showChange
-                  ? 'Hide change descriptor'
-                  : '+ Add change descriptor (optional)',
-            ),
-          ),
-          if (_showChange) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: widget.changeController,
-                    decoration: const InputDecoration(
-                      labelText: 'Change descriptor (optional)',
-                      hintText: 'wpkh([fingerprint/84\'/1\'/0\']tpub…/1/*)',
-                    ),
-                    maxLines: 3,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                ScanIconButton(
-                  controller: widget.changeController,
-                  title: 'Scan change descriptor',
-                ),
-                IconButton(
-                  tooltip: 'Paste from clipboard',
-                  icon: const Icon(Icons.content_paste_rounded),
-                  onPressed: () async {
-                    final data = await Clipboard.getData('text/plain');
-                    if (data?.text != null) {
-                      widget.changeController.text = data!.text!.trim();
-                    }
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              'Change addresses live on a second descriptor chain (…/1/*), '
-              'derived automatically from the receive descriptor. Leave this '
-              'empty unless your device exports a separate change descriptor '
-              'that cannot be derived (different key or account).',
-              style: AppTypography.caption,
-            ),
-          ],
-          if (widget.error != null) ...[
-            const SizedBox(height: AppSpacing.lg),
-            WarningBanner(title: 'Creation failed', message: widget.error!),
-          ],
         ],
-      ),
+      );
+    }
+    return Row(
+      children: [
+        Expanded(
+          child: why == null
+              ? const SizedBox.shrink()
+              : Text(why, textAlign: TextAlign.end, style: reasonStyle),
+        ),
+        const SizedBox(width: AppSpacing.lg),
+        if (back != null) ...[
+          GhostButton(
+            label: 'Back',
+            icon: Icons.arrow_back_outlined,
+            onPressed: back,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+        ],
+        if (second != null) ...[
+          SecondaryButton(label: second, onPressed: onSecondary),
+          const SizedBox(width: AppSpacing.sm),
+        ],
+        PrimaryButton(label: label, onPressed: onPressed),
+      ],
     );
   }
 }
@@ -661,19 +665,16 @@ class _RecapBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final deviceName = device == _AirgapDevice.seedSigner
-        ? 'SeedSigner'
-        : 'Jade';
     final fingerprint = wallet.masterFingerprint ?? '';
 
     return PairingRecapView(
       walletName: wallet.name,
-      deviceLabel: '$deviceName (air-gap, QR)',
+      deviceLabel: '${_deviceName(device)} (air-gap, QR)',
       fingerprint: fingerprint,
       networks: [
         PairingNetwork(
           name: 'Bitcoin',
-          icon: Icons.currency_bitcoin,
+          icon: Icons.currency_bitcoin_outlined,
           color: s.bitcoin,
           ok: true,
           detail: 'Watch-only here · your device signs the PSBT offline',
@@ -682,7 +683,7 @@ class _RecapBody extends StatelessWidget {
         if (liquidWanted)
           PairingNetwork(
             name: 'Liquid Network',
-            icon: Icons.water_drop_rounded,
+            icon: Icons.water_drop_outlined,
             color: s.liquid,
             ok: false,
             // Not a missing feature: Jade's QR mode never exports the blinding
@@ -706,7 +707,7 @@ class _RecapBody extends StatelessWidget {
           detail: fingerprint.isNotEmpty ? fingerprint : 'none found',
         ),
         const PairingCheck(
-          label: 'No private key stored on this computer',
+          label: 'No private key stored in this app',
           passed: true,
         ),
       ],

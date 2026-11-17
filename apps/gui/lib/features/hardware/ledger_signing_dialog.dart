@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_colors.dart';
+import '../../shared/widgets/buttons.dart';
+import '../../shared/widgets/hybrid_kit.dart';
+import '../../shared/widgets/seal_mark.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 
@@ -10,8 +13,8 @@ import '../../theme/app_typography.dart';
 /// Without it, the flow starts directly at [signing].
 enum _SignPhase { verifying, verifyConfirm, signing, broadcasting, done, error }
 
-/// Run [task] (build + sign on device + broadcast) behind an animated Ledger
-/// dialog. Resolves with the txid on success, or null if the user cancelled.
+/// Run [task] (build + sign on device + broadcast) behind a dialog that lists
+/// the device's steps. Resolves with the txid on success, or null if the user cancelled.
 ///
 /// If [verifyTask] is given, the dialog first asks the device to display a wallet
 /// address and waits for the user to confirm it matches the device screen before
@@ -61,27 +64,19 @@ class LedgerSigningDialog extends StatefulWidget {
   State<LedgerSigningDialog> createState() => _LedgerSigningDialogState();
 }
 
-class _LedgerSigningDialogState extends State<LedgerSigningDialog>
-    with TickerProviderStateMixin {
-  late final AnimationController _pulse;
-  late final AnimationController _shake;
-
+class _LedgerSigningDialogState extends State<LedgerSigningDialog> {
   _SignPhase _phase = _SignPhase.signing;
   String? _txid;
   String? _error;
   String? _verifyAddress;
 
+  /// The phase that was running when an error landed — the step the list
+  /// marks as failed.
+  _SignPhase _failedAt = _SignPhase.signing;
+
   @override
   void initState() {
     super.initState();
-    _pulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat();
-    _shake = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    );
     if (widget.verifyTask != null) {
       _startVerify();
     } else {
@@ -96,23 +91,20 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog>
       _phase = _SignPhase.verifying;
       _error = null;
     });
-    _pulse.repeat();
     try {
       final addr = await widget.verifyTask!();
       if (!mounted) return;
-      _pulse.stop();
       setState(() {
         _phase = _SignPhase.verifyConfirm;
         _verifyAddress = addr;
       });
     } catch (e) {
       if (!mounted) return;
-      _pulse.stop();
       setState(() {
+        _failedAt = _SignPhase.verifying;
         _phase = _SignPhase.error;
         _error = widget.formatError?.call(e.toString()) ?? e.toString();
       });
-      _shake.forward(from: 0);
     }
   }
 
@@ -121,101 +113,138 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog>
       _phase = _SignPhase.signing;
       _error = null;
     });
-    _pulse.repeat();
     try {
       final txid = await widget.task();
       if (!mounted) return;
       if (!widget.signOnly) {
         // Brief broadcasting beat so the success feels sequenced, not instant.
         setState(() => _phase = _SignPhase.broadcasting);
-        _pulse.stop();
         await Future.delayed(const Duration(milliseconds: 600));
         if (!mounted) return;
       }
-      _pulse.stop();
       setState(() {
         _phase = _SignPhase.done;
         _txid = txid;
       });
-      // Hold the green tick briefly, then hand the result back to the caller
-      // (the txid and its success screen, or the signed transaction for the
-      // quorum chart to take in).
+      // Hold the stamped seal briefly, then hand the result back to the
+      // caller (the txid and its success screen, or the signed transaction
+      // for the quorum chart to take in).
       await Future.delayed(
         Duration(milliseconds: widget.signOnly ? 700 : 1000),
       );
       if (mounted) Navigator.of(context).pop(_txid);
     } catch (e) {
       if (!mounted) return;
-      _pulse.stop();
       final raw = e.toString();
       setState(() {
+        _failedAt = _SignPhase.signing;
         _phase = _SignPhase.error;
         _error = widget.formatError?.call(raw) ?? raw;
       });
-      _shake.forward(from: 0);
     }
   }
 
-  @override
-  void dispose() {
-    _pulse.dispose();
-    _shake.dispose();
-    super.dispose();
+  /// The round-trip as a list of steps, each marked against the phase the
+  /// dialog is really in.
+  List<(String, _StepState)> get _steps {
+    final order = <_SignPhase>[
+      if (widget.verifyTask != null) ...[
+        _SignPhase.verifying,
+        _SignPhase.verifyConfirm,
+      ],
+      _SignPhase.signing,
+      if (!widget.signOnly) _SignPhase.broadcasting,
+    ];
+    final at = switch (_phase) {
+      _SignPhase.done => order.length,
+      _SignPhase.error => order.indexOf(_failedAt),
+      final p => order.indexOf(p),
+    };
+    String label(_SignPhase p) => switch (p) {
+      _SignPhase.verifying => 'Show a wallet address on the device',
+      _SignPhase.verifyConfirm => 'Check it matches the device screen',
+      _SignPhase.signing => 'Approve on the device',
+      _SignPhase.broadcasting => 'Broadcast the transaction',
+      _ => '',
+    };
+    return [
+      for (var i = 0; i < order.length; i++)
+        (
+          label(order[i]),
+          i < at
+              ? _StepState.done
+              : i > at
+              ? _StepState.pending
+              : _phase == _SignPhase.error
+              ? _StepState.failed
+              // Waiting on the user's eyes, not on the device: no spinner.
+              : order[i] == _SignPhase.verifyConfirm
+              ? _StepState.waiting
+              : _StepState.current,
+        ),
+    ];
   }
+
+  /// The device has handed back its signature: the task returned. True for
+  /// the broadcast beat as well, which only runs after it.
+  bool get _signed =>
+      _phase == _SignPhase.done || _phase == _SignPhase.broadcasting;
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     return AlertDialog(
       title: Text(_title),
       content: SizedBox(
-        width: 360,
+        width: 400,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            _DeviceSteps(steps: _steps),
             const SizedBox(height: AppSpacing.md),
-            _LedgerGraphic(pulse: _pulse, shake: _shake, phase: _phase),
-            const SizedBox(height: AppSpacing.xl),
-            Text(
-              _message,
-              textAlign: TextAlign.center,
-              style: AppTypography.body,
-            ),
-            if (_phase == _SignPhase.signing ||
-                _phase == _SignPhase.verifying) ...[
-              const SizedBox(height: AppSpacing.md),
+            if (_signed) ...[
+              // The one moment in this dialog that is a signature: the seal,
+              // stamped, and nothing else.
               Row(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                  const SealMark(
+                    stamped: true,
+                    size: 32,
+                    semanticLabel: 'Signed on device',
                   ),
-                  const SizedBox(width: AppSpacing.sm),
+                  const SizedBox(width: AppSpacing.md),
                   Text(
-                    'Do not disconnect the device.',
-                    style: AppTypography.caption.copyWith(
-                      color: AppColors.warning,
+                    'Signed on device',
+                    style: AppTypography.body.copyWith(
+                      color: s.ink,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
+            Text(
+              _message,
+              style: AppTypography.body.copyWith(color: s.inkSecondary),
+            ),
+            if (_phase == _SignPhase.signing ||
+                _phase == _SignPhase.verifying) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Do not disconnect the device',
+                style: AppTypography.caption.copyWith(color: s.warning),
               ),
             ],
             if (_phase == _SignPhase.verifyConfirm &&
                 _verifyAddress != null) ...[
               const SizedBox(height: AppSpacing.md),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: AppColors.codeBoxBg,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.codeBoxBorder),
-                ),
+              DataWell(
                 child: SelectableText(
                   _verifyAddress!,
                   textAlign: TextAlign.center,
-                  style: AppTypography.mono,
+                  style: AppTypography.mono.copyWith(color: s.ink),
                 ),
               ),
             ],
@@ -223,8 +252,7 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog>
               const SizedBox(height: AppSpacing.md),
               Text(
                 _error!,
-                textAlign: TextAlign.center,
-                style: AppTypography.caption.copyWith(color: AppColors.danger),
+                style: AppTypography.caption.copyWith(color: s.danger),
               ),
             ],
           ],
@@ -261,7 +289,7 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog>
       widget.signOnly
           ? 'The device signed. Its signature is being added to the '
                 'transaction.'
-          : 'Your transaction was broadcast successfully.',
+          : 'Your transaction was broadcast.',
     _SignPhase.error => 'The device did not complete signing.',
   };
 
@@ -271,171 +299,103 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog>
     _SignPhase.broadcasting ||
     _SignPhase.done => null,
     _SignPhase.verifyConfirm => [
-      TextButton(
+      GhostButton(
+        label: 'Cancel',
         onPressed: () => Navigator.of(context).pop(null),
-        child: const Text('Cancel'),
       ),
-      FilledButton(onPressed: _run, child: const Text('It matches — sign')),
+      PrimaryButton(label: 'It matches — sign', onPressed: _run),
     ],
     _SignPhase.error => [
-      TextButton(
+      GhostButton(
+        label: 'Cancel',
         onPressed: () => Navigator.of(context).pop(null),
-        child: const Text('Cancel'),
       ),
-      FilledButton(
+      PrimaryButton(
+        label: 'Retry',
         onPressed: widget.verifyTask != null ? _startVerify : _run,
-        child: const Text('Retry'),
       ),
     ],
   };
 }
 
-/// Stylised Ledger Nano: a body with a screen and two side buttons that pulse
-/// while waiting, flips to a green tick on success / red on error.
-class _LedgerGraphic extends StatelessWidget {
-  const _LedgerGraphic({
-    required this.pulse,
-    required this.shake,
-    required this.phase,
-  });
+enum _StepState { done, current, waiting, pending, failed }
 
-  final AnimationController pulse;
-  final AnimationController shake;
-  final _SignPhase phase;
+/// A device's steps, one per line: done ones with a neutral check, the live
+/// one with a small spinner, one waiting on the user with a ring, a failed one
+/// with a cross, the rest in the faint ink.
+class _DeviceSteps extends StatelessWidget {
+  const _DeviceSteps({required this.steps});
+
+  final List<(String, _StepState)> steps;
 
   @override
   Widget build(BuildContext context) {
-    final isDone = phase == _SignPhase.done;
-    final isError = phase == _SignPhase.error;
-
-    if (isDone) {
-      return _Badge(
-        bg: AppColors.successLight,
-        fg: AppColors.success,
-        icon: Icons.check_rounded,
-      );
-    }
-
-    final body = AnimatedBuilder(
-      animation: Listenable.merge([pulse, shake]),
-      builder: (_, _) {
-        final t = pulse.value;
-        final glow = (0.4 + 0.6 * (0.5 + 0.5 * _sin(t))).clamp(0.0, 1.0);
-        final dx = isError ? _shakeOffset(shake.value) : 0.0;
-        final accent = isError ? AppColors.danger : AppColors.accent;
-        return Transform.translate(
-          offset: Offset(dx, 0),
-          child: SizedBox(
-            width: 150,
-            height: 64,
+    final s = AppScheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (label, state) in steps)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Device body with a screen.
-                Container(
-                  width: 110,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2B2F36),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  alignment: Alignment.center,
-                  child: Container(
-                    width: 78,
-                    height: 26,
-                    decoration: BoxDecoration(
-                      color: Colors.black,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: accent.withValues(alpha: isError ? 0.9 : glow),
-                        width: 1.5,
+                SizedBox(
+                  width: AppSpacing.iconSmall,
+                  height: 20,
+                  child: Center(
+                    child: switch (state) {
+                      _StepState.done => Icon(
+                        Icons.check_outlined,
+                        size: AppSpacing.iconSmall,
+                        color: s.inkSecondary,
                       ),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      isError ? Icons.close_rounded : Icons.check_rounded,
-                      size: 16,
-                      color: accent.withValues(alpha: isError ? 1.0 : glow),
-                    ),
+                      _StepState.current => const SizedBox(
+                        width: AppSpacing.md,
+                        height: AppSpacing.md,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      _StepState.waiting => Container(
+                        width: AppSpacing.sm,
+                        height: AppSpacing.sm,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: s.ink, width: 1.5),
+                        ),
+                      ),
+                      _StepState.failed => Icon(
+                        Icons.close_outlined,
+                        size: AppSpacing.iconSmall,
+                        color: s.danger,
+                      ),
+                      _StepState.pending => Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: s.inkFaint,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    },
                   ),
                 ),
-                const SizedBox(width: 6),
-                // Two side buttons that pulse.
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _button(accent, isError ? 1.0 : glow),
-                    const SizedBox(height: 6),
-                    _button(accent, isError ? 1.0 : glow),
-                  ],
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: AppTypography.body.copyWith(
+                      color: switch (state) {
+                        _StepState.done => s.inkSecondary,
+                        _StepState.pending => s.inkFaint,
+                        _ => s.ink,
+                      },
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-        );
-      },
-    );
-    return body;
-  }
-
-  Widget _button(Color color, double glow) {
-    return Container(
-      width: 14,
-      height: 14,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color.withValues(alpha: 0.15 + 0.55 * glow),
-        border: Border.all(color: color, width: 1.5),
-      ),
-    );
-  }
-
-  // Cheap sine without importing dart:math at call sites.
-  double _sin(double t) {
-    // t in [0,1] → approximate one full sine cycle.
-    const twoPi = 6.283185307179586;
-    final x = t * twoPi;
-    // Bhaskara I approximation, good enough for a glow.
-    final xn = x % twoPi;
-    final s = xn <= 3.141592653589793
-        ? _bhaskara(xn)
-        : -_bhaskara(xn - 3.141592653589793);
-    return s;
-  }
-
-  double _bhaskara(double x) {
-    const pi = 3.141592653589793;
-    return (16 * x * (pi - x)) / (5 * pi * pi - 4 * x * (pi - x));
-  }
-
-  double _shakeOffset(double v) {
-    // Damped left-right shake over the controller's run.
-    final decay = (1 - v);
-    return _sin(v * 3) * 8 * decay;
-  }
-}
-
-class _Badge extends StatelessWidget {
-  const _Badge({required this.bg, required this.fg, required this.icon});
-  final Color bg;
-  final Color fg;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.6, end: 1),
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeOutBack,
-      builder: (_, scale, _) => Transform.scale(
-        scale: scale,
-        child: Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-          child: Icon(icon, color: fg, size: 36),
-        ),
-      ),
+      ],
     );
   }
 }

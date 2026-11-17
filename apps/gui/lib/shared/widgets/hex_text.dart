@@ -57,7 +57,9 @@ class MiddleEllipsisText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = style ?? AppTypography.monoSmall;
+    final base =
+        style ??
+        AppTypography.monoSmall.copyWith(color: AppScheme.of(context).ink);
     return LayoutBuilder(
       builder: (ctx, c) {
         final shown = c.hasBoundedWidth
@@ -76,15 +78,16 @@ class MiddleEllipsisText extends StatelessWidget {
   }
 }
 
-/// Sparrow-style rendering of addresses / txids / outpoints: the first and
-/// last four characters are highlighted in two distinct colors so endpoints
-/// can be spot-checked at a glance, the middle stays dimmed.
+/// Addresses / txids / outpoints with their ends set apart: the first and
+/// last four characters in the primary ink, the middle in the faint ink, so
+/// the endpoints can be spot-checked at a glance. Ink roles only — no hue:
+/// colour on a hash would read as a status it does not have.
 ///
 /// With [truncate] the middle collapses to `first12…last8` (matching the
 /// truncation already used across the app); with [fit] it collapses to
 /// exactly what the available width holds, so a ~120 dp phone cell still
-/// shows both ends. The head/tail highlights always cover the visible first
-/// and last four characters.
+/// shows both ends. The emphasis always covers the visible first and last
+/// four characters.
 class HexText extends StatelessWidget {
   const HexText(
     this.value, {
@@ -109,7 +112,7 @@ class HexText extends StatelessWidget {
   /// Base style; defaults to [AppTypography.monoSmall].
   final TextStyle? style;
 
-  /// Ink for the dimmed middle; defaults to the scheme's secondary ink.
+  /// Ink for the dimmed middle; defaults to the scheme's faint ink.
   final Color? color;
 
   /// Render as [SelectableText] (copies the FULL value even when truncated
@@ -121,7 +124,7 @@ class HexText extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final base = (style ?? AppTypography.monoSmall).copyWith(
-      color: color ?? s.inkSecondary,
+      color: color ?? s.inkFaint,
     );
 
     if (fit) {
@@ -143,14 +146,7 @@ class HexText extends StatelessWidget {
   }
 
   Widget _render(AppScheme s, TextStyle base, String shown) {
-    final headStyle = base.copyWith(
-      color: s.accent,
-      fontWeight: FontWeight.w600,
-    );
-    final tailStyle = base.copyWith(
-      color: s.bitcoin,
-      fontWeight: FontWeight.w600,
-    );
+    final endStyle = base.copyWith(color: s.ink);
 
     // Too short to decompose — plain text.
     if (shown.length <= 8) {
@@ -159,9 +155,9 @@ class HexText extends StatelessWidget {
 
     final span = TextSpan(
       children: [
-        TextSpan(text: shown.substring(0, 4), style: headStyle),
+        TextSpan(text: shown.substring(0, 4), style: endStyle),
         TextSpan(text: shown.substring(4, shown.length - 4), style: base),
-        TextSpan(text: shown.substring(shown.length - 4), style: tailStyle),
+        TextSpan(text: shown.substring(shown.length - 4), style: endStyle),
       ],
     );
 

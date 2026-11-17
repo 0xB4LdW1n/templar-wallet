@@ -12,7 +12,7 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import '../models/cosigner_label.dart';
 import 'buttons.dart';
-import 'glass_dialog.dart';
+import 'app_dialog.dart';
 import 'list_rows.dart';
 
 /// Opens the editor for [label]. Returns the edited label, or null if
@@ -69,7 +69,7 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final accent = _color == null ? s.accent : Color(_color!);
+    final phone = AppLayout.isPhone(context);
     return AppDialog(
       title: Text('Name key ${widget.index + 1}'),
       scrollable: true,
@@ -82,86 +82,55 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
             if (widget.subtitle case final sub?) ...[
               Text(
                 sub,
-                style: AppTypography.caption.copyWith(color: s.inkSecondary),
+                style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.lg),
             ],
-            Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.14),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: accent),
-                  ),
-                  child: Icon(
-                    cosignerIcons[_iconId] ?? defaultCosignerIcon,
-                    color: accent,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: TextField(
-                    controller: _name,
-                    autofocus: true,
-                    maxLength: 40,
-                    decoration: const InputDecoration(
-                      labelText: 'Name',
-                      hintText: 'Jade in the safe, Anna’s phone…',
-                      counterText: '',
-                    ),
-                    onSubmitted: (_) => _submit(),
-                  ),
-                ),
-              ],
+            const ListSectionLabel(label: 'Name'),
+            TextField(
+              controller: _name,
+              autofocus: true,
+              maxLength: 40,
+              style: AppTypography.bodyOf(context).copyWith(color: s.ink),
+              decoration: const InputDecoration(
+                hintText: 'Jade in the safe',
+                counterText: '',
+              ),
+              onSubmitted: (_) => _submit(),
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.xl),
             const ListSectionLabel(label: 'Icon'),
-            const SizedBox(height: AppSpacing.sm),
             Wrap(
               spacing: AppSpacing.sm,
               runSpacing: AppSpacing.sm,
               children: [
                 for (final entry in cosignerIcons.entries)
-                  _Swatch(
+                  _IconSwatch(
                     selected: _iconId == entry.key,
-                    color: accent,
+                    icon: entry.value,
                     onTap: () => setState(
                       () => _iconId = _iconId == entry.key ? null : entry.key,
                     ),
-                    child: Icon(entry.value, size: 18),
                   ),
               ],
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.xl),
             const ListSectionLabel(label: 'Colour'),
-            const SizedBox(height: AppSpacing.sm),
             Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
+              spacing: phone ? 0 : AppSpacing.xs,
+              runSpacing: phone ? 0 : AppSpacing.xs,
               children: [
                 for (final value in cosignerColors)
-                  _Swatch(
+                  _ColorSwatch(
                     selected: _color == value,
                     color: Color(value),
                     onTap: () =>
                         setState(() => _color = _color == value ? null : value),
-                    child: Container(
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: Color(value),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
                   ),
               ],
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.xl),
             const ListSectionLabel(label: 'Signs on'),
-            const SizedBox(height: AppSpacing.sm),
             // The one label field that changes what the app offers: a key
             // flagged as hardware makes the co-signing sheet show "Sign with
             // USB hardware wallet" while its signature is missing.
@@ -172,15 +141,14 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
               ),
               decoration: BoxDecoration(
                 color: s.panelInset,
-                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                border: Border.all(color: s.edge),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               ),
               child: Row(
                 children: [
                   Icon(
-                    Icons.usb_rounded,
-                    size: 18,
-                    color: _hardware ? accent : s.inkSecondary,
+                    Icons.usb_outlined,
+                    size: AppSpacing.icon,
+                    color: s.inkSecondary,
                   ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
@@ -190,13 +158,14 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
                         Text(
                           'USB hardware wallet',
                           style: AppTypography.body.copyWith(
-                            fontWeight: FontWeight.w600,
+                            color: s.ink,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                         Text(
-                          'A Ledger or Jade plugged into this computer. '
-                          'Co-signing then offers “Sign with USB hardware '
-                          'wallet” for this key.',
+                          'A Ledger or Jade connected over USB. Co-signing '
+                          'then offers “Sign with USB hardware wallet” for '
+                          'this key.',
                           style: AppTypography.caption.copyWith(
                             color: s.inkSecondary,
                           ),
@@ -217,7 +186,7 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
         ),
       ),
       actions: [
-        SecondaryButton(
+        GhostButton(
           label: 'Cancel',
           onPressed: () => Navigator.of(context).pop(),
         ),
@@ -244,41 +213,95 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
   }
 }
 
-/// One tappable choice in the icon or colour row.
-class _Swatch extends StatelessWidget {
-  const _Swatch({
+/// One glyph to choose. Selection is a surface step and a firmer edge, as
+/// everywhere else — the glyph never takes a colour.
+class _IconSwatch extends StatelessWidget {
+  const _IconSwatch({
+    required this.selected,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final side = AppLayout.isPhone(context) ? AppLayout.minTouchTarget : 40.0;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        hoverColor: s.hover,
+        splashFactory: NoSplash.splashFactory,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        child: Container(
+          width: side,
+          height: side,
+          decoration: BoxDecoration(
+            color: selected ? s.selected : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            border: Border.all(color: selected ? s.edgeStrong : s.edge),
+          ),
+          child: Icon(
+            icon,
+            size: AppSpacing.icon,
+            color: selected ? s.ink : s.inkSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One colour to choose: a 24 px disc. Chosen, it gets a 2 px ring in the
+/// primary ink, 2 px out from the disc.
+class _ColorSwatch extends StatelessWidget {
+  const _ColorSwatch({
     required this.selected,
     required this.color,
     required this.onTap,
-    required this.child,
   });
 
   final bool selected;
   final Color color;
   final VoidCallback onTap;
-  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: selected ? color.withValues(alpha: 0.16) : s.panelInset,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-          border: Border.all(
-            color: selected ? color : s.edge,
-            width: selected ? 2 : 1,
-          ),
-        ),
-        child: Center(
-          child: IconTheme(
-            data: IconThemeData(color: selected ? color : s.inkSecondary),
-            child: child,
+    // 24 disc + 2 gap + 2 ring on each side = 32; a phone pads the target
+    // out to 48 around it.
+    final target = AppLayout.isPhone(context) ? AppLayout.minTouchTarget : 32.0;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkResponse(
+        onTap: onTap,
+        radius: target / 2,
+        splashFactory: NoSplash.splashFactory,
+        child: SizedBox(
+          width: target,
+          height: target,
+          child: Center(
+            child: Container(
+              width: 32,
+              height: 32,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected ? s.ink : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+              child: Container(
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+            ),
           ),
         ),
       ),

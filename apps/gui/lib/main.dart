@@ -11,6 +11,7 @@ import 'package:flutter/services.dart'
         SystemChrome,
         SystemUiMode,
         SystemUiOverlayStyle;
+import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'app/app_state.dart';
@@ -36,6 +37,10 @@ void main() {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // Every weight the interface uses is vendored in assets/fonts/. A
+      // wallet does not ask a font CDN for anything: if a style ever names a
+      // weight that is not bundled, it falls back locally instead.
+      GoogleFonts.config.allowRuntimeFetching = false;
       if (Platform.isAndroid) {
         // Draw under the status and navigation bars — what Android 15 enforces
         // anyway, opted into here for every version. Screens keep their content

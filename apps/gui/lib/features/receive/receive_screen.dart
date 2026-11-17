@@ -11,6 +11,8 @@ import '../../bridge/wallet_bridge.dart';
 import '../../services/price_service.dart';
 import '../../shared/amount_units.dart';
 import '../../shared/payment_uri.dart';
+import '../../shared/widgets/address_tag.dart';
+import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/chain_switch.dart';
 import '../../shared/widgets/cards.dart';
@@ -18,11 +20,14 @@ import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/list_rows.dart';
 import '../../shared/widgets/page_header.dart';
 import '../../shared/widgets/unit_chip.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import '../../services/address_label_store.dart';
 import '../hardware/hw_error.dart';
+import 'address_dialogs.dart';
+import 'address_rows.dart';
 import 'models/address_info.dart';
 
 class ReceiveScreen extends StatefulWidget {
@@ -54,14 +59,21 @@ const int _requestAmountMaxLength = 16;
 /// page ([AppRoutes.receiveAddresses]).
 const int _previousPreview = 8;
 
+/// The QR's side on desktop. A phone takes [AppLayout.qrSide].
+const double _qrSideDesktop = 240;
+
+/// The address card's widest: the QR plus its frame, with room for an
+/// address on two lines beside the copy control.
+const double _addressCardMaxWidth = 440;
+
 class _ReceiveScreenState extends State<ReceiveScreen> {
   late final WalletBridge _bridge = widget.bridge ?? walletBridge;
 
-  /// Last good answer per wallet and chain, mobile only. The carousel
-  /// rebuilds this screen on every arrival, and a spinner on each swipe reads
-  /// as "not working"; the cached address is shown at once while the refresh
-  /// runs behind it. Plain visits ask for the last unused address, so the
-  /// cache and the refresh agree unless funds arrived in between.
+  /// Last good answer per wallet and chain, mobile only. Arriving on this
+  /// screen from the Dashboard should not greet the user with a spinner; the
+  /// cached address is shown at once while the refresh runs behind it. Plain
+  /// visits ask for the last unused address, so the cache and the refresh
+  /// agree unless funds arrived in between.
   static final Map<String, ({AddressInfo current, List<AddressInfo> previous})>
   _cache = {};
 
@@ -114,6 +126,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   @override
   void initState() {
     super.initState();
+    AddressLabelStore.instance.load();
     // A Liquid-only wallet has no Bitcoin side to ask: opening on the BTC tab
     // would greet the user with "Bitcoin wallet not open" instead of the
     // address they came for.
@@ -197,7 +210,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   /// The copy button names what it puts on the clipboard: an address until
   /// something is asked for, the whole request afterwards.
   String get _copyLabel {
-    if (_copied) return 'Copied!';
+    if (_copied) return 'Copied';
     return _paymentUri != null ? 'Copy payment link' : 'Copy address';
   }
 
@@ -261,17 +274,18 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
 
   /// The other reading of the amount, under the field while it is typed —
   /// "≈ €98.40" under a coin figure, "≈ 0.00123456 BTC" under a fiat one.
+  /// Fiat goes through [PriceService], which owns its symbol and grouping.
   String? get _equivalentText {
     final sats = _requestSats;
     if (sats == null) return null;
     final price = PriceService.instance;
     if (!price.hasPrice) return null;
-    return _fiatInput
-        ? '≈ ${AmountUnits.coinText(sats)} $_ticker'
-        : '≈ ${price.symbol}${AmountUnits.fiatText(sats, price.btcPrice)}';
+    if (_fiatInput) return '≈ ${AmountUnits.coinText(sats)} $_ticker';
+    final fiat = price.fiatDisplay(sats);
+    return fiat == null ? null : '≈ $fiat';
   }
 
-  /// One line naming what is being asked for, shown beside the section's
+  /// One line naming what is being asked for, shown under the section's
   /// title so a closed request is still a stated fact and not a surprise
   /// hiding inside the QR.
   String? get _requestSummary {
@@ -279,10 +293,8 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     final note = _requestNote;
     if (sats == null) return note.isEmpty ? null : note;
     final coin = '${PaymentUri.amountText(sats)} $_ticker';
-    final fiat = PriceService.instance.hasPrice
-        ? ' ≈ ${PriceService.instance.symbol}'
-              '${AmountUnits.fiatText(sats, PriceService.instance.btcPrice)}'
-        : '';
+    final fiatText = PriceService.instance.fiatDisplay(sats);
+    final fiat = fiatText == null ? '' : ' ≈ $fiatText';
     return note.isEmpty ? '$coin$fiat' : '$coin$fiat · $note';
   }
 
@@ -290,19 +302,10 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     if (_current == null) return;
     await Clipboard.setData(ClipboardData(text: _shareData));
     if (!mounted) return;
-    _confirmCopyOnPhone(context);
+    confirmCopyOnPhone(context);
     setState(() => _copied = true);
-    await Future.delayed(const Duration(seconds: 2));
+    await Future.delayed(kCopiedFor);
     if (mounted) setState(() => _copied = false);
-  }
-
-  /// Copies a previous address from the phone list. Nothing to reset
-  /// afterwards: the haptic and the snackbar are the receipt, so the row
-  /// needs no per-row "copied" state and no glyph that flips to a check.
-  Future<void> _copyPrevious(String address) async {
-    await Clipboard.setData(ClipboardData(text: address));
-    if (!mounted) return;
-    _confirmCopyOnPhone(context);
   }
 
   /// Phone only: the system share sheet, so the address can go straight into
@@ -385,70 +388,35 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
     final summary = _requestSummary;
-    final header = InkWell(
+    final header = _RequestHeader(
+      open: _requestOpen,
+      summary: summary,
       onTap: () => setState(() => _requestOpen = !_requestOpen),
-      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          minHeight: phone ? AppLayout.minTouchTarget : 0,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-          child: Row(
-            children: [
-              Icon(
-                Icons.request_quote_outlined,
-                size: 18,
-                // Crimson only once a figure is actually being asked for:
-                // the accent marks state, and an empty request is no state.
-                color: summary == null ? s.inkSecondary : s.accent,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Request an amount',
-                      style: AppTypography.body.copyWith(color: s.ink),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Text(
-                        summary ?? 'Optional — adds it to the QR and the link',
-                        style: AppTypography.caption.copyWith(
-                          color: summary == null ? s.inkFaint : s.inkSecondary,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                _requestOpen ? Icons.expand_less : Icons.expand_more,
-                size: 20,
-                color: s.inkFaint,
-              ),
-            ],
-          ),
-        ),
+    );
+    if (!_requestOpen) return header;
+
+    Widget label(String text) => Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Text(
+        text,
+        style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
       ),
     );
-    if (!_requestOpen) {
-      return Semantics(button: true, label: 'Request an amount', child: header);
-    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Semantics(button: true, label: 'Request an amount', child: header),
+        header,
         const SizedBox(height: AppSpacing.md),
-        if (phone) const ListSectionLabel(label: 'Amount'),
+        label('Amount'),
         TextField(
           controller: _amountCtrl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          style: AppTypography.numeric,
+          style: (phone ? AppTypography.bodyLarge : AppTypography.numeric)
+              .copyWith(
+                color: s.ink,
+                fontFeatures: AppTypography.numeric.fontFeatures,
+              ),
           maxLength: _requestAmountMaxLength,
           maxLengthEnforcement: MaxLengthEnforcement.enforced,
           decoration: InputDecoration(
@@ -480,16 +448,13 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
         ),
         if (_equivalentText case final approx?) ...[
           const SizedBox(height: AppSpacing.xs),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              approx,
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-            ),
+          Text(
+            approx,
+            style: AppTypography.numericSmall.copyWith(color: s.inkFaint),
           ),
         ],
         const SizedBox(height: AppSpacing.md),
-        if (phone) const ListSectionLabel(label: 'Note'),
+        label('Note'),
         TextField(
           controller: _labelCtrl,
           textCapitalization: TextCapitalization.sentences,
@@ -515,123 +480,57 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
       ? 'Native SegWit · a fresh address for every payment'
       : 'Confidential · the same blinded address can be reused';
 
+  /// Both chains present: the switch earns its place. A one-chain wallet has
+  /// nothing to choose, and the address card already says which chain it is.
+  bool _hasBothChains(AppState st) =>
+      st.activeWalletBitcoin && st.activeWalletLiquid;
+
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
-    // A chain this wallet lacks stays on the switch, dimmed: the FFI answers
-    // "Liquid wallet not open" / "Bitcoin wallet not open" for a side that
-    // does not exist, and a tab whose only outcome is an error is worse than
-    // an inert one.
     final st = context.watch<AppState>();
+    final chainSwitch = _hasBothChains(st)
+        ? ChainSwitch<String>(
+            selected: _selectedAsset,
+            onChanged: _switchAsset,
+            bitcoin: 'BTC',
+            liquid: 'LBTC',
+            expand: phone,
+          )
+        : null;
+
+    final Widget body;
+    if (_loading) {
+      body = const Padding(
+        padding: EdgeInsets.only(top: AppSpacing.xxl),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    } else if (_error != null) {
+      body = _LoadError(
+        message: phone ? _plainError(_error!) : _error!,
+        onRetry: _load,
+      );
+    } else if (phone) {
+      body = _phoneBody(context);
+    } else {
+      body = _desktopBody(context);
+    }
+
     return Scaffold(
       body: PageBackground.flat(
         child: ListView(
           padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
           children: [
-            PageHeader(
-              title: 'Receive',
-              // The phone shell already names the wallet in its header, and
-              // the caption inside the card says what kind of address this is.
-              subtitle: phone ? null : 'Generate a fresh address',
-              actions: [
-                // Same place, same control, same colours as UTXOs and
-                // Activity: which chain the page is on is decided top-right
-                // on every per-chain screen, and nowhere else.
-                ChainSwitch<String>(
-                  selected: _selectedAsset,
-                  onChanged: _switchAsset,
-                  bitcoin: 'BTC',
-                  liquid: 'LBTC',
-                  bitcoinEnabled: st.activeWalletBitcoin,
-                  liquidEnabled: st.activeWalletLiquid,
-                ),
+            // The phone shell's header already names the page; there the
+            // chain switch leads the column at full width.
+            if (phone) ...[
+              if (chainSwitch != null) ...[
+                chainSwitch,
+                const SizedBox(height: AppSpacing.lg),
               ],
-            ),
-            // Second row: what this section does with the chain chosen above.
-            // On a phone this row moves into the address card (caption as
-            // its subtitle, "New address" as its trailing action) — the two
-            // do not fit side by side on a 379 dp column.
-            if (!phone) ...[
-              Row(
-                children: [
-                  Text(
-                    _caption,
-                    style: AppTypography.caption.copyWith(
-                      color: s.inkSecondary,
-                    ),
-                  ),
-                  const Spacer(),
-                  // Liquid CT addresses stay stable — no regenerate there.
-                  if (_selectedAsset == 'BTC')
-                    SecondaryButton(
-                      label: 'New address',
-                      icon: Icons.refresh,
-                      onPressed: _newAddress,
-                    ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xl),
-            ],
-            if (_loading)
-              phone
-                  ? const Padding(
-                      padding: EdgeInsets.only(top: AppSpacing.xxl),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  : const Center(child: CircularProgressIndicator())
-            else if (_error != null)
-              Center(
-                child: Column(
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 40,
-                      color: AppColors.danger,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    SelectableText(
-                      phone ? _plainError(_error!) : _error!,
-                      style: AppTypography.caption,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    SecondaryButton(
-                      label: 'Retry',
-                      icon: Icons.refresh,
-                      onPressed: _load,
-                    ),
-                  ],
-                ),
-              )
-            else if (phone)
-              _phoneBody(context)
-            else if (!_hasPreviousList)
-              // Liquid: one confidential address, reused — there is no list
-              // of previous ones to put beside the card, so the card stands
-              // alone at the width the two-column layout would give it.
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 640),
-                  child: Reveal(child: _addressCard(context)),
-                ),
-              )
-            else
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // QR + address
-                  Expanded(child: Reveal(child: _addressCard(context))),
-                  const SizedBox(width: AppSpacing.xl),
-                  // Previous addresses — the newest eight, then the page.
-                  Expanded(
-                    child: Reveal(
-                      delay: 1,
-                      child: _desktopPreviousCard(context),
-                    ),
-                  ),
-                ],
-              ),
+            ] else
+              PageHeader(title: 'Receive', actions: [?chainSwitch]),
+            body,
           ],
         ),
       ),
@@ -650,38 +549,86 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   void _openAllAddresses() =>
       context.go('${AppRoutes.receiveAddresses}?asset=$_selectedAsset');
 
-  /// The desktop QR card: code, address well, request section, copy.
+  /// Two columns: the action on the left at a readable width, the history
+  /// on the right taking what is left.
+  Widget _desktopBody(BuildContext context) {
+    if (!_hasPreviousList) {
+      return Align(
+        alignment: Alignment.topLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: _addressCardMaxWidth),
+          child: Reveal(child: _addressCard(context)),
+        ),
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, c) {
+        // The card keeps its width while there is room and gives way to an
+        // even split in a narrow window, so the list never gets a sliver.
+        final cardWidth =
+            (c.maxWidth - AppSpacing.xl) / 2 < _addressCardMaxWidth
+            ? (c.maxWidth - AppSpacing.xl) / 2
+            : _addressCardMaxWidth;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: cardWidth,
+              child: Reveal(child: _addressCard(context)),
+            ),
+            const SizedBox(width: AppSpacing.xl),
+            Expanded(
+              child: Reveal(delay: 1, child: _desktopPreviousCard(context)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// The desktop address card: code, address, what kind it is, the request,
+  /// then the screen's one filled control.
   Widget _addressCard(BuildContext context) {
     final s = AppScheme.of(context);
     return FormCard(
-      title: 'Your address',
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Center(child: _QrTile(data: _shareData, side: 200)),
-          const SizedBox(height: AppSpacing.xl),
-          // The well always holds the address: it is what a
-          // human reads back to check, and the link's query
-          // is machine business. What the QR adds on top is
-          // named by the section right under it.
-          DataWell(
-            child: SelectableText(
-              _current!.address,
-              style: AppTypography.mono.copyWith(color: s.ink),
-              textAlign: TextAlign.center,
-            ),
+          Center(
+            child: _QrTile(data: _shareData, side: _qrSideDesktop),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          // The well always holds the address: it is what a human reads back
+          // to check, and the link's query is machine business. What the QR
+          // adds on top is named by the request section under it.
+          _AddressWell(info: _current!),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            _caption,
+            style: AppTypography.caption.copyWith(color: s.inkFaint),
           ),
           const SizedBox(height: AppSpacing.lg),
           _requestSection(context),
           const SizedBox(height: AppSpacing.lg),
           PrimaryButton(
             label: _copyLabel,
-            icon: _copied ? Icons.check : Icons.copy,
+            icon: _copied ? Icons.check_outlined : Icons.copy_outlined,
             isFullWidth: true,
             onPressed: _copyAddress,
           ),
+          // Liquid CT addresses stay stable — no regenerate there.
+          if (_selectedAsset == 'BTC') ...[
+            const SizedBox(height: AppSpacing.sm),
+            SecondaryButton(
+              label: 'New address',
+              icon: Icons.refresh_outlined,
+              isFullWidth: true,
+              onPressed: _newAddress,
+            ),
+          ],
           if (_canVerifyOnDevice) ...[
-            const SizedBox(height: AppSpacing.md),
-            _HwVerifyButton(
+            const SizedBox(height: AppSpacing.sm),
+            _HwVerify(
               verifying: _verifying,
               verified: _verified,
               error: _hwError,
@@ -693,53 +640,46 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     );
   }
 
-  /// The desktop list of previous addresses: the newest eight as rows, and
-  /// one quiet action to the page that lists every one with its amounts.
+  /// The desktop list of previous addresses: the newest eight as table rows,
+  /// and one quiet action to the page that lists every one.
   Widget _desktopPreviousCard(BuildContext context) {
     final s = AppScheme.of(context);
+    final useSats = context.select<AppState, bool>((st) => st.useSats);
     final previous = _previousNewestFirst;
     final shown = previous.take(_previousPreview).toList();
-    final hiddenCount = previous.length - shown.length;
     return SectionCard(
       title: 'Previous addresses',
       action: previous.isEmpty
           ? null
-          : GhostButton(
-              label: hiddenCount > 0
-                  ? 'Show all ($hiddenCount more)'
-                  : 'Show all',
-              onPressed: _openAllAddresses,
-            ),
+          : GhostButton(label: 'Show all', onPressed: _openAllAddresses),
+      padding: previous.isEmpty
+          ? null
+          : const EdgeInsets.only(bottom: AppSpacing.xs),
       child: previous.isEmpty
           ? Text(
               'No previous addresses',
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
+              style: AppTypography.body.copyWith(color: s.inkSecondary),
             )
-          : Column(children: [for (final a in shown) _AddressRow(info: a)]),
+          : AddressTable(
+              rows: [
+                for (final a in shown)
+                  AddressTableRow(info: a, useSats: useSats, coin: _ticker),
+              ],
+            ),
     );
   }
 
-  /// Single column for a 379 dp content column: the QR card first, at full
-  /// width with the code as large as the column allows, then the previous
-  /// addresses as one labelled list group.
+  /// One column for a 379 dp content column: the QR card and its actions,
+  /// the request, then the previous addresses as one list group.
   Widget _phoneBody(BuildContext context) {
     final s = AppScheme.of(context);
-    final address = _current!.address;
     final previous = _previousNewestFirst;
-    final previewCount = previous.length <= _previousPreview
-        ? previous.length
-        : _previousPreview;
-    final hiddenCount = previous.length - previewCount;
+    final preview = previous.take(_previousPreview).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Reveal(
           child: FormCard(
-            title: 'Your address',
-            subtitle: _caption,
-            // No trailing glyph here: "New address" moved down into the
-            // button stack, where it has a name. A tooltip is the only name
-            // an IconButton carries, and a finger never sees one.
             padding: const EdgeInsets.all(AppSpacing.cardPaddingSmall),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -751,48 +691,47 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                // Tap copies; long-press still selects. monoSmall keeps a
-                // bech32 address on one line and a CT address on two.
-                DataWell(
-                  child: SelectableText(
-                    address,
-                    style: AppTypography.monoSmall.copyWith(color: s.ink),
-                    textAlign: TextAlign.center,
-                    onTap: _copyAddress,
-                  ),
+                _AddressWell(info: _current!),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  _caption,
+                  style: AppTypography.caption.copyWith(color: s.inkFaint),
                 ),
-                const SizedBox(height: AppSpacing.md),
-                _requestSection(context),
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.lg),
                 PrimaryButton(
                   label: _copyLabel,
-                  icon: _copied ? Icons.check : Icons.copy,
+                  icon: _copied ? Icons.check_outlined : Icons.copy_outlined,
                   isFullWidth: true,
                   onPressed: _copyAddress,
                 ),
-                const SizedBox(height: AppSpacing.md),
-                SecondaryButton(
-                  label: 'Share',
-                  icon: Icons.share_outlined,
-                  isFullWidth: true,
-                  onPressed: _shareAddress,
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    // Liquid CT addresses stay stable — no regenerate there.
+                    if (_selectedAsset == 'BTC') ...[
+                      Expanded(
+                        child: SecondaryButton(
+                          label: 'New address',
+                          icon: Icons.refresh_outlined,
+                          isFullWidth: true,
+                          onPressed: _newAddress,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                    ],
+                    Expanded(
+                      child: SecondaryButton(
+                        label: 'Share',
+                        icon: Icons.share_outlined,
+                        isFullWidth: true,
+                        onPressed: _shareAddress,
+                      ),
+                    ),
+                  ],
                 ),
-                // Liquid CT addresses stay stable — no regenerate there.
-                // Stacked full width rather than sharing a line with Share:
-                // half of a 360 dp column leaves ~84 dp of label, and "New
-                // address" would ellipsise there.
-                if (_selectedAsset == 'BTC') ...[
-                  const SizedBox(height: AppSpacing.md),
-                  SecondaryButton(
-                    label: 'New address',
-                    icon: Icons.refresh,
-                    isFullWidth: true,
-                    onPressed: _newAddress,
-                  ),
-                ],
                 if (_canVerifyOnDevice) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  _HwVerifyButton(
+                  const SizedBox(height: AppSpacing.sm),
+                  _HwVerify(
                     verifying: _verifying,
                     verified: _verified,
                     error: _hwError,
@@ -803,16 +742,22 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
             ),
           ),
         ),
+        const SizedBox(height: AppSpacing.md),
+        Reveal(
+          delay: 1,
+          child: FormCard(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.cardPaddingSmall,
+              vertical: AppSpacing.xs,
+            ),
+            child: _requestSection(context),
+          ),
+        ),
         // Liquid's one address is the card above; nothing to list under it.
         if (_hasPreviousList) ...[
-          // The gap the Dashboard leaves between two labelled list groups.
           const SizedBox(height: AppSpacing.xl),
           Reveal(
-            delay: 1,
-            // The phone's list grammar — the same labelled group of rows the
-            // Dashboard and Settings draw, so a row means the same thing here.
-            // The empty state and "Show all" are rows in that card too, so the
-            // group keeps one shape whatever it holds.
+            delay: 2,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -820,24 +765,18 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                 ListCard(
                   children: [
                     if (previous.isEmpty)
-                      ListRow(
-                        icon: Icons.inbox_rounded,
-                        tint: s.inkFaint,
+                      const ListRow(
+                        icon: Icons.inbox_outlined,
                         title: 'No previous addresses',
-                        subtitle: 'Addresses you have used show up here',
                       )
                     else ...[
-                      for (final a in previous.take(previewCount))
-                        _previousRow(context, a),
-                      if (hiddenCount > 0)
-                        ListRow(
-                          icon: Icons.list_alt_rounded,
-                          tint: s.inkSecondary,
-                          title: 'Show all',
-                          subtitle: '$hiddenCount more, with amounts',
-                          chevron: true,
-                          onTap: _openAllAddresses,
-                        ),
+                      for (final a in preview) _previousRow(context, a),
+                      ListRow(
+                        icon: Icons.list_outlined,
+                        title: 'All addresses',
+                        chevron: true,
+                        onTap: _openAllAddresses,
+                      ),
                     ],
                   ],
                 ),
@@ -849,46 +788,193 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     );
   }
 
-  /// One previous address as a phone list row. The whole row is the copy
-  /// target — there is no small button to miss — and the snackbar confirms.
+  /// One previous address as a phone list row. The whole row opens the
+  /// address — its QR, a copy button, its label — so nothing small has to
+  /// be hit.
   Widget _previousRow(BuildContext context, AddressInfo a) {
     final s = AppScheme.of(context);
+    final useSats = context.select<AppState, bool>((st) => st.useSats);
     final funded = a.receivedSats > 0;
-    final short = _shortAddress(a.address, head: 10, tail: 8);
-    return ListRow(
-      // The glyph Activity already gives an incoming transaction: an address
-      // is where money arrives. The tint, not the glyph, says whether any
-      // has.
-      icon: Icons.south_west_rounded,
-      tint: funded ? s.success : s.inkFaint,
-      // A labelled address leads with its label; an unlabelled one has
-      // nothing to lead with but itself.
-      title: a.label ?? short,
-      subtitle: a.label == null ? '#${a.index}' : '#${a.index} · $short',
-      trailing: funded
-          ? ListAmount(value: '${a.receivedSats}', unit: 'sats', maxWidth: 120)
-          // Nothing received: the faint copy glyph says what the tap does.
-          : Icon(Icons.copy, size: 18, color: s.inkFaint),
-      onTap: () => _copyPrevious(a.address),
+    final short = shortAddress(a.address, head: 10, tail: 8);
+    final figure = receivedFigure(
+      a.receivedSats,
+      useSats: useSats,
+      coin: _ticker,
+    );
+    return ListenableBuilder(
+      listenable: AddressLabelStore.instance,
+      builder: (context, _) {
+        final label = addressLabelOf(a);
+        return ListRow(
+          // The glyph Activity gives an incoming transaction: an address is
+          // where money arrives.
+          icon: Icons.call_received_outlined,
+          // A labelled address leads with its tag, in its own colour; an
+          // unlabelled one has nothing to lead with but itself.
+          title: label ?? short,
+          titleWidget: label == null
+              ? null
+              : AddressTag(label: label, hue: addressHueOf(s, a.address)),
+          subtitle: label == null ? '#${a.index}' : '#${a.index} · $short',
+          trailing: funded
+              ? ListAmount(
+                  value: figure.value,
+                  unit: figure.unit,
+                  maxWidth: 128,
+                )
+              : Icon(
+                  Icons.chevron_right_outlined,
+                  size: AppSpacing.icon,
+                  color: s.inkFaint,
+                ),
+          onTap: () => showAddressDetail(
+            context,
+            info: a,
+            coin: _ticker,
+            useSats: useSats,
+          ),
+        );
+      },
     );
   }
 }
 
-/// Phone-only copy receipt: a light haptic plus a floating SnackBar. The thumb
-/// covers the button whose label just flipped to "Copied!", and Android 12
-/// and below show no system toast for clipboard writes.
-void _confirmCopyOnPhone(BuildContext context) {
-  if (!AppLayout.isPhone(context)) return;
-  HapticFeedback.lightImpact();
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      const SnackBar(
-        content: Text('Address copied'),
-        behavior: SnackBarBehavior.floating,
-        duration: Duration(seconds: 2),
+/// The closed face of the request: one row, a title and what is asked for,
+/// and a chevron that turns. The glyph stays in the secondary ink whether or
+/// not something is asked for — the subtitle carries that fact.
+class _RequestHeader extends StatefulWidget {
+  const _RequestHeader({
+    required this.open,
+    required this.summary,
+    required this.onTap,
+  });
+
+  final bool open;
+  final String? summary;
+  final VoidCallback onTap;
+
+  @override
+  State<_RequestHeader> createState() => _RequestHeaderState();
+}
+
+class _RequestHeaderState extends State<_RequestHeader> {
+  bool _focus = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    final summary = widget.summary;
+    return Semantics(
+      button: true,
+      expanded: widget.open,
+      label: 'Request an amount',
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onTap();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: Container(
+            constraints: BoxConstraints(
+              minHeight: phone ? AppLayout.minTouchTarget : 0,
+            ),
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            foregroundDecoration: _focus
+                ? BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                    border: Border.all(color: s.focus, width: 2),
+                  )
+                : null,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.request_quote_outlined,
+                  size: AppSpacing.icon,
+                  color: s.inkSecondary,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Request an amount',
+                        style: AppTypography.bodyOf(
+                          context,
+                        ).copyWith(color: s.ink),
+                      ),
+                      Text(
+                        summary ?? 'Optional — adds it to the QR and the link',
+                        style: AppTypography.caption.copyWith(
+                          color: summary == null ? s.inkFaint : s.inkSecondary,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                AnimatedRotation(
+                  turns: widget.open ? 0.5 : 0,
+                  duration: AppMotion.of(context, AppMotion.quick),
+                  curve: AppMotion.settle,
+                  child: Icon(
+                    Icons.expand_more_outlined,
+                    size: AppSpacing.icon,
+                    color: s.inkFaint,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
+  }
+}
+
+/// A failed load: what went wrong in the engine's words, and a retry.
+class _LoadError extends StatelessWidget {
+  const _LoadError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Column(
+          children: [
+            Icon(Icons.error_outline, size: AppSpacing.icon, color: s.danger),
+            const SizedBox(height: AppSpacing.sm),
+            SelectableText(
+              message,
+              style: AppTypography.body.copyWith(color: s.inkSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            SecondaryButton(
+              label: 'Retry',
+              icon: Icons.refresh_outlined,
+              onPressed: onRetry,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Drops the transport wrappers ("Exception: wallet-ffi: …") so the phone's
@@ -901,14 +987,9 @@ String _plainError(String raw) {
   return msg;
 }
 
-/// Middle-ellipsised address for a one-line row; short strings pass through.
-String _shortAddress(String address, {int head = 12, int tail = 8}) {
-  if (address.length <= head + tail + 1) return address;
-  return '${address.substring(0, head)}…${address.substring(address.length - tail)}';
-}
-
-/// The QR on its white tile, sized by the caller: 200 dp on desktop, the
-/// column width (capped) on a phone.
+/// The QR on a white square in both themes: a code needs its quiet zone,
+/// and a camera reads dark modules on white. No glow, no shadow — the
+/// square is the frame.
 class _QrTile extends StatelessWidget {
   const _QrTile({required this.data, required this.side});
 
@@ -922,14 +1003,6 @@ class _QrTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        // Soft accent halo lifts the QR off the glass.
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.accent.withValues(alpha: 0.20),
-            blurRadius: 28,
-            offset: const Offset(0, 6),
-          ),
-        ],
       ),
       // The payload is this QR's identity: a new one is a different code,
       // not a repaint of the old. It is also the only way a test can read
@@ -952,8 +1025,10 @@ class _QrTile extends StatelessWidget {
   }
 }
 
-class _HwVerifyButton extends StatelessWidget {
-  const _HwVerifyButton({
+/// "Verify on Ledger": a secondary action, its outcome stated under it — a
+/// short status in the success ink, or the device's error in a banner.
+class _HwVerify extends StatelessWidget {
+  const _HwVerify({
     required this.verifying,
     required this.verified,
     required this.error,
@@ -967,148 +1042,143 @@ class _HwVerifyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     if (verified) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.sm,
-        ),
-        decoration: BoxDecoration(
-          color: AppColors.success.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-          border: Border.all(color: AppColors.success.withValues(alpha: 0.4)),
-        ),
+      return SizedBox(
+        height: AppSpacing.controlHeight,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.verified, color: AppColors.success, size: 16),
+            Icon(
+              Icons.check_circle_outline,
+              size: AppSpacing.iconSmall,
+              color: s.success,
+            ),
             const SizedBox(width: AppSpacing.sm),
             Text(
               'Address confirmed on device',
-              style: AppTypography.label.copyWith(color: AppColors.success),
+              style: AppTypography.label.copyWith(color: s.ink),
             ),
           ],
         ),
       );
     }
-
-    if (error != null) {
-      return Column(
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.sm),
-            decoration: BoxDecoration(
-              color: AppColors.danger.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-            ),
-            child: Text(
-              error!,
-              style: AppTypography.caption.copyWith(color: AppColors.danger),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _verifyButton(onVerify),
-        ],
-      );
-    }
-
-    return _verifyButton(onVerify, loading: verifying);
-  }
-
-  Widget _verifyButton(VoidCallback onPress, {bool loading = false}) {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: loading ? null : onPress,
-        icon: loading
-            ? const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.usb, size: 16),
-        label: Text(loading ? 'Confirm on Ledger…' : 'Verify on Ledger'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.accent,
-          side: BorderSide(color: AppColors.accent.withValues(alpha: 0.5)),
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-          textStyle: AppTypography.label,
-        ),
-      ),
+    final button = SecondaryButton(
+      label: verifying ? 'Confirm on Ledger…' : 'Verify on Ledger',
+      icon: Icons.usb_outlined,
+      isLoading: verifying,
+      isFullWidth: true,
+      onPressed: onVerify,
+    );
+    final e = error;
+    if (e == null) return button;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DangerBanner(message: e),
+        const SizedBox(height: AppSpacing.sm),
+        button,
+      ],
     );
   }
 }
 
-/// One previous address on the desktop table: a single row, whole-row copy,
-/// fixed columns. The phone draws the same data through the shared list
-/// grammar instead (see _ReceiveScreenState._previousRow).
-class _AddressRow extends StatefulWidget {
-  const _AddressRow({required this.info});
+/// The address in the `well`: its label as a tag above it — or the dashed
+/// "add label" tag when it has none — then `mono` in the primary ink,
+/// selectable, wrapping to as many lines as it needs (two for a bech32
+/// address), with the copy control at the edge. The copy turns into a check
+/// for a moment.
+class _AddressWell extends StatefulWidget {
+  const _AddressWell({required this.info});
   final AddressInfo info;
 
   @override
-  State<_AddressRow> createState() => _AddressRowState();
+  State<_AddressWell> createState() => _AddressWellState();
 }
 
-class _AddressRowState extends State<_AddressRow> {
+class _AddressWellState extends State<_AddressWell> {
   bool _copied = false;
 
   Future<void> _copy() async {
     await Clipboard.setData(ClipboardData(text: widget.info.address));
     if (!mounted) return;
-    _confirmCopyOnPhone(context);
+    confirmCopyOnPhone(context);
     setState(() => _copied = true);
-    await Future.delayed(const Duration(seconds: 2));
+    await Future.delayed(kCopiedFor);
     if (mounted) setState(() => _copied = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    // Whole row is a copy target — hover tint invites the click.
-    return HoverRow(
-      onTap: _copy,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          vertical: AppSpacing.sm,
-          horizontal: AppSpacing.xs,
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 24,
-              child: Text(
-                '#${widget.info.index}',
-                style: AppTypography.caption,
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    final side = phone ? AppLayout.minTouchTarget : AppSpacing.xxl;
+    Widget action(IconData icon, String tooltip, VoidCallback onPressed) =>
+        SizedBox.square(
+          dimension: side,
+          child: IconButton(
+            tooltip: tooltip,
+            onPressed: onPressed,
+            padding: EdgeInsets.zero,
+            iconSize: phone ? 20 : AppSpacing.iconSmall,
+            color: s.inkSecondary,
+            icon: Icon(icon),
+          ),
+        );
+    void editLabel() => showAddressLabelPrompt(
+      context,
+      address: widget.info.address,
+      index: widget.info.index,
+    );
+    return ListenableBuilder(
+      listenable: AddressLabelStore.instance,
+      builder: (context, _) {
+        final label = addressLabelOf(widget.info);
+        return DataWell(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.sm,
+            AppSpacing.xs,
+            AppSpacing.sm,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // The label is a tag in the address's own colour, and
+                    // its own editor; an address without one says so with
+                    // a dashed tag, so "this can be labelled" is on screen
+                    // and not behind an icon.
+                    if (label == null)
+                      AddAddressTag(onTap: editLabel, label: 'Add label')
+                    else
+                      AddressTag(
+                        label: label,
+                        hue: addressHueOf(s, widget.info.address),
+                        onTap: editLabel,
+                        tooltip: 'Edit label',
+                      ),
+                    SizedBox(height: phone ? 0 : AppSpacing.sm),
+                    SelectableText(
+                      widget.info.address,
+                      style: AppTypography.mono.copyWith(color: s.ink),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Text(
-                _shortAddress(widget.info.address),
-                style: AppTypography.monoSmall,
-                overflow: TextOverflow.ellipsis,
+              const SizedBox(width: AppSpacing.xs),
+              action(
+                _copied ? Icons.check_outlined : Icons.copy_outlined,
+                _copied ? 'Copied' : 'Copy address',
+                _copy,
               ),
-            ),
-            if (widget.info.label != null)
-              Text(widget.info.label!, style: AppTypography.caption),
-            const SizedBox(width: AppSpacing.sm),
-            if (widget.info.receivedSats > 0)
-              Text(
-                '${widget.info.receivedSats} sats',
-                style: AppTypography.caption,
-              ),
-            IconButton(
-              icon: Icon(_copied ? Icons.check : Icons.copy, size: 14),
-              onPressed: _copy,
-              visualDensity: VisualDensity.compact,
-              color: _copied ? AppColors.success : AppColors.textMuted,
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

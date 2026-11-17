@@ -26,7 +26,8 @@ dependencies:
   # State management (lightweight ChangeNotifier wiring)
   provider: ^6.1.2
 
-  # Typography — IBM Plex Sans + Nunito + IBM Plex Mono via Google Fonts
+  # Typography — IBM Plex Sans + IBM Plex Mono, vendored in assets/fonts/ and
+  # resolved through google_fonts with runtime fetching switched off (main.dart)
   google_fonts: ^6.2.1
 
   # HTTP client for Blockstream explorer API

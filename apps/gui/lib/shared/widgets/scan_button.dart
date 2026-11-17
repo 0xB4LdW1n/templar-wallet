@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_spacing.dart';
+
 import 'ur_qr.dart';
 
 /// Camera-scan icon for any text field that takes an address, xpub, or
@@ -37,9 +39,12 @@ class ScanIconButton extends StatelessWidget {
     // that can only open an apology. Every field that hosts this widget also
     // has a Paste control right beside it, so the flow stays complete.
     if (!cameraScanSupported) return const SizedBox.shrink();
+    // The themed icon button: secondary ink, primary under the pointer.
+    final phone = AppLayout.isPhone(context);
     return IconButton(
       tooltip: tooltip,
-      icon: const Icon(Icons.qr_code_scanner),
+      iconSize: phone ? 22 : AppSpacing.icon,
+      icon: const Icon(Icons.qr_code_scanner_outlined),
       onPressed: () async {
         final outcome = await showUrScannerDialog(
           context,

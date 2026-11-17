@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../bridge/bridge_provider.dart';
 import '../../services/biometric_unlock_service.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'buttons.dart';
-import 'glass_dialog.dart';
+import 'app_dialog.dart';
 
 /// Ask for the app password immediately before a signature.
 ///
@@ -29,7 +30,7 @@ Future<bool> showSpendPasswordGate(
   String title = 'Confirm with your app password',
   String confirmLabel = 'Sign',
 }) async {
-  // Frosted dialog on desktop; on a phone [GlassDialog] renders as a bottom
+  // A dialog on desktop; on a phone [PromptDialog] renders as a bottom
   // sheet that rises with the keyboard, so the field is never covered.
   final ok = await showAppDialog<bool>(
     context,
@@ -100,54 +101,42 @@ class _SpendPasswordGateDialogState extends State<_SpendPasswordGateDialog> {
   @override
   Widget build(BuildContext context) {
     final phone = AppLayout.isPhone(context);
-
-    final cancel = TextButton(
+    final s = AppScheme.of(context);
+    // One primary — the confirm. Cancel is the quiet way out.
+    final cancel = GhostButton(
+      label: 'Cancel',
+      isFullWidth: phone,
       onPressed: _checking ? null : () => Navigator.of(context).pop(false),
-      child: const Text('Cancel'),
     );
-    final confirm = FilledButton(
+    final confirm = PrimaryButton(
+      label: widget.confirmLabel,
+      isLoading: _checking,
+      isFullWidth: phone,
       onPressed: _checking ? null : _submit,
-      child: _checking
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Text(widget.confirmLabel),
     );
 
     // While the vault is checking, the back gesture must not do what the
     // disabled Cancel refuses: the caller reads a dismissed gate as "no".
     return PopScope(
       canPop: !_checking,
-      child: GlassDialog(
+      child: PromptDialog(
         title: widget.title,
         icon: Icons.lock_outline,
-        actions: phone
-            ? [
-                // Stacked, full width: confirm where the thumb lands, Cancel
-                // as the quiet line beneath it.
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // No height clamp: the button states its own (54 dp on a
-                    // phone, the theme's on desktop). Pinning it to 48 made
-                    // the one confirm in the app six short of its siblings.
-                    confirm,
-                    const SizedBox(height: AppSpacing.xs),
-                    cancel,
-                  ],
-                ),
-              ]
-            : [cancel, confirm],
+        // Dialog order, quiet first: the phone sheet stacks them reversed,
+        // so the confirm lands on top where the thumb is.
+        actions: [cancel, confirm],
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.message, style: AppTypography.caption),
-            const SizedBox(height: AppSpacing.md),
-            GlassPasswordField(
+            Text(
+              widget.message,
+              style: AppTypography.bodyOf(
+                context,
+              ).copyWith(color: s.inkSecondary),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            PasswordField(
               controller: _ctrl,
               autofocus: true,
               errorText: _error,
@@ -252,7 +241,7 @@ class _BiometricGateButtonState extends State<BiometricGateButton> {
         alignment: Alignment.centerLeft,
         child: SecondaryButton(
           label: 'Use ${BiometricUnlockService.sensorName}',
-          icon: Icons.fingerprint,
+          icon: Icons.fingerprint_outlined,
           isFullWidth: widget.fullWidth,
           onPressed: _busy ? null : _prompt,
         ),

@@ -1,4 +1,4 @@
-// A loan card with a signature waiting: what it says, what it offers, and
+// A loan row with a signature waiting: what it says, what it offers, and
 // that "Sign now" hands back the loan's own templar:// link — nothing else.
 
 import 'package:flutter/material.dart';
@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/features/loans/loan_card.dart';
 import 'package:templar_wallet/features/protocol/models/protocol_portfolio.dart';
+import 'package:templar_wallet/shared/widgets/privacy.dart';
 import 'package:templar_wallet/theme/app_theme.dart';
 
 final Uri _link = Uri.parse(
@@ -106,41 +107,25 @@ void main() {
     );
     await t.pumpAndSettle();
 
-    // Who, where, what next.
+    // Who, where, what next: the reference, the role, the state as a word.
     expect(find.text('SQ-1'), findsOneWidget);
-    expect(find.text('You are the borrower'), findsOneWidget);
-    // The flow strip: collateral into the escrow, principal to you, what
-    // closes the loan back to the lender.
-    // "Collateral" names the flow row and the grid line.
-    expect(find.text('Collateral'), findsNWidgets(2));
-    expect(find.text('Escrow'), findsOneWidget);
-    expect(find.text('To repay'), findsOneWidget);
-    expect(find.text('Lender'), findsWidgets);
-    // The term ring reads the progress: (143 − 118) / (168 − 118) = 50%.
-    expect(find.text('50%'), findsOneWidget);
-    expect(find.text('ACTIVE'), findsOneWidget);
-    expect(find.text('Your signature'), findsOneWidget);
+    expect(find.text('Borrower'), findsOneWidget);
     expect(find.text('Sign the repayment of SQ-1'), findsOneWidget);
     expect(
       find.textContaining('Full repayment · request expires in 15 min'),
       findsOneWidget,
     );
+    expect(find.textContaining('Your signature'), findsOneWidget);
 
-    // Time: half the term run, 50 blocks ≈ 50 min, the due estimate.
+    // Time: the term in blocks, ≈ 50 min left, the due estimate.
     expect(find.byKey(const Key('loan-time-left')), findsOneWidget);
     expect(find.textContaining('≈ 50 min left'), findsOneWidget);
     expect(find.textContaining('due ≈'), findsOneWidget);
     expect(find.textContaining('Block 118 → 168'), findsOneWidget);
 
-    // Money, with the thousands grouped and the tickers beside.
-    expect(find.text('YOU OWE'), findsOneWidget);
-    expect(find.text('10,200'), findsOneWidget);
-    expect(find.text('rUSDt'), findsOneWidget);
-    // Principal and collateral appear in the flow strip and in the grid.
-    expect(find.text('10,000 rUSDt'), findsNWidgets(2));
-    expect(find.text('0.5 rLBTC'), findsNWidgets(2));
-    expect(find.text('200 rUSDt · 2%'), findsOneWidget);
-    expect(find.text('50 rUSDt · paid by borrower'), findsOneWidget);
+    // Principal and collateral at the right edge, grouped, with tickers.
+    expect(find.text('10,000 rUSDt'), findsOneWidget);
+    expect(find.text('0.5 rLBTC'), findsOneWidget);
 
     // Sign now goes through the card's callback with the request itself.
     final sign = find.byKey(const Key('loan-sign-1'));
@@ -151,16 +136,22 @@ void main() {
     expect(signed!.link, _link);
     expect(signed!.id, 'req_1');
 
-    await t.tap(find.byKey(const Key('loan-open-1')));
-    await t.pump();
-    expect(opened, 1);
-
-    // Details are folded until asked for.
+    // The figures, the identifiers and the way to the site are folded
+    // until the row is opened.
     expect(find.text('el1qqescrow'), findsNothing);
+    expect(find.byKey(const Key('loan-open-1')), findsNothing);
     await t.tap(find.byKey(const Key('loan-details-1')));
     await t.pumpAndSettle();
     expect(find.text('el1qqescrow'), findsOneWidget);
     expect(find.text('aa11'), findsOneWidget);
+    expect(find.text('You owe'), findsOneWidget);
+    expect(find.text('10,200 rUSDt'), findsOneWidget);
+    expect(find.text('200 rUSDt · 2%'), findsOneWidget);
+    expect(find.text('50 rUSDt · paid by borrower'), findsOneWidget);
+
+    await t.tap(find.byKey(const Key('loan-open-1')));
+    await t.pump();
+    expect(opened, 1);
   });
 
   testWidgets('no pending request: no Sign now, the next step still leads', (
@@ -180,12 +171,14 @@ void main() {
     await t.pumpAndSettle();
 
     expect(find.byKey(const Key('loan-sign-1')), findsNothing);
-    expect(find.text('Your signature'), findsNothing);
+    expect(find.textContaining('Your signature'), findsNothing);
     expect(find.text('Repay 10,200 rUSDt before ≈ 50 min'), findsOneWidget);
+    await t.tap(find.byKey(const Key('loan-details-1')));
+    await t.pumpAndSettle();
     expect(find.byKey(const Key('loan-open-1')), findsOneWidget);
   });
 
-  testWidgets('a closed loan has no time bar and no amount owed', (t) async {
+  testWidgets('a closed loan has no time line and no amount owed', (t) async {
     desktop(t);
     await t.pumpWidget(
       _host(
@@ -198,12 +191,11 @@ void main() {
     );
     await t.pumpAndSettle();
 
-    expect(find.text('REPAID'), findsOneWidget);
-    expect(find.byKey(const Key('loan-time-left')), findsNothing);
-    expect(find.text('50%'), findsNothing, reason: 'no ring once closed');
-    expect(find.text('YOU OWE'), findsNothing);
-    expect(find.text('To repay'), findsNothing);
     expect(find.text('Repaid'), findsOneWidget);
+    expect(find.byKey(const Key('loan-time-left')), findsNothing);
+    await t.tap(find.byKey(const Key('loan-details-1')));
+    await t.pumpAndSettle();
+    expect(find.text('You owe'), findsNothing);
     expect(find.text('10,000 rUSDt'), findsWidgets);
   });
 
@@ -223,9 +215,9 @@ void main() {
     );
     await t.pumpAndSettle();
 
-    expect(find.text('10,200'), findsNothing);
     expect(find.text('10,000 rUSDt'), findsNothing);
-    expect(find.text('••••••'), findsWidgets);
+    expect(find.text('0.5 rLBTC'), findsNothing);
+    expect(find.text(kMaskedAmount), findsWidgets);
     expect(find.text('SQ-1'), findsOneWidget);
     expect(find.byKey(const Key('loan-sign-1')), findsOneWidget);
   });

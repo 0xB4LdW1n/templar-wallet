@@ -2,6 +2,56 @@ enum TxDirection { incoming, outgoing, self }
 
 enum TxChain { bitcoin, liquid }
 
+/// How a transaction's fee was raised after it was broadcast.
+///
+/// A fee bump puts a second transaction on the chain — a CPFP child, an RBF
+/// replacement, a cancellation — and the engine lists each txid on its own.
+/// To the user it is one payment whose fee was changed, so Activity folds
+/// the second transaction into the first (`foldFeeBumps`) and the one row
+/// that remains carries this: what was done, with which other transaction,
+/// and what it cost.
+class FeeBump {
+  const FeeBump({
+    required this.method,
+    required this.otherTxid,
+    this.feeSats,
+    this.feeRate,
+    this.otherConfirmed = false,
+    this.awaitingSync = false,
+  });
+
+  /// `cpfp`, `rbf` or `cancel`.
+  final String method;
+
+  /// CPFP: the child that pays for this transaction. RBF / cancel: the
+  /// transaction this one replaced — or, while [awaitingSync], the
+  /// replacement that was broadcast for it.
+  final String otherTxid;
+
+  /// CPFP: what the child pays. RBF / cancel: the fee after the bump.
+  final int? feeSats;
+
+  /// The rate after the bump, in sat/vB (CPFP: of parent and child together).
+  final double? feeRate;
+
+  /// CPFP: the child has a block of its own.
+  final bool otherConfirmed;
+
+  /// RBF / cancel: the replacement was broadcast and no sync has listed it
+  /// yet, so the row on screen is still the original.
+  final bool awaitingSync;
+
+  bool get isCpfp => method == 'cpfp';
+  bool get isCancel => method == 'cancel';
+
+  /// The method as a word: `CPFP`, `RBF`, `Cancellation`.
+  String get label => switch (method) {
+    'cpfp' => 'CPFP',
+    'cancel' => 'Cancellation',
+    _ => 'RBF',
+  };
+}
+
 class Transaction {
   const Transaction({
     required this.txid,
@@ -20,9 +70,7 @@ class Transaction {
     this.canCpfp = false,
     this.canCancel = false,
     this.feeBumpUnavailableReason,
-    this.replacesTxid,
-    this.replacedByTxid,
-    this.feeBumpMethod,
+    this.bump,
     this.note,
     this.counterparty,
     this.fiatEstimate,
@@ -44,9 +92,9 @@ class Transaction {
   final bool canCpfp;
   final bool canCancel;
   final String? feeBumpUnavailableReason;
-  final String? replacesTxid;
-  final String? replacedByTxid;
-  final String? feeBumpMethod;
+
+  /// The fee bump folded into this transaction, when it had one.
+  final FeeBump? bump;
   final String? note;
   final String? counterparty;
   final String? fiatEstimate;
@@ -70,12 +118,19 @@ class Transaction {
     TxDirection.self => 'Self-transfer',
   };
 
-  Transaction withFeeBumpLink({
-    String? replacesTxid,
-    String? replacedByTxid,
-    String? feeBumpMethod,
-    String? note,
-  }) => Transaction(
+  /// What the row and the detail call this transaction: the user's note,
+  /// else its direction — and a cancellation says it is one, because what
+  /// the engine lists for it is a transfer to oneself.
+  String get title {
+    final b = bump;
+    if (b != null && b.isCancel && !b.awaitingSync) {
+      return isConfirmed ? 'Cancelled payment' : 'Cancellation';
+    }
+    return note ?? directionLabel;
+  }
+
+  /// This transaction with [bump] folded into it.
+  Transaction withBump(FeeBump bump) => Transaction(
     txid: txid,
     direction: direction,
     chain: chain,
@@ -92,10 +147,8 @@ class Transaction {
     canCpfp: canCpfp,
     canCancel: canCancel,
     feeBumpUnavailableReason: feeBumpUnavailableReason,
-    replacesTxid: replacesTxid ?? this.replacesTxid,
-    replacedByTxid: replacedByTxid ?? this.replacedByTxid,
-    feeBumpMethod: feeBumpMethod ?? this.feeBumpMethod,
-    note: note ?? this.note,
+    bump: bump,
+    note: note,
     counterparty: counterparty,
     fiatEstimate: fiatEstimate,
   );

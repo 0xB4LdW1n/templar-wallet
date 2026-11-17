@@ -1,18 +1,19 @@
 // The co-signature hand-off sheets: the surface a transaction sits on while it
 // is out with its co-signers.
 //
-// One shape, two chains. The quorum sits at the top — a wedge per co-signer
-// in that co-signer's own colour, with their name and Signed/Waiting beside
-// it — and, when one of the missing keys lives on a USB device, the button
-// that plugs it in and signs right here. Below it, the copy going out: a QR
+// One shape, two chains. The quorum sits at the top — the state in words, a
+// seal per required signature, and a row per co-signer whose seal is stamped
+// once the engine sees that key's signature — and, when one of the missing
+// keys lives on a USB device, the button that plugs it in and signs right
+// here. Below it, the copy going out: a QR
 // where the chain has one, the artifact itself, and Copy · Save · Paste in
 // one row. Paste is the way a signed copy comes back: it opens a box (filled
 // from the clipboard when a transaction is on it), the copy is read, and its
 // signatures are FOLDED INTO the copy being handed out. Signing in turn or
 // in parallel both work; a copy that brings nothing new is refused with the
 // reason instead of quietly replacing what was there. Every collected
-// signature is shown landing: the wedge sweeps in, the co-signer's row flips
-// to Signed, and a note says whose signature arrived and how many are left.
+// signature is shown landing: the co-signer's seal stamps, the header line
+// moves, and a note says whose signature arrived and how many are left.
 // Scan and file remain as the other ways back.
 //
 // Lives here rather than inside the Send screen because it is also where a
@@ -35,13 +36,15 @@ import '../../services/file_export.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/code_box.dart';
+import '../../shared/widgets/cosigner_label_editor.dart';
 import '../../shared/widgets/cosigner_ring.dart'
     show CosignerEntry, resolveCosigners, signerSlotsFor;
-import '../../shared/widgets/glass_dialog.dart';
+import '../../shared/widgets/app_dialog.dart';
 import '../../shared/widgets/hex_text.dart';
+import '../../shared/widgets/hybrid_kit.dart' show QuietTag;
+import '../../shared/widgets/seal_mark.dart';
 import '../../shared/widgets/signer_donut.dart';
 import '../../shared/widgets/ur_qr.dart';
-import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
@@ -106,38 +109,33 @@ typedef HandoffQuorum = ({
   String? caption,
 });
 
-/// Uppercase section label. Two sections here — the copy going out and the
-/// copy coming back — and an eyebrow names each without a second headline.
+/// The label that names a block of a sheet. Two sections here — the copy
+/// going out and the copy coming back — and an eyebrow names each without a
+/// second headline.
 class HandoffEyebrow extends StatelessWidget {
-  const HandoffEyebrow(
-    this.label, {
-    super.key,
-    this.trailing,
-    this.trailingColor,
-  });
+  const HandoffEyebrow(this.label, {super.key, this.trailing});
   final String label;
+
+  /// Always the secondary ink: a status is said in words here, not in a
+  /// colour.
   final String? trailing;
-  final Color? trailingColor;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     return Row(
       children: [
-        Text(
-          label,
-          style: AppTypography.navSection.copyWith(color: s.inkFaint),
+        Expanded(
+          child: Text(
+            label,
+            style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
+          ),
         ),
-        if (trailing != null) ...[
-          const Spacer(),
+        if (trailing != null)
           Text(
             trailing!,
-            style: AppTypography.navSection.copyWith(
-              color: trailingColor ?? s.accent,
-              fontSize: 10.5,
-            ),
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
           ),
-        ],
       ],
     );
   }
@@ -219,6 +217,33 @@ mixin _HandoffCommon<T extends StatefulWidget> on State<T> {
     );
   }
 
+  /// The rename control for a signer row: a key the wallet knows, through
+  /// the same label editor as the dashboard.
+  VoidCallback? renameFor(SignerSlot slot) {
+    final walletId = context.read<AppState>().activeWalletId;
+    if (walletId == null) return null;
+    CosignerEntry? entry;
+    for (final e in cosigners) {
+      if (e.fingerprint.isNotEmpty && e.fingerprint == slot.id.toLowerCase()) {
+        entry = e;
+        break;
+      }
+    }
+    final known = entry;
+    if (known == null) return null;
+    return () async {
+      final edited = await showCosignerLabelEditor(
+        context,
+        label: known.label,
+        index: known.index,
+        subtitle: '${known.fingerprint} · m/${known.path}',
+      );
+      if (edited == null || !mounted) return;
+      await CosignerLabelStore.instance.saveOne(walletId, edited);
+      await loadCosigners();
+    };
+  }
+
   /// The wallet's hardware keys whose signature is still missing — what the
   /// USB button connects to. Empty hides the button.
   Set<String> hardwarePending(Iterable<String> signed) {
@@ -283,7 +308,7 @@ mixin _HandoffCommon<T extends StatefulWidget> on State<T> {
   }
 
   /// A copy has been taken in: close the box, and say what arrived. On a
-  /// phone the haptic is the same tick the carousel gives a page change.
+  /// phone a haptic tick marks it — a signature really did arrive.
   void signatureLanded(String note) {
     _collectedTimer?.cancel();
     if (!mounted) return;
@@ -351,13 +376,13 @@ class PsbtHandoffSheet extends StatefulWidget {
     required this.unsignedPsbt,
     required this.onBroadcast,
     this.bridge,
-    this.title = 'Air-gap Signing',
-    this.exportEyebrow = 'EXPORT THE TRANSACTION',
+    this.title = 'Air-gap signing',
+    this.exportEyebrow = 'Export the transaction',
     this.intro =
         'Scan this QR with your signer (Jade: QR mode) — it carries '
         'the unsigned transaction. Copy or save the file instead if your '
         'signer takes one.',
-    this.returnEyebrow = 'BRING IT BACK',
+    this.returnEyebrow = 'Bring it back',
     this.returnLabel =
         'Paste the signed transaction with the button above, '
         'or scan or load it here. Nothing reaches the network before you '
@@ -718,14 +743,12 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
     );
   }
 
-  /// The one line the whole sheet exists to answer.
-  String? _remaining(HandoffQuorum q) {
+  /// Signatures still missing, by the engine's counts; null when it stated
+  /// no threshold.
+  int? _left(HandoffQuorum q) {
     final needed = q.needed;
     if (needed == null) return null;
-    final left = needed - q.collected;
-    return left <= 0
-        ? 'QUORUM MET'
-        : '$left MORE SIGNATURE${left == 1 ? '' : 'S'} NEEDED';
+    return needed - q.collected;
   }
 
   @override
@@ -733,14 +756,12 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
     final phone = AppLayout.isPhone(context);
     final q = _quorum;
     final i = _inspection;
+    final left = q == null ? null : _left(q);
     // A finalized copy has met its quorum by definition, whatever the
     // partial-signature count says.
-    final remaining = q == null
-        ? null
-        : (i?.finalized ?? false)
-        ? 'QUORUM MET'
-        : _remaining(q);
-    final met = remaining == 'QUORUM MET';
+    final met =
+        q != null && ((i?.finalized ?? false) || (left != null && left <= 0));
+    final remaining = q == null ? null : stateLine(met: met, left: left);
     final signedFps = _signedSet(i);
     final slots = i == null
         ? null
@@ -753,6 +774,7 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
       remaining: remaining,
       met: met,
       slots: slots,
+      onRename: renameFor,
       progressNote: widget.progressNote,
       exportEyebrow: widget.exportEyebrow,
       intro: widget.intro,
@@ -796,48 +818,48 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
         // the drag.
         child: phone ? body : SingleChildScrollView(child: body),
       ),
-      // Phone: the sheet's actions are the shared controls — the crimson slab
-      // first, Cancel as the quiet wash under it — instead of a raw accent
-      // ElevatedButton with a hand-written white TextStyle at whatever height
-      // the theme gives it. Desktop's dialog row is untouched.
-      actions: phone
-          ? [
-              PrimaryButton(
-                label: 'Review & Broadcast',
-                isFullWidth: true,
-                onPressed: canBroadcast
-                    ? () => _reviewThenBroadcast(_artifact)
-                    : null,
-              ),
-              GhostButton(
-                label: 'Cancel',
-                isFullWidth: true,
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ]
-          : [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: canBroadcast
-                    ? () => _reviewThenBroadcast(_artifact)
-                    : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accent,
-                ),
-                child: const Text(
-                  'Review & Broadcast',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
+      // Quiet action first, the primary last (a phone's sheet stacks them
+      // reversed, the primary on top).
+      actions: [
+        GhostButton(
+          label: 'Cancel',
+          isFullWidth: phone,
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        PrimaryButton(
+          label: 'Review and broadcast',
+          isFullWidth: phone,
+          onPressed: canBroadcast
+              ? () => _reviewThenBroadcast(_artifact)
+              : null,
+        ),
+      ],
     );
   }
+}
+
+/// Two or three options of equal weight: one row of equal cells on a
+/// desktop, stacked full width on a phone. The buttons should be built with
+/// `isFullWidth: true` so each fills its cell.
+Widget equalOptions(bool phone, List<Widget> buttons) {
+  if (phone) return stackOrRow(true, buttons);
+  return Row(
+    children: [
+      for (var i = 0; i < buttons.length; i++) ...[
+        if (i > 0) const SizedBox(width: AppSpacing.sm),
+        Expanded(child: buttons[i]),
+      ],
+    ],
+  );
+}
+
+/// The state line of a hand-off sheet, in words: fully signed, or how many
+/// signatures are still missing. [left] is the engine's count; null when it
+/// stated no threshold.
+String stateLine({required bool met, required int? left}) {
+  if (met) return 'Fully signed, ready to broadcast';
+  if (left == null) return 'Partially signed';
+  return 'Needs $left more signature${left == 1 ? '' : 's'}';
 }
 
 /// A row of buttons on a desktop — wrapping onto a second line when three
@@ -1200,9 +1222,7 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
     final q = _quorum;
     final left = (q.needed ?? q.total) - q.collected;
     final met = left <= 0;
-    final remaining = met
-        ? 'QUORUM MET'
-        : '$left MORE SIGNATURE${left == 1 ? '' : 'S'} NEEDED';
+    final remaining = stateLine(met: met, left: left);
     final i = _inspection;
     final signedFps = _signedSet(i);
     final slots = i == null
@@ -1216,15 +1236,16 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
       remaining: remaining,
       met: met,
       slots: slots,
+      onRename: renameFor,
       progressNote:
           'Partially signed — ${widget.have} of ${widget.needed} '
           'signatures collected. Nothing was broadcast.',
-      exportEyebrow: 'HAND IT TO YOUR CO-SIGNERS',
+      exportEyebrow: 'Hand it to your co-signers',
       intro:
           'Send them this PSET — let them scan the QR from their Templar, '
           'or pass it by clipboard or file. Each one loads it under Send › '
           'Cosign a transaction, signs, and returns it.',
-      returnEyebrow: 'COLLECT THE SIGNATURES',
+      returnEyebrow: 'Collect the signatures',
       returnLabel:
           'Paste each signed copy with the button above, or scan or '
           'load it here. Its signatures join the copy you hand out, and the '
@@ -1260,40 +1281,19 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
         width: phone ? double.infinity : 560,
         child: phone ? body : SingleChildScrollView(child: body),
       ),
-      // Phone: the shared controls, one grammar with the air-gap sheet next
-      // door. Desktop's dialog row is untouched.
-      actions: phone
-          ? [
-              PrimaryButton(
-                label: checking ? 'Checking…' : 'Review & Broadcast',
-                isFullWidth: true,
-                onPressed: canBroadcast ? _reviewThenBroadcast : null,
-              ),
-              GhostButton(
-                label: 'Cancel',
-                isFullWidth: true,
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ]
-          : [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: canBroadcast ? _reviewThenBroadcast : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accent,
-                ),
-                child: Text(
-                  checking ? 'Checking…' : 'Review & Broadcast',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
+      // One grammar with the air-gap sheet next door.
+      actions: [
+        GhostButton(
+          label: 'Cancel',
+          isFullWidth: phone,
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        PrimaryButton(
+          label: checking ? 'Checking…' : 'Review and broadcast',
+          isFullWidth: phone,
+          onPressed: canBroadcast ? _reviewThenBroadcast : null,
+        ),
+      ],
     );
   }
 }
@@ -1330,6 +1330,7 @@ class _HandoffBody extends StatelessWidget {
     required this.onScan,
     required this.onLoadFile,
     required this.onSignUsb,
+    this.onRename,
   });
 
   final String artifactName;
@@ -1360,6 +1361,7 @@ class _HandoffBody extends StatelessWidget {
   final VoidCallback? onScan;
   final VoidCallback onLoadFile;
   final VoidCallback onSignUsb;
+  final VoidCallback? Function(SignerSlot slot)? onRename;
 
   @override
   Widget build(BuildContext context) {
@@ -1398,21 +1400,15 @@ class _HandoffBody extends StatelessWidget {
         ],
         // ── Who has signed ──────────────────────────────────────────────
         if (q != null) ...[
-          HandoffEyebrow(
-            'SIGNATURE QUORUM',
-            trailing: remaining,
-            trailingColor: met ? s.success : s.accent,
+          SignatureHeader(
+            state: remaining ?? '',
+            signed: q.collected,
+            required: q.needed,
           ),
-          const SizedBox(height: AppSpacing.md),
-          SignerChart(
-            signed: q.signed,
-            total: q.total,
-            requiredCount: q.needed,
-            collected: q.collected,
-            caption: q.caption,
-            donutSize: phone ? 64 : 78,
-            slots: slots,
-          ),
+          if (slots != null && slots!.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.lg),
+            SignerList(slots: slots!, onRename: onRename),
+          ],
           // The note a collected signature leaves behind, for a few seconds.
           sized(
             AppMotion.of(context, AppMotion.standard),
@@ -1429,66 +1425,67 @@ class _HandoffBody extends StatelessWidget {
           if (usbOffered) ...[
             const SizedBox(height: AppSpacing.md),
             // One of the keys still to sign lives on a USB device: connect
-            // it and sign right here, and the wedge arrives like any other.
+            // it and sign right here, and its seal stamps like any other.
             SecondaryButton(
               label: 'Sign with USB hardware wallet',
-              icon: Icons.usb_rounded,
+              icon: Icons.usb_outlined,
               isFullWidth: true,
               isLoading: hwBusy,
               onPressed: hwBusy || checking ? null : onSignUsb,
             ),
           ],
-          Divider(height: AppSpacing.xxl, color: s.edge),
+          Divider(height: AppSpacing.xxl, thickness: 1, color: s.edge),
         ],
         // ── The copy going out — and the way back in ────────────────────
         HandoffEyebrow(exportEyebrow),
         const SizedBox(height: AppSpacing.sm),
-        Text(intro, style: AppTypography.body),
+        Text(intro, style: AppTypography.body.copyWith(color: s.inkSecondary)),
         const SizedBox(height: AppSpacing.lg),
         Center(
           child: urParts != null
               ? UrAnimatedQr(
                   parts: urParts!,
-                  size: phone ? AppLayout.qrSide(context, max: 300) : 260,
+                  size: phone ? AppLayout.qrSide(context, max: 300) : 240,
                 )
               : urError != null
               ? Text(
                   urError!,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: AppColors.danger,
-                  ),
+                  style: AppTypography.caption.copyWith(color: s.danger),
                 )
               : const Padding(
                   padding: EdgeInsets.all(AppSpacing.xl),
-                  child: CircularProgressIndicator(),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
         ),
         const SizedBox(height: AppSpacing.lg),
         CodeBox(value: artifact, maxLines: 4),
         const SizedBox(height: AppSpacing.md),
-        // The quiet controls, in one row: two ways to hand the copy out and,
-        // beside them, the way a signed copy comes back. They used to be
-        // accent ElevatedButtons on a desktop, which made "Copy" shout as
-        // loudly as the thing that spends money.
-        stackOrRow(phone, [
+        // Three equal, quiet options: two ways to hand the copy out and,
+        // beside them, the way a signed copy comes back. The sheet's one
+        // filled control is the broadcast in its footer.
+        equalOptions(phone, [
           SecondaryButton(
-            label: copied ? 'Copied!' : 'Copy $artifactName',
-            icon: copied ? Icons.check : Icons.copy,
-            isFullWidth: phone,
+            label: copied ? 'Copied' : 'Copy $artifactName',
+            icon: copied ? Icons.check : Icons.content_copy_outlined,
+            isFullWidth: true,
             onPressed: onCopy,
           ),
           SecondaryButton(
             label: saveLabel,
             icon: FileExport.sharesInsteadOfSaves
-                ? Icons.ios_share
-                : Icons.save_alt,
-            isFullWidth: phone,
+                ? Icons.ios_share_outlined
+                : Icons.save_alt_outlined,
+            isFullWidth: true,
             onPressed: onSave,
           ),
           SecondaryButton(
             label: pasteOpen ? 'Close paste box' : 'Paste signed copy',
-            icon: pasteOpen ? Icons.expand_less : Icons.content_paste,
-            isFullWidth: phone,
+            icon: pasteOpen ? Icons.expand_less : Icons.content_paste_outlined,
+            isFullWidth: true,
             onPressed: checking ? null : onPaste,
           ),
         ]),
@@ -1508,30 +1505,33 @@ class _HandoffBody extends StatelessWidget {
                 )
               : const SizedBox(width: double.infinity),
         ),
-        Divider(height: AppSpacing.xxl, color: s.edge),
+        Divider(height: AppSpacing.xxl, thickness: 1, color: s.edge),
         // ── The other ways back ─────────────────────────────────────────
         HandoffEyebrow(returnEyebrow),
         const SizedBox(height: AppSpacing.sm),
-        Text(returnLabel, style: AppTypography.body),
+        Text(
+          returnLabel,
+          style: AppTypography.body.copyWith(color: s.inkSecondary),
+        ),
         const SizedBox(height: AppSpacing.md),
         // Only offer the camera where it exists: mobile_scanner has no
         // Windows/Linux implementation, so a Scan button there is a button
         // whose only outcome is an apology dialog. File import takes the
         // lead role on those platforms instead.
-        stackOrRow(phone, [
+        equalOptions(phone, [
           if (onScan != null)
             SecondaryButton(
               label: 'Scan signed QR',
-              icon: Icons.qr_code_scanner,
-              isFullWidth: phone,
+              icon: Icons.qr_code_scanner_outlined,
+              isFullWidth: true,
               onPressed: checking ? null : onScan,
             ),
           SecondaryButton(
             label: onScan != null
                 ? 'Load .$lower file'
                 : 'Load signed .$lower file',
-            icon: Icons.folder_open,
-            isFullWidth: phone,
+            icon: Icons.folder_open_outlined,
+            isFullWidth: true,
             onPressed: checking ? null : onLoadFile,
           ),
         ]),
@@ -1546,7 +1546,7 @@ class _HandoffBody extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Text(
             importError!,
-            style: AppTypography.bodySmall.copyWith(color: AppColors.danger),
+            style: AppTypography.caption.copyWith(color: s.danger),
           ),
         ],
       ],
@@ -1578,9 +1578,9 @@ class _PasteBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
-        color: s.panelInset,
+        color: s.well,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         border: Border.all(color: s.edge),
       ),
@@ -1601,12 +1601,10 @@ class _PasteBox extends StatelessWidget {
             enableSuggestions: false,
             keyboardType: TextInputType.visiblePassword,
             onSubmitted: (_) => onAdd(),
-            decoration: InputDecoration(
-              hintText: 'Signed $artifactName (base64)',
-            ),
-            style: AppTypography.monoSmall,
+            decoration: InputDecoration(hintText: 'Signed $artifactName'),
+            style: AppTypography.mono.copyWith(color: s.ink),
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               Expanded(
@@ -1614,8 +1612,8 @@ class _PasteBox extends StatelessWidget {
                     ? Row(
                         children: [
                           const SizedBox(
-                            width: 14,
-                            height: 14,
+                            width: 16,
+                            height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                           const SizedBox(width: AppSpacing.sm),
@@ -1630,16 +1628,14 @@ class _PasteBox extends StatelessWidget {
                     : error != null
                     ? Text(
                         error!,
-                        style: AppTypography.bodySmall.copyWith(
-                          color: AppColors.danger,
-                        ),
+                        style: AppTypography.caption.copyWith(color: s.danger),
                       )
                     : const SizedBox.shrink(),
               ),
               const SizedBox(width: AppSpacing.sm),
-              PrimaryButton(
+              // Secondary: the sheet's one filled control is the broadcast.
+              SecondaryButton(
                 label: 'Add signature',
-                icon: Icons.verified_outlined,
                 onPressed: checking ? null : onAdd,
               ),
             ],
@@ -1650,8 +1646,9 @@ class _PasteBox extends StatelessWidget {
   }
 }
 
-/// "Signature from Anna's phone added · 2 of 3, 1 more needed" — the reward
-/// for bringing a copy back, popping in beside the chart that just moved.
+/// "Signature from Anna's phone added · 2 of 3, 1 more needed" — said
+/// beside the list that just moved, for a few seconds. A seal leads it: it
+/// is a signature that arrived, and nothing else gets this mark.
 class _CollectedNote extends StatelessWidget {
   const _CollectedNote({super.key, required this.message});
   final String message;
@@ -1659,42 +1656,36 @@ class _CollectedNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final reduced = AppMotion.reduced(context);
     final note = Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.md,
         vertical: AppSpacing.sm,
       ),
       decoration: BoxDecoration(
-        color: s.success.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: s.success.withValues(alpha: 0.4)),
+        color: s.panelInset,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       ),
       child: Row(
         children: [
-          Icon(Icons.check_circle_rounded, size: 16, color: s.success),
+          const SealMark(stamped: true, size: AppSpacing.iconSmall),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
               message,
-              style: AppTypography.bodySmall.copyWith(
-                color: s.ink,
-                fontWeight: FontWeight.w600,
-              ),
+              style: AppTypography.bodySmall.copyWith(color: s.ink),
             ),
           ),
         ],
       ),
     );
-    if (reduced) return note;
+    // A fade in, nothing more: no scale, no pop.
+    final d = AppMotion.of(context, AppMotion.emphasized);
+    if (d == Duration.zero) return note;
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: AppMotion.emphasized,
-      curve: AppMotion.spring,
-      builder: (_, t, child) => Opacity(
-        opacity: t.clamp(0, 1),
-        child: Transform.scale(scale: 0.94 + 0.06 * t, child: child),
-      ),
+      duration: d,
+      curve: AppMotion.settle,
+      builder: (_, t, child) => Opacity(opacity: t.clamp(0, 1), child: child),
       child: note,
     );
   }
@@ -1721,17 +1712,22 @@ class SignedPsbtReviewDialog extends StatelessWidget {
     // fee nobody can state fails that test, so the button is held.
     final hidesSpend = !i.utxoCheckOk;
     final unsigned = !i.carriesSignature;
+    final amountStyle = AppTypography.numeric.copyWith(color: s.ink);
     // The wallet's own outputs are its change: named, so the recipient is
     // the one line left to check.
     Widget ownTag(PsbtOutput o) => i.ownershipKnown && o.isMine == true
-        ? Padding(
-            padding: const EdgeInsets.only(right: AppSpacing.sm),
-            child: Text(
-              'CHANGE',
-              style: AppTypography.label.copyWith(color: s.inkSecondary),
-            ),
+        ? const Padding(
+            padding: EdgeInsets.only(right: AppSpacing.sm),
+            child: QuietTag(label: 'Change'),
           )
         : const SizedBox.shrink();
+    Widget kv(String label, String value, {Color? ink}) => Row(
+      children: [
+        Text(label, style: AppTypography.label.copyWith(color: s.inkSecondary)),
+        const Spacer(),
+        Text(value, style: AppTypography.numeric.copyWith(color: ink ?? s.ink)),
+      ],
+    );
     return AppDialog(
       title: const Text('Review signed transaction'),
       content: SizedBox(
@@ -1740,8 +1736,11 @@ class SignedPsbtReviewDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Outputs', style: AppTypography.label),
-            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Outputs',
+              style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
+            ),
+            const SizedBox(height: AppSpacing.sm),
             ...i.outputs.map(
               (o) => Padding(
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
@@ -1752,15 +1751,15 @@ class SignedPsbtReviewDialog extends StatelessWidget {
                     ? Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          HexText(o.address, style: AppTypography.monoSmall),
-                          const SizedBox(height: 2),
+                          HexText(
+                            o.address,
+                            style: AppTypography.mono.copyWith(color: s.ink),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
                           Row(
                             children: [
                               ownTag(o),
-                              Text(
-                                o.displayAmount,
-                                style: AppTypography.bodySmall,
-                              ),
+                              Text(o.displayAmount, style: amountStyle),
                             ],
                           ),
                         ],
@@ -1770,102 +1769,55 @@ class SignedPsbtReviewDialog extends StatelessWidget {
                           Expanded(
                             child: Text(
                               o.address,
-                              style: AppTypography.monoSmall,
+                              style: AppTypography.mono.copyWith(color: s.ink),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: AppSpacing.md),
                           ownTag(o),
-                          Text(o.displayAmount, style: AppTypography.bodySmall),
+                          Text(o.displayAmount, style: amountStyle),
                         ],
                       ),
               ),
             ),
-            const Divider(height: AppSpacing.xl),
-            Row(
-              children: [
-                Text('Fee', style: AppTypography.label),
-                const Spacer(),
-                Text(
-                  i.feeLabel,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: i.feeSats == null ? AppColors.danger : null,
-                  ),
-                ),
-              ],
-            ),
+            Divider(height: AppSpacing.xl, thickness: 1, color: s.edge),
+            kv('Fee', i.feeLabel, ink: i.feeSats == null ? s.danger : null),
             const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                Text('Signatures', style: AppTypography.label),
-                const Spacer(),
-                Text(sigs, style: AppTypography.bodySmall),
-              ],
-            ),
+            kv('Signatures', sigs),
             if (hidesSpend) ...[
               const SizedBox(height: AppSpacing.md),
-              Text(
-                'This transaction hides what it spends — do not broadcast. '
-                'Its previous outputs are '
-                '${i.utxoCheck == PsbtUtxoStatus.conflicting ? 'inconsistent' : 'missing'}, '
-                'so the fee cannot be checked.',
-                style: AppTypography.bodySmall.copyWith(
-                  color: AppColors.danger,
-                ),
+              DangerBanner(
+                message:
+                    'This transaction hides what it spends — do not '
+                    'broadcast. Its previous outputs are '
+                    '${i.utxoCheck == PsbtUtxoStatus.conflicting ? 'inconsistent' : 'missing'}, '
+                    'so the fee cannot be checked.',
               ),
             ],
             if (unsigned) ...[
               const SizedBox(height: AppSpacing.md),
-              Text(
-                'No signatures detected — this looks like the unsigned PSBT. '
-                'Broadcasting it will fail.',
-                style: AppTypography.bodySmall.copyWith(
-                  color: AppColors.danger,
-                ),
+              const DangerBanner(
+                message:
+                    'No signatures detected — this looks like the unsigned '
+                    'PSBT. Broadcasting it will fail.',
               ),
             ],
           ],
         ),
       ),
-      // Phone: the last confirmation before the network gets the transaction,
-      // drawn with the same shared controls as every other sheet. Desktop's
-      // dialog row is untouched.
-      actions: phone
-          ? [
-              PrimaryButton(
-                label: 'Broadcast',
-                isFullWidth: true,
-                onPressed: hidesSpend
-                    ? null
-                    : () => Navigator.of(context).pop(true),
-              ),
-              GhostButton(
-                label: 'Cancel',
-                isFullWidth: true,
-                onPressed: () => Navigator.of(context).pop(false),
-              ),
-            ]
-          : [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: hidesSpend
-                    ? null
-                    : () => Navigator.of(context).pop(true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accent,
-                ),
-                child: const Text(
-                  'Broadcast',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
+      // The last confirmation before the network gets the transaction.
+      actions: [
+        GhostButton(
+          label: 'Cancel',
+          isFullWidth: phone,
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        PrimaryButton(
+          label: 'Broadcast',
+          isFullWidth: phone,
+          onPressed: hidesSpend ? null : () => Navigator.of(context).pop(true),
+        ),
+      ],
     );
   }
 }

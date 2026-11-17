@@ -62,14 +62,14 @@ void main() {
   testWidgets('the chain is asked before the transaction', (t) async {
     await _pump(t);
 
-    expect(find.text('WHICH CHAIN?'), findsOneWidget);
+    expect(find.text('Which chain?'), findsOneWidget);
     expect(find.text('Bitcoin'), findsOneWidget);
     expect(find.text('Liquid'), findsOneWidget);
     expect(find.text('Paste'), findsNothing);
 
     await t.tap(find.text('Liquid'));
     await t.pumpAndSettle();
-    expect(find.text('WHICH CHAIN?'), findsNothing);
+    expect(find.text('Which chain?'), findsNothing);
     expect(find.text('Paste'), findsOneWidget);
     // Named for the chain's artifact, not "PSBT / PSET".
     expect(find.text('base64 PSET text'), findsOneWidget);
@@ -98,7 +98,7 @@ void main() {
 
     await t.tap(find.text('Liquid'));
     await t.pumpAndSettle();
-    expect(find.text('WHICH CHAIN?'), findsOneWidget, reason: 'still asking');
+    expect(find.text('Which chain?'), findsOneWidget, reason: 'still asking');
   });
 
   testWidgets('a PSET on the Bitcoin path is refused with the reason', (
@@ -110,7 +110,7 @@ void main() {
     await t.tap(find.text('Paste'));
     await t.pumpAndSettle();
     await t.enterText(find.byType(TextField), _psetLike);
-    await t.tap(find.text('Load & Inspect'));
+    await t.tap(find.text('Load and inspect'));
     await t.pumpAndSettle();
 
     // Refused before the engine is asked — the bridge would have thrown.
@@ -134,7 +134,7 @@ void main() {
       find.byType(TextField),
       base64Encode([0x70, 0x73, 0x62, 0x74, 0xff, 0, 0, 0]),
     );
-    await t.tap(find.text('Load & Inspect'));
+    await t.tap(find.text('Load and inspect'));
     await t.pumpAndSettle();
 
     expect(find.textContaining('not a Liquid PSET'), findsOneWidget);

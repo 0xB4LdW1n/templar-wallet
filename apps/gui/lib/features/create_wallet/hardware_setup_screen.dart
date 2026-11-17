@@ -7,6 +7,7 @@ import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
+import '../../shared/widgets/list_rows.dart';
 import '../../shared/widgets/step_flow_scaffold.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
@@ -308,6 +309,7 @@ class _HardwareSetupScreenState extends State<HardwareSetupScreen> {
         importing: _importing,
         liquidActive: _liquidActive,
         error: _error,
+        onChanged: () => setState(() {}),
       );
     }
     return _RecapBody(
@@ -321,49 +323,29 @@ class _HardwareSetupScreenState extends State<HardwareSetupScreen> {
 
   Widget _stepActions() {
     if (_step == 4) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          SecondaryButton(
-            label: 'Get receive address',
-            onPressed: () => context.go(AppRoutes.receive),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          PrimaryButton(
-            label: 'Open Wallet',
-            onPressed: () => context.go(AppRoutes.dashboard),
-          ),
-        ],
+      return _StepActions(
+        label: 'Open wallet',
+        onPressed: () => context.go(AppRoutes.dashboard),
+        secondaryLabel: 'Get receive address',
+        onSecondary: () => context.go(AppRoutes.receive),
       );
     }
     if (_step == 3) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          GhostButton(label: 'Back', onPressed: () => setState(() => _step--)),
-          const SizedBox(width: AppSpacing.md),
-          PrimaryButton(
-            label: _importing ? 'Pairing…' : 'Pair device',
-            onPressed: (_importing || _nameController.text.trim().isEmpty)
-                ? null
-                : _import,
-          ),
-        ],
+      final named = _nameController.text.trim().isNotEmpty;
+      return _StepActions(
+        label: _importing ? 'Pairing…' : 'Pair device',
+        onPressed: (_importing || !named) ? null : _import,
+        onBack: _importing ? null : () => setState(() => _step--),
+        reason: named || _importing ? null : 'Name the wallet to continue',
       );
     }
     // steps 1 & 2
     final canContinue = _step == 1 ? _selected != null : true;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        if (_step > 1)
-          GhostButton(label: 'Back', onPressed: () => setState(() => _step--)),
-        const SizedBox(width: AppSpacing.md),
-        PrimaryButton(
-          label: 'Continue',
-          onPressed: canContinue ? () => setState(() => _step++) : null,
-        ),
-      ],
+    return _StepActions(
+      label: 'Continue',
+      onPressed: canContinue ? () => setState(() => _step++) : null,
+      onBack: _step > 1 ? () => setState(() => _step--) : _exitToWizard,
+      reason: canContinue ? null : 'Choose a device to continue',
     );
   }
 }
@@ -464,36 +446,55 @@ class _Step2Body extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _SummaryCard(device: device),
+        ListCard(
+          children: [
+            ListRow(
+              icon: Icons.usb_outlined,
+              title: device.model,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    device.fingerprint,
+                    style: AppTypography.mono.copyWith(color: s.inkSecondary),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  _StatusWord(color: s.success, word: 'Identified'),
+                ],
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: AppSpacing.xl),
-        Text(
-          'NETWORKS',
-          style: AppTypography.label.copyWith(
-            color: s.inkFaint,
-            letterSpacing: 1.2,
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          child: Text(
+            'Networks',
+            style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
-        _NetworkRow(
-          icon: Icons.currency_bitcoin,
-          name: 'Bitcoin',
-          description: 'The device signs; this app watches the addresses',
-          accentColor: s.bitcoin,
-          isDark: s.isDark,
-        ),
-        const SizedBox(height: AppSpacing.sm),
         // Networks come from the wizard's first step — shown here, not
         // re-asked. Liquid pairing only ever applies to Jade: it is the one
         // device with Liquid in firmware.
-        if (liquidEnabled && isJade) ...[
-          _NetworkRow(
-            icon: Icons.water_drop_rounded,
-            name: 'Liquid Network',
-            description: 'Full wallet · the Jade signs, send and receive',
-            accentColor: s.liquid,
-            isDark: s.isDark,
-          ),
-          const SizedBox(height: AppSpacing.lg),
+        ListCard(
+          children: [
+            ListRow(
+              icon: Icons.currency_bitcoin_outlined,
+              tint: s.bitcoin,
+              title: 'Bitcoin',
+              subtitle: 'The device signs; this app watches the addresses',
+            ),
+            if (liquidEnabled && isJade)
+              ListRow(
+                icon: Icons.water_drop_outlined,
+                tint: s.liquid,
+                title: 'Liquid Network',
+                subtitle: 'Full wallet · the Jade signs, send and receive',
+              ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        if (liquidEnabled && isJade)
           const InfoBanner(
             message:
                 'Both networks land in one wallet, read from the device '
@@ -501,8 +502,8 @@ class _Step2Body extends StatelessWidget {
                 'descriptor from the Jade itself, so the device can spend '
                 'from it. You will be asked to unlock the Jade once now, and '
                 'again for every transaction you send.',
-          ),
-        ] else if (liquidEnabled)
+          )
+        else if (liquidEnabled)
           const WarningBanner(
             title: 'This device is Bitcoin-only',
             // Not a limitation of Templar, and worth saying so plainly — the
@@ -527,119 +528,30 @@ class _Step2Body extends StatelessWidget {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.device});
-  final HwDevice device;
+/// A status: a 6 px dot and a word.
+class _StatusWord extends StatelessWidget {
+  const _StatusWord({required this.color, required this.word});
+
+  final Color color;
+  final String word;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.cardPadding),
-      decoration: BoxDecoration(
-        color: s.surfaceSolid,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: s.success, width: 1.5),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: s.success.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-            ),
-            child: Icon(Icons.usb_rounded, color: s.success, size: 22),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(999),
           ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(device.model, style: AppTypography.sectionTitle),
-                const SizedBox(height: 2),
-                Text(
-                  device.fingerprint,
-                  style: AppTypography.mono.copyWith(
-                    fontSize: 11,
-                    color: s.inkFaint,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm,
-              vertical: 3,
-            ),
-            decoration: BoxDecoration(
-              color: s.success.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-            ),
-            child: Text(
-              'identified',
-              style: AppTypography.label.copyWith(
-                color: s.success,
-                fontSize: 10,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NetworkRow extends StatelessWidget {
-  const _NetworkRow({
-    required this.icon,
-    required this.name,
-    required this.description,
-    required this.accentColor,
-    required this.isDark,
-  });
-
-  final IconData icon;
-  final String name;
-  final String description;
-  final Color accentColor;
-  final bool isDark;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.cardPadding),
-      decoration: BoxDecoration(
-        color: accentColor.withValues(alpha: isDark ? 0.12 : 0.07),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: accentColor, width: 1.5),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: accentColor, size: 20),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name, style: AppTypography.sectionTitle),
-                const SizedBox(height: 2),
-                Text(
-                  description,
-                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: Icon(Icons.check_circle, color: accentColor, size: 20),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Text(word, style: AppTypography.caption.copyWith(color: s.ink)),
+      ],
     );
   }
 }
@@ -651,6 +563,7 @@ class _Step3Body extends StatelessWidget {
     required this.controller,
     required this.importing,
     required this.liquidActive,
+    required this.onChanged,
     this.error,
   });
   final TextEditingController controller;
@@ -661,27 +574,36 @@ class _Step3Body extends StatelessWidget {
   final bool liquidActive;
   final String? error;
 
+  /// The name gates the action row, which lives in the parent.
+  final VoidCallback onChanged;
+
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     if (importing) {
-      return Center(
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxxl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(),
+            const SizedBox(
+              width: AppSpacing.xl,
+              height: AppSpacing.xl,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
             const SizedBox(height: AppSpacing.lg),
             Text(
               liquidActive
                   ? 'Reading the Bitcoin and Liquid descriptors from the device…'
                   : 'Reading descriptors from the device…',
-              style: AppTypography.body,
+              style: AppTypography.body.copyWith(color: s.ink),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
               'Unlock it with your PIN and confirm on its screen if asked. One '
               'unlock covers both networks.',
-              style: AppTypography.caption,
+              style: AppTypography.caption.copyWith(color: s.inkSecondary),
               textAlign: TextAlign.center,
             ),
           ],
@@ -689,16 +611,23 @@ class _Step3Body extends StatelessWidget {
       );
     }
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          child: Text(
+            'Wallet name',
+            style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+          ),
+        ),
         TextField(
           controller: controller,
-          decoration: const InputDecoration(labelText: 'Wallet name'),
           autofocus: true,
+          onChanged: (_) => onChanged(),
         ),
         if (error != null) ...[
           const SizedBox(height: AppSpacing.lg),
-          WarningBanner(title: 'Pairing failed', message: error!),
+          DangerBanner(title: 'Pairing failed', message: error!),
         ],
       ],
     );
@@ -726,11 +655,12 @@ class _RecapBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final wallet = result.wallet;
+    final storedFingerprint = wallet.masterFingerprint;
 
     final networks = <PairingNetwork>[
       PairingNetwork(
         name: 'Bitcoin',
-        icon: Icons.currency_bitcoin,
+        icon: Icons.currency_bitcoin_outlined,
         color: s.bitcoin,
         ok: wallet.bitcoinEnabled,
         detail: wallet.bitcoinEnabled
@@ -741,13 +671,13 @@ class _RecapBody extends StatelessWidget {
       if (result.liquidRequested || result.hasLiquid)
         PairingNetwork(
           name: 'Liquid Network',
-          icon: Icons.water_drop_rounded,
+          icon: Icons.water_drop_outlined,
           color: s.liquid,
           ok: result.hasLiquid,
           detail: result.hasLiquid
               ? 'Imported · confidential descriptor read from the device'
               : (result.liquidError ??
-                    'The device did not hand over its Liquid descriptor.'),
+                    'The device did not hand over its Liquid descriptor'),
           descriptor: result.hasLiquid ? result.liquidDescriptor : null,
           action: result.hasLiquid ? null : onRetryLiquid,
           actionLabel: 'Retry Liquid',
@@ -765,13 +695,18 @@ class _RecapBody extends StatelessWidget {
         PairingCheck(
           // The check that matters for a hardware wallet: the descriptor stored
           // here must be derived from the key of the device that will sign, or
-          // the wallet can receive and never spend.
-          label: 'Bitcoin descriptor belongs to this device',
+          // the wallet can receive and never spend. When the stored wallet
+          // reports no fingerprint there is nothing to compare, so the line
+          // says what is true instead: the descriptor came from this device's
+          // own session.
+          label: storedFingerprint == null
+              ? 'Bitcoin descriptor read from this device'
+              : 'Bitcoin descriptor fingerprint matches the device',
           passed:
-              wallet.masterFingerprint == null ||
-              wallet.masterFingerprint!.toLowerCase() ==
+              storedFingerprint == null ||
+              storedFingerprint.toLowerCase() ==
                   result.fingerprint.toLowerCase(),
-          detail: wallet.masterFingerprint,
+          detail: storedFingerprint,
         ),
       if (result.hasLiquid)
         const PairingCheck(
@@ -782,7 +717,7 @@ class _RecapBody extends StatelessWidget {
           passed: true,
         ),
       PairingCheck(
-        label: 'No private key stored on this computer',
+        label: 'No private key stored in this app',
         passed: wallet.isWatchOnly,
       ),
     ];
@@ -804,7 +739,7 @@ class _RecapBody extends StatelessWidget {
         ),
         if (error != null) ...[
           const SizedBox(height: AppSpacing.md),
-          WarningBanner(title: 'Could not add Liquid', message: error!),
+          DangerBanner(title: 'Could not add Liquid', message: error!),
         ],
         // Last resort when the Bitcoin half is the one that failed: a Jade can
         // still hold a Liquid-only wallet, which needs nothing but the port.
@@ -814,7 +749,7 @@ class _RecapBody extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: SecondaryButton(
               label: 'Set up a Liquid-only wallet instead',
-              icon: Icons.water_drop_rounded,
+              icon: Icons.water_drop_outlined,
               onPressed: onLiquidOnlyFallback,
             ),
           ),
@@ -826,6 +761,8 @@ class _RecapBody extends StatelessWidget {
 
 // ── Shared sub-widgets ────────────────────────────────────────────────────────
 
+/// Tips for an empty device list. Neutral bullets, not check marks: these are
+/// things to try, and the app has verified none of them.
 class _PrerequisiteCard extends StatelessWidget {
   const _PrerequisiteCard({required this.liquidWanted});
 
@@ -847,37 +784,146 @@ class _PrerequisiteCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.cardPadding),
       decoration: BoxDecoration(
-        color: s.surfaceGlass,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        color: s.panel,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         border: Border.all(color: s.edge),
+        boxShadow: s.panelShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('If nothing shows up', style: AppTypography.sectionTitle),
+          Text(
+            'If nothing shows up',
+            style: AppTypography.sectionTitle.copyWith(color: s.ink),
+          ),
           const SizedBox(height: AppSpacing.md),
-          ...items.map(
-            (item) => Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          for (final item in items)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.check_circle_outline, size: 16, color: s.inkFaint),
+                  // Centred on the first line of the text beside it.
+                  SizedBox(
+                    width: AppSpacing.md,
+                    height: 20,
+                    child: Center(
+                      child: Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: s.inkFaint,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
                       item,
-                      style: AppTypography.bodySmall.copyWith(
-                        color: s.inkSecondary,
-                      ),
+                      style: AppTypography.body.copyWith(color: s.inkSecondary),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
         ],
       ),
+    );
+  }
+}
+
+/// The step's action row (design.md, "Steps"): Back as a ghost with its
+/// arrow, the step's one primary on the right. A disabled primary says why
+/// beside it. On a phone the primary takes the width and the reason sits
+/// above the row.
+class _StepActions extends StatelessWidget {
+  const _StepActions({
+    required this.label,
+    required this.onPressed,
+    this.onBack,
+    this.reason,
+    this.secondaryLabel,
+    this.onSecondary,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final VoidCallback? onBack;
+  final String? reason;
+  final String? secondaryLabel;
+  final VoidCallback? onSecondary;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final why = reason;
+    final back = onBack;
+    final second = secondaryLabel;
+    final reasonStyle = AppTypography.caption.copyWith(color: s.inkFaint);
+    if (AppLayout.isPhone(context)) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (why != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Text(why, textAlign: TextAlign.center, style: reasonStyle),
+            ),
+          if (second != null) ...[
+            SecondaryButton(
+              label: second,
+              onPressed: onSecondary,
+              isFullWidth: true,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          Row(
+            children: [
+              if (back != null) ...[
+                GhostButton(
+                  label: 'Back',
+                  icon: Icons.arrow_back_outlined,
+                  onPressed: back,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+              ],
+              Expanded(
+                child: PrimaryButton(
+                  label: label,
+                  onPressed: onPressed,
+                  isFullWidth: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(
+          child: why == null
+              ? const SizedBox.shrink()
+              : Text(why, textAlign: TextAlign.end, style: reasonStyle),
+        ),
+        const SizedBox(width: AppSpacing.lg),
+        if (back != null) ...[
+          GhostButton(
+            label: 'Back',
+            icon: Icons.arrow_back_outlined,
+            onPressed: back,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+        ],
+        if (second != null) ...[
+          SecondaryButton(label: second, onPressed: onSecondary),
+          const SizedBox(width: AppSpacing.sm),
+        ],
+        PrimaryButton(label: label, onPressed: onPressed),
+      ],
     );
   }
 }

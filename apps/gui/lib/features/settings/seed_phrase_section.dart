@@ -6,14 +6,15 @@ import 'package:flutter/services.dart';
 
 import '../../bridge/bridge_provider.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/cards.dart';
+import '../../shared/widgets/banners.dart';
 import '../../services/screen_security.dart';
 import '../../shared/widgets/app_password_gate.dart' show BiometricGateButton;
-import '../../shared/widgets/glass_dialog.dart';
+import '../../shared/widgets/app_dialog.dart';
 import '../../shared/widgets/list_rows.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import 'settings_kit.dart';
 
 /// The gate in front of every seed reveal: the app password, re-entered.
 ///
@@ -168,97 +169,29 @@ class SeedPhraseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (AppLayout.isPhone(context)) {
-      final s = AppScheme.of(context);
-      // Two tools that each open something — a list of two rows, carrying the
-      // glyphs already on the buttons below and the warning tint the whole
-      // group deserves. The sentence moves under the group: a row subtitle is
-      // one line, and this one has to be read.
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const ListSectionLabel(label: 'Recovery phrase'),
-          ListCard(
-            children: [
-              ListRow(
-                icon: Icons.visibility_outlined,
-                tint: s.warning,
-                title: 'View',
-                subtitle: 'Shows the words',
-                chevron: true,
-                onTap: () => _view(context),
-              ),
-              ListRow(
-                icon: Icons.key_outlined,
-                tint: s.warning,
-                title: 'Private key',
-                subtitle: "Reveals this wallet's xprv",
-                chevron: true,
-                onTap: () => _viewPrivateKey(context),
-              ),
-            ],
-          ),
-          const _SectionNote(
-            text:
-                'Anyone with these words can spend your funds. Only use '
-                'these tools in a private place.',
-          ),
-        ],
-      );
-    }
-    return SectionCard(
-      title: 'Seed Phrase',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Anyone with these words can spend your funds. Only use these '
-            'tools in a private place.',
-            style: AppTypography.caption,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: [
-              SecondaryButton(
-                label: 'View',
-                icon: Icons.visibility_outlined,
-                onPressed: () => _view(context),
-              ),
-              SecondaryButton(
-                label: 'Private key',
-                icon: Icons.key_outlined,
-                onPressed: () => _viewPrivateKey(context),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The footnote under a phone list group — the paragraph a one-line [ListRow]
-/// subtitle cannot hold. A copy of the one in settings_screen.dart: it belongs
-/// in list_rows.dart, which is owned elsewhere this pass.
-class _SectionNote extends StatelessWidget {
-  const _SectionNote({required this.text});
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, AppSpacing.sm, 2, 0),
-      child: Text(
-        text,
-        style: AppTypography.caption.copyWith(
-          fontSize: 12.5,
-          color: s.inkSecondary,
-          height: 1.35,
+    // Two tools that each open something behind the gate: two rows. The
+    // warning goes under the group, where it can be read whole.
+    return SettingsGroup(
+      label: 'Recovery phrase',
+      note:
+          'Anyone with these words can spend your funds. Only use these '
+          'tools in a private place.',
+      children: [
+        ListRow(
+          icon: Icons.visibility_outlined,
+          title: 'View',
+          subtitle: 'Shows the words',
+          chevron: true,
+          onTap: () => _view(context),
         ),
-      ),
+        ListRow(
+          icon: Icons.key_outlined,
+          title: 'Private key',
+          subtitle: "Reveals this wallet's xprv",
+          chevron: true,
+          onTap: () => _viewPrivateKey(context),
+        ),
+      ],
     );
   }
 }
@@ -314,46 +247,24 @@ class _AppPasswordGateDialogState extends State<_AppPasswordGateDialog> {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
-    return GlassDialog(
+    return PromptDialog(
       title: 'Enter your app password',
       icon: Icons.shield_outlined,
       // In a sheet the actions land in an end-aligned Wrap: full width, they
-      // stack as bars instead of two right-hugging chips. PrimaryButton draws
-      // this same 16 px spinner when isLoading.
-      actions: phone
-          ? [
-              GhostButton(
-                label: 'Cancel',
-                onPressed: _checking
-                    ? null
-                    : () => Navigator.of(context).pop(false),
-                isFullWidth: true,
-              ),
-              PrimaryButton(
-                label: 'Continue',
-                isLoading: _checking,
-                onPressed: _checking ? null : _submit,
-                isFullWidth: true,
-              ),
-            ]
-          : [
-              TextButton(
-                onPressed: _checking
-                    ? null
-                    : () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: _checking ? null : _submit,
-                child: _checking
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Continue'),
-              ),
-            ],
+      // stack as bars instead of two right-hugging chips.
+      actions: [
+        GhostButton(
+          label: 'Cancel',
+          onPressed: _checking ? null : () => Navigator.of(context).pop(false),
+          isFullWidth: phone,
+        ),
+        PrimaryButton(
+          label: 'Continue',
+          isLoading: _checking,
+          onPressed: _checking ? null : _submit,
+          isFullWidth: phone,
+        ),
+      ],
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -362,12 +273,10 @@ class _AppPasswordGateDialogState extends State<_AppPasswordGateDialog> {
             'This is the password that encrypts wallet storage — the same one '
             'you enter when Templar starts. You are about to reveal secret key '
             'material.',
-            style: AppTypography.caption.copyWith(
-              color: phone ? s.inkSecondary : null,
-            ),
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
           ),
-          const SizedBox(height: AppSpacing.md),
-          GlassPasswordField(
+          const SizedBox(height: AppSpacing.lg),
+          PasswordField(
             controller: _ctrl,
             autofocus: true,
             errorText: _error,
@@ -412,76 +321,99 @@ class _SeedWordsDialogState extends State<_SeedWordsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
-
-    Widget word(int i) => Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      decoration: BoxDecoration(
-        // A phone reads the words out of the same inset grey every other
-        // data well is made of; the desktop keeps its raised chip.
-        color: phone ? s.panelInset : s.surfaceRaised,
-        borderRadius: BorderRadius.circular(
-          phone ? AppSpacing.radiusMd : AppSpacing.radiusSm,
-        ),
-        border: phone ? null : Border.all(color: s.edge),
-      ),
-      child: Text(
-        '${i + 1}. ${widget.words[i]}',
-        style: AppTypography.mono.copyWith(color: s.ink),
-      ),
-    );
+    // Phone: two columns; desktop: three. Aligned cells, numbered in their
+    // own fixed column, because the one thing this dialog is for is copying
+    // a phrase onto paper in order.
+    final columns = phone ? 2 : 3;
 
     return AppDialog(
       title: const Text('Seed phrase'),
       content: SecureScreen(
         child: SizedBox(
-          width: phone ? double.infinity : 420,
-          // Phone: two aligned columns. Chips that size to their own word land
-          // in ragged columns, which is the worst possible layout for the one
-          // thing this dialog is for — copying a phrase onto paper.
-          child: phone
-              ? LayoutBuilder(
-                  builder: (context, c) {
-                    // Floored: two cells plus the gap must never round up past
-                    // the line, or the grid collapses to one column.
-                    final cell = ((c.maxWidth - AppSpacing.sm) / 2)
-                        .floorToDouble();
-                    return Wrap(
-                      spacing: AppSpacing.sm,
-                      runSpacing: AppSpacing.sm,
-                      children: [
-                        for (var i = 0; i < widget.words.length; i++)
-                          SizedBox(width: cell, child: word(i)),
-                      ],
-                    );
-                  },
-                )
-              : Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: [
-                    for (var i = 0; i < widget.words.length; i++) word(i),
-                  ],
-                ),
+          width: phone ? double.infinity : 480,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const WarningBanner(
+                message:
+                    'Anyone with these words can spend your funds. Write them '
+                    'down in a private place.',
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              LayoutBuilder(
+                builder: (context, c) {
+                  // Floored: the cells plus the gaps must never round up past
+                  // the line, or the grid loses a column.
+                  final cell =
+                      ((c.maxWidth - AppSpacing.sm * (columns - 1)) / columns)
+                          .floorToDouble();
+                  return Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    children: [
+                      for (var i = 0; i < widget.words.length; i++)
+                        SizedBox(
+                          width: cell,
+                          child: _WordWell(index: i, word: widget.words[i]),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
-        if (phone)
-          GhostButton(
-            label: 'Done',
-            onPressed: () => Navigator.of(context).pop(),
-            isFullWidth: true,
-          )
-        else
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Done'),
-          ),
+        GhostButton(
+          label: 'Done',
+          onPressed: () => Navigator.of(context).pop(),
+          isFullWidth: phone,
+        ),
       ],
+    );
+  }
+}
+
+/// One word of the phrase: its number right-aligned in a fixed column so
+/// `1.` and `24.` line up, then the word in mono.
+class _WordWell extends StatelessWidget {
+  const _WordWell({required this.index, required this.word});
+  final int index;
+  final String word;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: s.well,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: s.edge),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: AppSpacing.xl,
+            child: Text(
+              '${index + 1}.',
+              textAlign: TextAlign.right,
+              style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            // Never ellipsised: a clipped word is a wrong backup.
+            child: Text(word, style: AppTypography.mono.copyWith(color: s.ink)),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -537,20 +469,12 @@ class _PrivateKeyDialogState extends State<_PrivateKeyDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Icon(Icons.warning_amber_rounded, color: s.danger, size: 18),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      'Anyone with this key controls every coin in this wallet. '
-                      'Never share it or paste it online.',
-                      style: AppTypography.caption.copyWith(color: s.danger),
-                    ),
-                  ),
-                ],
+              const WarningBanner(
+                message:
+                    'Anyone with this key controls every coin in this wallet. '
+                    'Never share it or paste it online.',
               ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.lg),
               _KeyWell(
                 value: widget.privateKey,
                 revealed: _revealed,
@@ -563,7 +487,7 @@ class _PrivateKeyDialogState extends State<_PrivateKeyDialog> {
               if (phone) ...[
                 SecondaryButton(
                   label: _copied ? 'Copied' : 'Copy key',
-                  icon: _copied ? Icons.check : Icons.copy,
+                  icon: _copied ? Icons.check_outlined : Icons.copy_outlined,
                   onPressed: _copy,
                   isFullWidth: true,
                 ),
@@ -582,7 +506,9 @@ class _PrivateKeyDialogState extends State<_PrivateKeyDialog> {
                   children: [
                     SecondaryButton(
                       label: _copied ? 'Copied' : 'Copy key',
-                      icon: _copied ? Icons.check : Icons.copy,
+                      icon: _copied
+                          ? Icons.check_outlined
+                          : Icons.copy_outlined,
                       onPressed: _copy,
                     ),
                     const SizedBox(width: AppSpacing.md),
@@ -603,17 +529,11 @@ class _PrivateKeyDialogState extends State<_PrivateKeyDialog> {
         ),
       ),
       actions: [
-        if (phone)
-          GhostButton(
-            label: 'Done',
-            onPressed: () => Navigator.of(context).pop(),
-            isFullWidth: true,
-          )
-        else
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Done'),
-          ),
+        GhostButton(
+          label: 'Done',
+          onPressed: () => Navigator.of(context).pop(),
+          isFullWidth: phone,
+        ),
       ],
     );
   }
@@ -634,7 +554,6 @@ class _KeyWell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final phone = AppLayout.isPhone(context);
     final text = Padding(
       padding: const EdgeInsets.all(AppSpacing.md),
       child: SelectableText(
@@ -649,20 +568,15 @@ class _KeyWell extends StatelessWidget {
       children: [
         Text(
           'Extended private key (xprv)',
-          style: AppTypography.label.copyWith(color: s.inkSecondary),
+          style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
         ),
         const SizedBox(height: AppSpacing.sm),
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
-            // panelInset is the phone's data-well grey and is fully opaque,
-            // so the AA guarantee behind critical data still holds for the
-            // mono xprv. Desktop keeps its own solid surface and hairline.
-            color: phone ? s.panelInset : s.surfaceSolid,
-            borderRadius: BorderRadius.circular(
-              phone ? AppSpacing.radiusLg : AppSpacing.radiusSm,
-            ),
-            border: phone ? null : Border.all(color: s.edge),
+            color: s.well,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            border: Border.all(color: s.edge),
           ),
           clipBehavior: Clip.antiAlias,
           child: revealed
@@ -671,7 +585,8 @@ class _KeyWell extends StatelessWidget {
                   alignment: Alignment.center,
                   children: [
                     // The real string is laid out underneath so the well does
-                    // not resize on reveal — only its legibility changes.
+                    // not resize on reveal — only its legibility changes. The
+                    // blur is a privacy mask over a secret, not decoration.
                     ImageFiltered(
                       imageFilter: ui.ImageFilter.blur(sigmaX: 7, sigmaY: 7),
                       child: IgnorePointer(

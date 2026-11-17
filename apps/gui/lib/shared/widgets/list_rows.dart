@@ -1,29 +1,29 @@
-// The phone's list grammar — one card, hairline-separated rows, each with a
-// tinted glyph on an inset tile.
+// The grouped list (design.md, "Rows, not a card each") — one card,
+// hairline-separated rows, each with its glyph on a raised tile.
 //
 // The Dashboard's assets and activity and the Settings root are all the same
 // object: a labelled group of rows. Sharing the widgets keeps a row meaning
-// the same thing wherever it appears, and keeps the two screens from drifting
-// a pixel apart (design.md — "compose repeated things as one object").
-//
-// Desktop screens keep their own panels; nothing here is used there.
+// the same thing wherever it appears, and keeps the screens from drifting a
+// pixel apart.
 
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 
 /// Card inset and icon column — the dividers start where the text does.
-const double kListPad = AppSpacing.cardPaddingSmall;
-const double kListTile = 40;
-const double kListGap = 12;
+const double kListPad = AppSpacing.lg;
+const double kListTile = 32;
+const double kListGap = AppSpacing.md;
 const double kListTextInset = kListPad + kListTile + kListGap;
 
-/// The uppercase label over a group, with the group's one way in on the
-/// right ("ASSETS … Liquid →"). Navigation lives here so the rows below can
-/// stay data.
+/// The quiet label over a group, with the group's one way in on the right
+/// ("Assets … Liquid →"). Navigation lives here so the rows below can stay
+/// data. Sentence case: the label is read, not shouted.
+///
+/// It owns the 8 under it; the gap above it belongs to the block before it.
 class ListSectionLabel extends StatelessWidget {
   const ListSectionLabel({
     super.key,
@@ -39,58 +39,45 @@ class ListSectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
     final action = actionLabel;
     return Padding(
-      padding: const EdgeInsets.only(left: 2, bottom: AppSpacing.sm),
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Row(
         children: [
           Expanded(
             child: Text(
-              label.toUpperCase(),
-              style: AppTypography.navSection.copyWith(
-                color: s.inkFaint,
-                letterSpacing: 1.3,
-              ),
+              label,
+              style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
             ),
           ),
           if (action != null && onAction != null)
-            Semantics(
-              button: true,
-              label: action,
-              excludeSemantics: true,
-              child: InkWell(
-                onTap: onAction,
-                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                child: Container(
-                  // The one way into a section is a control, so it clears the
-                  // touch floor even though the words are small.
-                  constraints: const BoxConstraints(
-                    minHeight: AppLayout.minTouchTarget,
-                  ),
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        action,
-                        style: AppTypography.label.copyWith(
-                          fontSize: 12.5,
-                          color: s.inkSecondary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.arrow_forward_rounded,
-                        size: 14,
-                        color: s.inkSecondary,
-                      ),
-                    ],
-                  ),
+            TextButton(
+              onPressed: onAction,
+              style: TextButton.styleFrom(
+                foregroundColor: s.inkSecondary,
+                // The one way into a section is a control, so on touch it
+                // clears the floor even though the words are small.
+                minimumSize: Size(
+                  0,
+                  phone
+                      ? AppLayout.minTouchTarget
+                      : AppSpacing.controlHeightSmall,
                 ),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                textStyle: AppTypography.label,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(action),
+                  const SizedBox(width: AppSpacing.xs),
+                  Icon(
+                    Icons.arrow_forward_outlined,
+                    size: AppSpacing.iconSmall,
+                    color: s.accentGlyph,
+                  ),
+                ],
               ),
             ),
         ],
@@ -99,7 +86,8 @@ class ListSectionLabel extends StatelessWidget {
   }
 }
 
-/// The card a run of [ListRow]s sits on.
+/// The card a run of [ListRow]s sits on. It clips its rows, so a row's hover
+/// layer follows the card's corners.
 class ListCard extends StatelessWidget {
   const ListCard({super.key, required this.children});
 
@@ -114,12 +102,18 @@ class ListCard extends StatelessWidget {
         color: s.panel,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         border: Border.all(color: s.edge),
+        boxShadow: s.panelShadow,
       ),
       child: Column(
         children: [
           for (var i = 0; i < children.length; i++) ...[
             if (i > 0)
-              Divider(height: 1, color: s.edge, indent: kListTextInset),
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: s.edge,
+                indent: kListTextInset,
+              ),
             children[i],
           ],
         ],
@@ -128,54 +122,92 @@ class ListCard extends StatelessWidget {
   }
 }
 
-/// The glyph tile at the head of a row: one inset square, one coloured glyph.
-/// Colour identifies the thing; it never fills the tile (design.md).
+/// Draws a glyph that is not in the icon font — the Templar cross — at an
+/// icon's [size] and in its [color], so it sits in a tile like any other.
+typedef GlyphBuilder = Widget Function(double size, Color color);
+
+/// The glyph tile at the head of a row: one raised square, one glyph in the
+/// secondary ink. A [tint] is honoured only where the colour is a fact — a
+/// chain hue or a status; any other colour falls back to the secondary ink,
+/// because an icon never gets a colour of its own (design.md, "Icons").
 class ListIconTile extends StatelessWidget {
   const ListIconTile({
     super.key,
-    required this.icon,
-    required this.tint,
+    this.icon,
+    this.glyph,
+    this.tint,
     this.size = kListTile,
-  });
+  }) : assert(icon != null || glyph != null);
 
-  final IconData icon;
-  final Color tint;
+  final IconData? icon;
+
+  /// Draws the glyph when it is not an [IconData]; wins over [icon].
+  final GlyphBuilder? glyph;
+  final Color? tint;
   final double size;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
+    final side = size >= 48
+        ? 24.0
+        : size >= kListTile
+        ? AppSpacing.icon
+        : AppSpacing.iconSmall;
+    final ink = listGlyphInk(s, tint);
     return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: s.panelInset,
-        borderRadius: BorderRadius.circular(size * 0.3),
+        borderRadius: BorderRadius.circular(
+          size > 40 ? AppSpacing.radiusLg : AppSpacing.radiusMd,
+        ),
       ),
-      child: Icon(icon, size: size * 0.52, color: tint),
+      child: glyph?.call(side, ink) ?? Icon(icon, size: side, color: ink),
     );
   }
 }
 
+/// The ink a row glyph is drawn in: [tint] when it is a chain hue or a
+/// status, the secondary ink otherwise.
+Color listGlyphInk(AppScheme s, Color? tint) {
+  if (tint == null) return s.inkSecondary;
+  final factual = <Color>[s.bitcoin, s.liquid, s.success, s.warning, s.danger];
+  return factual.contains(tint) ? tint : s.inkSecondary;
+}
+
 /// One row: glyph, title, one line saying what it is, and whatever states or
 /// operates it on the right.
-class ListRow extends StatelessWidget {
+class ListRow extends StatefulWidget {
   const ListRow({
     super.key,
-    required this.icon,
-    required this.tint,
+    this.icon,
+    this.glyph,
+    this.tint,
     required this.title,
+    this.titleWidget,
     this.subtitle,
     this.subtitleColor,
     this.trailing,
     this.onTap,
     this.chevron = false,
-  });
+  }) : assert(icon != null || glyph != null);
 
-  final IconData icon;
-  final Color tint;
+  final IconData? icon;
+
+  /// Draws the glyph when it is not an [IconData]; see [ListIconTile.glyph].
+  final GlyphBuilder? glyph;
+
+  /// The glyph's colour when it is a fact (a chain, a status); see
+  /// [ListIconTile.tint].
+  final Color? tint;
   final String title;
+
+  /// Drawn in place of the title's text — the tag of a labelled address.
+  /// [title] still names the row to assistive tech.
+  final Widget? titleWidget;
   final String? subtitle;
 
   /// Overrides the subtitle ink — for a state that is not merely descriptive
@@ -190,65 +222,99 @@ class ListRow extends StatelessWidget {
   final bool chevron;
 
   @override
+  State<ListRow> createState() => _ListRowState();
+}
+
+class _ListRowState extends State<ListRow> {
+  bool _hover = false;
+  bool _down = false;
+  bool _focus = false;
+
+  @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final sub = subtitle;
-    final body = Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: kListPad,
-        vertical: AppSpacing.md,
-      ),
-      child: Row(
-        children: [
-          ListIconTile(icon: icon, tint: tint),
-          const SizedBox(width: kListGap),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
+    final phone = AppLayout.isPhone(context);
+    final sub = widget.subtitle;
+    final onTap = widget.onTap;
+    final enabled = onTap != null;
+
+    final title = Text(
+      widget.title,
+      style: AppTypography.bodyOf(context).copyWith(color: s.ink),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+    final content = Row(
+      children: [
+        ListIconTile(icon: widget.icon, glyph: widget.glyph, tint: widget.tint),
+        const SizedBox(width: kListGap),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.titleWidget case final custom?)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: custom,
+                )
+              else
+                title,
+              if (sub != null)
                 Text(
-                  title,
-                  style: AppTypography.body.copyWith(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: s.ink,
-                    height: 1.2,
+                  sub,
+                  style: AppTypography.caption.copyWith(
+                    color: widget.subtitleColor ?? s.inkSecondary,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (sub != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    sub,
-                    style: AppTypography.caption.copyWith(
-                      fontSize: 12.5,
-                      color: subtitleColor ?? s.inkSecondary,
-                      height: 1.2,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
+            ],
           ),
-          if (trailing != null) ...[
-            const SizedBox(width: AppSpacing.sm),
-            trailing!,
-          ],
-          if (chevron) ...[
-            const SizedBox(width: AppSpacing.xs),
-            Icon(Icons.chevron_right_rounded, size: 22, color: s.inkFaint),
-          ],
+        ),
+        if (widget.trailing != null) ...[
+          const SizedBox(width: AppSpacing.md),
+          widget.trailing!,
         ],
-      ),
+        if (widget.chevron) ...[
+          const SizedBox(width: AppSpacing.xs),
+          Icon(
+            Icons.chevron_right_outlined,
+            size: AppSpacing.icon,
+            color: s.inkFaint,
+          ),
+        ],
+      ],
     );
 
-    if (onTap == null) {
+    final body = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.instant),
+      curve: AppMotion.settle,
+      color: !enabled
+          ? Colors.transparent
+          : _down
+          ? s.pressed
+          : _hover
+          ? s.hover
+          : Colors.transparent,
+      foregroundDecoration: _focus && enabled
+          ? BoxDecoration(border: Border.all(color: s.focus, width: 2))
+          : null,
+      constraints: BoxConstraints(
+        minHeight: phone && sub != null
+            ? AppSpacing.rowHeight + AppSpacing.sm
+            : AppSpacing.rowHeight,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kListPad,
+        vertical: AppSpacing.sm,
+      ),
+      child: content,
+    );
+
+    if (!enabled) {
       return Semantics(
-        label: sub == null ? title : '$title. $sub',
+        label: sub == null ? widget.title : '${widget.title}. $sub',
         child: body,
       );
     }
@@ -257,16 +323,37 @@ class ListRow extends StatelessWidget {
     return Semantics(
       button: true,
       child: MergeSemantics(
-        child: Material(
-          type: MaterialType.transparency,
-          child: InkWell(onTap: onTap, child: body),
+        child: FocusableActionDetector(
+          mouseCursor: SystemMouseCursors.click,
+          onShowHoverHighlight: (v) => setState(() {
+            _hover = v;
+            if (!v) _down = false;
+          }),
+          onShowFocusHighlight: (v) => setState(() => _focus = v),
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                onTap();
+                return null;
+              },
+            ),
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            onTapDown: (_) => setState(() => _down = true),
+            onTapUp: (_) => setState(() => _down = false),
+            onTapCancel: () => setState(() => _down = false),
+            child: body,
+          ),
         ),
       ),
     );
   }
 }
 
-/// The right-hand figure of a data row: the number, and its unit under it.
+/// The right-hand figure of a data row: the number, and its unit or other
+/// denomination under it, right-aligned so a column of amounts lines up.
 class ListAmount extends StatelessWidget {
   const ListAmount({
     super.key,
@@ -279,6 +366,9 @@ class ListAmount extends StatelessWidget {
 
   final String value;
   final String? unit;
+
+  /// The figure's ink: [AppScheme.ink] by default; an incoming amount may
+  /// pass [AppScheme.success]. Outgoing stays in the primary ink.
   final Color? valueColor;
   final Color? unitColor;
   final double maxWidth;
@@ -298,35 +388,26 @@ class ListAmount extends StatelessWidget {
             textAlign: TextAlign.end,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.numericSmall.copyWith(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: valueColor ?? s.ink,
-              height: 1.2,
-            ),
+            style: AppTypography.numeric.copyWith(color: valueColor ?? s.ink),
           ),
-          if (u != null) ...[
-            const SizedBox(height: 1),
+          if (u != null)
             Text(
               u,
               textAlign: TextAlign.end,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppTypography.caption.copyWith(
-                fontSize: 11.5,
+              style: AppTypography.numericSmall.copyWith(
                 color: unitColor ?? s.inkFaint,
-                height: 1.2,
               ),
             ),
-          ],
         ],
       ),
     );
   }
 }
 
-/// The switch used in a row. White thumb on the Action colour when on —
-/// the one place a filled accent appears outside a primary button.
+/// The switch used in a row: the themed Material switch, on in the primary
+/// ink (app_theme.dart), never the accent.
 class ListSwitch extends StatelessWidget {
   const ListSwitch({
     super.key,
@@ -341,18 +422,12 @@ class ListSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
     return Semantics(
       label: semanticLabel,
       toggled: value,
       child: Switch(
         value: value,
         onChanged: onChanged,
-        activeThumbColor: Colors.white,
-        activeTrackColor: s.accent,
-        inactiveThumbColor: s.isDark ? AppColors.textPrimaryDark : Colors.white,
-        inactiveTrackColor: s.panelInset,
-        trackOutlineColor: WidgetStatePropertyAll(s.edge),
         materialTapTargetSize: MaterialTapTargetSize.padded,
       ),
     );

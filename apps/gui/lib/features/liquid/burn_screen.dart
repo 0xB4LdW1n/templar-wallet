@@ -13,9 +13,10 @@ import '../../shared/widgets/cards.dart';
 import '../../shared/widgets/code_box.dart';
 import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/page_header.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import 'form_parts.dart';
 
 class BurnScreen extends StatefulWidget {
   const BurnScreen({super.key});
@@ -63,14 +64,28 @@ class _BurnScreenState extends State<BurnScreen> {
           .where((a) => a.ticker != 'BTC' && a.ticker != 'LBTC')
           .toList();
       if (mounted) {
+        final wanted = _requestedAssetId();
         setState(() {
           _liquidAssets = liquid;
-          _selectedAsset = liquid.isNotEmpty ? liquid.first : null;
+          _selectedAsset =
+              liquid.where((a) => a.assetId == wanted).firstOrNull ??
+              (liquid.isNotEmpty ? liquid.first : null);
           _loadingAssets = false;
         });
       }
     } catch (e) {
       if (mounted) setState(() => _loadingAssets = false);
+    }
+  }
+
+  /// The asset the caller asked for (`?asset=<id>`, from a row or an asset's
+  /// detail), or null. Read after the first frame: the router's state is an
+  /// inherited lookup.
+  String? _requestedAssetId() {
+    try {
+      return GoRouterState.of(context).uri.queryParameters['asset'];
+    } catch (_) {
+      return null; // Not under the router (a widget test).
     }
   }
 
@@ -80,13 +95,13 @@ class _BurnScreenState extends State<BurnScreen> {
     if (!_confirmed) return;
     final amount = int.tryParse(_amountController.text.trim());
     if (amount == null || amount <= 0) {
-      setState(() => _error = 'Enter an amount greater than 0.');
+      setState(() => _error = 'Enter an amount greater than 0');
       return;
     }
     if (amount > asset.amount) {
       setState(
         () => _error =
-            'Amount exceeds current holdings (${asset.amount} base units).',
+            'Amount exceeds current holdings (${asset.amount} base units)',
       );
       return;
     }
@@ -130,210 +145,151 @@ class _BurnScreenState extends State<BurnScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: PageBackground.flat(
-        child: _resultTxid != null ? _buildResult() : _buildForm(),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: AppSpacing.formMaxWidth,
+            ),
+            child: _resultTxid != null ? _buildResult() : _buildForm(),
+          ),
+        ),
       ),
     );
   }
 
+  Widget _backToAssets() => GhostButton(
+    label: 'Back to assets',
+    icon: Icons.arrow_back,
+    onPressed: () => context.go(AppRoutes.liquid),
+  );
+
+  // Burn is loss, so the screen's action is the danger button and nothing on
+  // it is filled with the accent.
   Widget _buildForm() {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
-        child: ListView(
-          padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-          children: [
-            PageHeader(
-              title: 'Burn Asset',
-              subtitle: 'Permanently destroy token supply',
-              actions: [
-                GhostButton(
-                  label: 'Back to Liquid',
-                  onPressed: () => context.go(AppRoutes.liquid),
-                ),
-              ],
-            ),
-            const DangerBanner(
-              title: 'This action is irreversible',
-              message:
-                  'Burned tokens are permanently destroyed. The total supply will be permanently reduced. This cannot be undone.',
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            if (_loadingAssets)
-              const Center(child: CircularProgressIndicator())
-            else ...[
-              FormCard(
-                title: 'Asset',
-                child: _liquidAssets.isEmpty
-                    ? Text(
-                        'No burnable assets found.',
-                        style: AppTypography.caption,
-                      )
-                    : DropdownButtonFormField<String>(
-                        initialValue: _selectedAsset?.assetId,
-                        items: _liquidAssets
-                            .map(
-                              (a) => DropdownMenuItem(
-                                value: a.assetId,
-                                child: Text(
-                                  '${AssetRegistryService.instance.displayTicker(a)} — ${AssetRegistryService.instance.displayName(a)}',
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) => setState(() {
-                          _selectedAsset = _liquidAssets.firstWhere(
-                            (a) => a.assetId == v,
-                          );
-                          _confirmController.clear();
-                        }),
-                        decoration: const InputDecoration(
-                          hintText: 'Select asset',
-                        ),
-                      ),
-              ),
-              if (_selectedAsset != null) ...[
-                const SizedBox(height: AppSpacing.lg),
-                SummaryCard(
-                  rows: [
-                    (
-                      label: 'Current holdings',
-                      value: _selectedAsset!.displayAmount,
-                      isMono: false,
-                    ),
-                    (
-                      label: 'Base units',
-                      value: '${_selectedAsset!.amount}',
-                      isMono: true,
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: AppSpacing.lg),
-              FormCard(
-                title: 'Amount to burn',
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _amountController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        decoration: const InputDecoration(
-                          labelText: 'Amount to burn (base units)',
-                        ),
-                      ),
-                    ),
-                    if (_selectedAsset != null) ...[
-                      const SizedBox(width: AppSpacing.md),
-                      TextButton(
-                        onPressed: () => setState(
-                          () => _amountController.text =
-                              '${_selectedAsset!.amount}',
-                        ),
-                        child: const Text('Burn all'),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              FormCard(
-                title: 'Confirm destruction',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Type "$_confirmTicker" to confirm',
-                      style: AppTypography.body,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    TextField(
-                      controller: _confirmController,
-                      decoration: InputDecoration(
-                        hintText: _confirmTicker,
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(
-                            AppSpacing.radiusSm,
-                          ),
-                          borderSide: BorderSide(
-                            color: _confirmed
-                                ? AppColors.danger
-                                : AppColors.liquid,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: AppSpacing.md),
-                DangerBanner(message: _error!),
-              ],
-              const SizedBox(height: AppSpacing.xl),
-              if (_submitting)
-                Row(
-                  children: [
-                    const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Text('Broadcasting…', style: AppTypography.caption),
-                  ],
-                )
-              else
-                DangerButton(
-                  label: 'Burn tokens',
-                  icon: Icons.local_fire_department,
-                  isFullWidth: true,
-                  onPressed: _confirmed && _liquidAssets.isNotEmpty
-                      ? _onBurn
-                      : null,
-                ),
-            ],
-          ],
+    final reg = AssetRegistryService.instance;
+    final asset = _selectedAsset;
+    return ListView(
+      padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+      children: [
+        PageHeader(title: 'Burn asset', actions: [_backToAssets()]),
+        const DangerBanner(
+          title: 'This action is irreversible',
+          message:
+              'Burned tokens are permanently destroyed. The total supply will '
+              'be permanently reduced. This cannot be undone.',
         ),
-      ),
+        const SizedBox(height: AppSpacing.xl),
+        if (_loadingAssets)
+          const Center(child: CircularProgressIndicator())
+        else ...[
+          FieldBlock(
+            label: 'Asset',
+            child: _liquidAssets.isEmpty
+                ? Text(
+                    'No burnable assets found',
+                    style: AppTypography.body.copyWith(
+                      color: AppScheme.of(context).inkSecondary,
+                    ),
+                  )
+                : DropdownButtonFormField<String>(
+                    initialValue: asset?.assetId,
+                    isExpanded: true,
+                    items: _liquidAssets
+                        .map(
+                          (a) => DropdownMenuItem(
+                            value: a.assetId,
+                            child: Text(
+                              '${reg.displayTicker(a)} — ${reg.displayName(a)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setState(() {
+                      _selectedAsset = _liquidAssets.firstWhere(
+                        (a) => a.assetId == v,
+                      );
+                      _confirmController.clear();
+                    }),
+                    decoration: const InputDecoration(hintText: 'Select asset'),
+                  ),
+          ),
+          if (asset != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            SummaryCard(
+              rows: [
+                (
+                  label: 'Current holdings',
+                  value: asset.displayAmount,
+                  isMono: false,
+                ),
+                (label: 'Base units', value: '${asset.amount}', isMono: true),
+              ],
+            ),
+          ],
+          const SizedBox(height: AppSpacing.xl),
+          FieldBlock(
+            label: 'Amount to burn',
+            help: 'In base units',
+            trailing: asset == null
+                ? null
+                : GhostButton(
+                    label: 'Burn all',
+                    onPressed: () => setState(
+                      () => _amountController.text = '${asset.amount}',
+                    ),
+                  ),
+            child: TextField(
+              controller: _amountController,
+              keyboardType: TextInputType.number,
+              style: AppTypography.numeric,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(hintText: '0'),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          FieldBlock(
+            label: 'Type "$_confirmTicker" to confirm',
+            child: TextField(
+              controller: _confirmController,
+              decoration: InputDecoration(hintText: _confirmTicker),
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            DangerBanner(message: _error!),
+          ],
+          const SizedBox(height: AppSpacing.xl),
+          DangerButton(
+            label: _submitting ? 'Broadcasting…' : 'Burn',
+            icon: Icons.local_fire_department_outlined,
+            isFullWidth: true,
+            onPressed: _confirmed && _liquidAssets.isNotEmpty && !_submitting
+                ? _onBurn
+                : null,
+          ),
+        ],
+      ],
     );
   }
 
   Widget _buildResult() {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
-        child: ListView(
-          padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-          children: [
-            PageHeader(
-              title: 'Burned',
-              subtitle: 'Tokens destroyed on-chain',
-              actions: [
-                GhostButton(
-                  label: 'Back to Liquid',
-                  onPressed: () => context.go(AppRoutes.liquid),
-                ),
-              ],
-            ),
-            const InfoBanner(message: 'Burn transaction broadcast on-chain.'),
-            const SizedBox(height: AppSpacing.xl),
-            SectionCard(
-              title: 'Result',
-              child: CodeBox(label: 'TxID', value: _resultTxid!),
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            PrimaryButton(
-              label: 'Done',
-              isFullWidth: true,
-              onPressed: () => context.go(AppRoutes.liquid),
-            ),
-          ],
+    return ListView(
+      padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+      children: [
+        PageHeader(title: 'Burned', actions: [_backToAssets()]),
+        const InfoBanner(message: 'Burn transaction broadcast on-chain'),
+        const SizedBox(height: AppSpacing.xl),
+        CodeBox(label: 'TxID', value: _resultTxid!),
+        const SizedBox(height: AppSpacing.xl),
+        PrimaryButton(
+          label: 'Done',
+          isFullWidth: true,
+          onPressed: () => context.go(AppRoutes.liquid),
         ),
-      ),
+      ],
     );
   }
 }

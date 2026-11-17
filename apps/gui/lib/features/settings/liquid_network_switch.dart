@@ -1,7 +1,7 @@
 /// Switching the Liquid network, in one place.
 ///
 /// Two screens move the wallet between the public testnet and a local
-/// regtest: Settings › Network & Sync (deliberately) and the Templar Protocol request
+/// regtest: Settings › Network (deliberately) and the Templar Protocol request
 /// screen (because a site asked for a chain the wallet is not on). The
 /// consequence is the same either way — the engine closes the open wallet —
 /// so the confirmation, the wording and the clean-up live here and neither
@@ -19,7 +19,8 @@ import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/glass_dialog.dart';
+import '../../shared/widgets/app_dialog.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_typography.dart';
 
 /// A refusal from the engine, already stripped of its FFI prefix.
@@ -53,11 +54,11 @@ Future<({LiquidNetworkInfo info, bool walletClosed})?> switchLiquidNetwork(
   final confirmed = await showAppDialog<bool>(
     context,
     barrierDismissible: false,
-    builder: (ctx) => GlassDialog(
+    builder: (ctx) => PromptDialog(
       title: 'Switch Liquid network to $target?',
-      icon: Icons.swap_horiz,
+      icon: Icons.swap_horiz_outlined,
       actions: [
-        SecondaryButton(
+        GhostButton(
           label: 'Cancel',
           onPressed: () => Navigator.pop(ctx, false),
         ),
@@ -73,7 +74,9 @@ Future<({LiquidNetworkInfo info, bool walletClosed})?> switchLiquidNetwork(
                   'then on. Bitcoin is not affected.'
             : 'Every wallet you open will use the $target chain for Liquid '
                   'until you switch back. Bitcoin is not affected.',
-        style: AppTypography.body,
+        style: AppTypography.body.copyWith(
+          color: AppScheme.of(ctx).inkSecondary,
+        ),
       ),
     ),
   );

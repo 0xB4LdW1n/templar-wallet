@@ -8,6 +8,8 @@ import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
+import '../../shared/widgets/choice_list.dart';
+import '../../shared/widgets/list_rows.dart';
 import '../../shared/widgets/step_flow_scaffold.dart';
 import '../../shared/widgets/step_header.dart';
 import '../../theme/app_scheme.dart';
@@ -236,6 +238,7 @@ class _WalletTypeScreenState extends State<WalletTypeScreen> {
           // moves the one next to it, and this row is where the thumb lives.
           GhostButton(
             label: 'Back',
+            icon: Icons.arrow_back,
             onPressed: _step > 1 && !_vaultBusy ? _back : null,
           ),
           const SizedBox(width: AppSpacing.md),
@@ -382,7 +385,6 @@ class _StructureStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -393,7 +395,6 @@ class _StructureStep extends StatelessWidget {
               'up — one recovery phrase and you are done.',
           isSelected: selected == WalletPath.singleSig,
           icon: Icons.vpn_key_outlined,
-          badge: 'Easiest',
           onTap: () => onSelect(WalletPath.singleSig),
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -403,23 +404,19 @@ class _StructureStep extends StatelessWidget {
               'M-of-N: e.g. any 2 of 3 keys must approve. Losing one key does '
               'not lose the coins, and no single key can spend alone.',
           isSelected: selected == WalletPath.multisig,
-          icon: Icons.group_rounded,
-          badge: 'Safest',
+          icon: Icons.group_outlined,
           onTap: () => onSelect(WalletPath.multisig),
         ),
         const SizedBox(height: AppSpacing.lg),
-        Opacity(
-          opacity: 0.5,
-          child: SelectableOptionCard(
-            title: 'Custom rules (policy)',
-            description:
-                'Timelocks, inheritance and recovery paths via Miniscript. '
-                'Not available yet.',
-            isSelected: false,
-            icon: Icons.account_tree_rounded,
-            badge: 'Coming soon',
-            onTap: null,
-          ),
+        // Drawn at half ink by the card itself (no onTap): shown, not offered.
+        const SelectableOptionCard(
+          title: 'Custom rules (policy)',
+          description:
+              'Timelocks, inheritance and recovery paths via Miniscript',
+          isSelected: false,
+          icon: Icons.account_tree_outlined,
+          badge: 'Coming soon',
+          onTap: null,
         ),
         if (selected == WalletPath.multisig) ...[
           const SizedBox(height: AppSpacing.xl),
@@ -432,16 +429,16 @@ class _StructureStep extends StatelessWidget {
           ),
         ],
         // Watch-only is not a third spending structure — it is a wallet with
-        // no keys at all — so it is set apart rather than listed with them.
-        const SizedBox(height: AppSpacing.xxl),
-        Divider(color: s.edge, height: 1),
-        const SizedBox(height: AppSpacing.xxl),
+        // no keys at all — so it sits under its own label rather than in the
+        // list with them.
+        const SizedBox(height: AppSpacing.xl),
+        const ListSectionLabel(label: 'Without keys'),
         SelectableOptionCard(
           title: 'Somewhere else — just watch it',
           description:
               'Follow a wallet you already have, from its public key, its '
               'descriptor, or its cosigners\' keys. Shows balances and '
-              'history; cannot spend.',
+              'history; cannot spend',
           isSelected: selected == WalletPath.watchOnly,
           icon: Icons.visibility_outlined,
           onTap: () => onSelect(WalletPath.watchOnly),
@@ -474,13 +471,17 @@ class _KindStep extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SelectableOptionCard(
-          title: Platform.isAndroid ? 'On this device' : 'On this computer',
+          // Never "this computer" on a phone (design.md, "Copy").
+          title: AppLayout.isPhone(context)
+              ? 'On this phone'
+              : Platform.isAndroid
+              ? 'On this device'
+              : 'On this computer',
           description:
               'Templar creates a recovery phrase and keeps it here, encrypted. '
               'Quickest to set up, and the right choice for trying things out.',
           isSelected: selected == WalletKind.software,
-          icon: Icons.memory_rounded,
-          badge: 'Easiest',
+          icon: Icons.memory_outlined,
           onTap: () => onSelect(WalletKind.software),
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -495,9 +496,8 @@ class _KindStep extends StatelessWidget {
                     'payment as a QR code, the device signs it offline.',
           isSelected: selected == WalletKind.hardware,
           icon: usbAvailable
-              ? Icons.usb_rounded
-              : Icons.qr_code_scanner_rounded,
-          badge: 'Safest',
+              ? Icons.usb_outlined
+              : Icons.qr_code_scanner_outlined,
           onTap: () => onSelect(WalletKind.hardware),
         ),
       ],
@@ -519,16 +519,12 @@ class _NetworkSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return const Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: AppSpacing.xxl),
-        Text(
-          'NETWORK',
-          style: AppTypography.navSection.copyWith(letterSpacing: 1.4),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        const _NetworkChoice(),
+        SizedBox(height: AppSpacing.xxl),
+        ListSectionLabel(label: 'Network'),
+        _NetworkChoice(),
       ],
     );
   }
@@ -549,56 +545,60 @@ class _NetworkChoice extends StatelessWidget {
         children: [
           _NetworkCard(
             label: 'Testnet',
-            detail: 'Coins have no value. Mistakes cost nothing.',
+            detail: 'Coins have no value; mistakes cost nothing',
             icon: Icons.science_outlined,
             available: true,
           ),
           SizedBox(height: AppSpacing.sm),
           _NetworkCard(
             label: 'Mainnet',
-            detail: 'Real bitcoin.',
-            icon: Icons.public,
+            detail: 'Real bitcoin',
+            icon: Icons.public_outlined,
             available: false,
           ),
           SizedBox(height: AppSpacing.sm),
           _NetworkCard(
             label: 'Regtest',
-            detail: 'Your own local chain.',
+            detail: 'Your own local chain',
             icon: Icons.dns_outlined,
             available: false,
           ),
         ],
       );
     }
-    return const Row(
-      children: [
-        Expanded(
-          child: _NetworkCard(
-            label: 'Testnet',
-            detail: 'Coins have no value. Mistakes cost nothing.',
-            icon: Icons.science_outlined,
-            available: true,
+    // One height for the three cards, whichever detail wraps.
+    return const IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _NetworkCard(
+              label: 'Testnet',
+              detail: 'Coins have no value; mistakes cost nothing',
+              icon: Icons.science_outlined,
+              available: true,
+            ),
           ),
-        ),
-        SizedBox(width: AppSpacing.md),
-        Expanded(
-          child: _NetworkCard(
-            label: 'Mainnet',
-            detail: 'Real bitcoin.',
-            icon: Icons.public,
-            available: false,
+          SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: _NetworkCard(
+              label: 'Mainnet',
+              detail: 'Real bitcoin',
+              icon: Icons.public_outlined,
+              available: false,
+            ),
           ),
-        ),
-        SizedBox(width: AppSpacing.md),
-        Expanded(
-          child: _NetworkCard(
-            label: 'Regtest',
-            detail: 'Your own local chain.',
-            icon: Icons.dns_outlined,
-            available: false,
+          SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: _NetworkCard(
+              label: 'Regtest',
+              detail: 'Your own local chain',
+              icon: Icons.dns_outlined,
+              available: false,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -619,43 +619,38 @@ class _NetworkCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final ink = available ? s.ink : s.inkFaint;
+    // Testnet is the network this wallet is on: drawn as a chosen option
+    // (the selected surface, a firmer edge, its radio). The other two are
+    // facts about the future, at half ink.
     return Opacity(
-      opacity: available ? 1 : 0.55,
+      opacity: available ? 1 : 0.5,
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.lg),
         decoration: BoxDecoration(
-          color: available ? s.accentSoft : s.cardBase,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-          border: Border.all(
-            color: available ? s.accent : s.edge,
-            width: available ? 2 : 1,
-          ),
+          color: available ? s.selected : s.panel,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+          border: Border.all(color: available ? s.edgeStrong : s.edge),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(icon, size: 17, color: available ? s.accent : s.inkFaint),
+                Icon(icon, size: AppSpacing.iconSmall, color: s.inkSecondary),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
                     label,
-                    style: AppTypography.bodySmall.copyWith(
-                      color: ink,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: AppTypography.label.copyWith(color: s.ink),
                   ),
                 ),
-                if (available)
-                  Icon(Icons.check_circle, size: 16, color: s.accent),
+                if (available) const OptionRadio(selected: true),
               ],
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
               available ? detail : 'Coming soon · $detail',
-              style: AppTypography.caption.copyWith(color: s.inkFaint),
+              style: AppTypography.caption.copyWith(color: s.inkSecondary),
             ),
           ],
         ),
@@ -693,7 +688,7 @@ class _CoinsStep extends StatelessWidget {
           SelectableOptionCard(
             title: 'Bitcoin',
             description:
-                'This wallet holds bitcoin on the Bitcoin testnet chain.',
+                'This wallet holds bitcoin on the Bitcoin testnet chain',
             isSelected: true,
             icon: Icons.currency_bitcoin,
             onTap: null,
@@ -723,7 +718,6 @@ class _CoinsStep extends StatelessWidget {
               'Liquid assets. Same recovery phrase, nothing extra to back up.',
           isSelected: liquidEnabled,
           icon: Icons.water_drop_outlined,
-          badge: 'Recommended',
           onTap: () => onSelect(true),
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -786,7 +780,7 @@ class _ConnectionStep extends StatelessWidget {
                 'device still shows and approves every payment on its own '
                 'screen.',
             isSelected: selected == HwConnection.usb,
-            icon: Icons.usb_rounded,
+            icon: Icons.usb_outlined,
             onTap: () => onSelect(HwConnection.usb),
           ),
           const SizedBox(height: AppSpacing.lg),
@@ -797,7 +791,7 @@ class _ConnectionStep extends StatelessWidget {
               'No cable ever touches the device. Templar shows a payment as a QR '
               'code, the device signs it offline, and you scan the result back.',
           isSelected: selected == HwConnection.airgap,
-          icon: Icons.qr_code_scanner_rounded,
+          icon: Icons.qr_code_scanner_outlined,
           onTap: () => onSelect(HwConnection.airgap),
         ),
         // Liquid decides this answer, so it is said here rather than left for

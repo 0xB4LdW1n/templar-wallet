@@ -2,9 +2,12 @@
 //
 // A dialog on desktop, a bottom sheet on a phone (showAppDialog), holding
 // everything the row or note could not: the whole outpoint, the address it
-// sits on, the asset id, the confirmation count, and the rule that put it
-// in its tier — plus the one way out to a block explorer and, on the coin
-// screen, the switch that freezes the coin.
+// sits on, the asset id, the confirmation count and the rule that put it in
+// its tier, as key/value rows — plus a copy of the outpoint, the one way out
+// to a block explorer and, on the coin screen, Freeze / Unfreeze. Neutral
+// throughout: the sheet informs, it has no primary action.
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,12 +16,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/app_state.dart';
 import '../../features/utxos/models/utxo.dart';
+import '../../services/address_label_store.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'buttons.dart';
-import 'code_box.dart';
-import 'glass_dialog.dart';
+import 'hybrid_kit.dart';
+import 'app_dialog.dart';
 import 'privacy.dart';
 import 'utxo_views.dart';
 
@@ -133,201 +137,289 @@ class UtxoDetailsDialog extends StatelessWidget {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
     final pending = utxo.isPending;
-    final base = pending ? s.inkFaint : tier.base(s.isDark);
-    final stateBadge = utxoStateBadge(utxo.state);
     final assetName = utxo.ticker ?? 'BTC';
     final caption = AppTypography.caption.copyWith(color: s.inkSecondary);
-    final micro = AppTypography.navSection.copyWith(
-      color: s.inkFaint,
-      letterSpacing: 1.2,
-    );
-
-    Widget fact(String label, Widget value) => Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label.toUpperCase(), style: micro),
-          const SizedBox(height: 3),
-          value,
-        ],
-      ),
-    );
 
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // The money first: the amount at hero size, its tier and share
-        // right under it, then the bar that draws the share.
+        // The money first, then its tier and share and the bar that draws
+        // the share.
         Amount(
           utxo.displayAmount,
-          style: AppTypography.numericLargeOf(context).copyWith(
-            color: pending ? s.inkSecondary : s.ink,
-            fontWeight: FontWeight.w800,
-          ),
+          style: AppTypography.numericLargeOf(
+            context,
+          ).copyWith(color: pending ? s.inkSecondary : s.ink),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: AppSpacing.xs),
-        Row(
-          children: [
-            if (pending) ...[
-              SizedBox(
-                width: 12,
-                height: 12,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation(base),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  'Incoming · ${utxoShareText(share)} of your $assetName once '
-                  'it confirms',
-                  style: caption,
-                ),
-              ),
-            ] else
-              Expanded(
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: tier.label,
-                        style: TextStyle(
-                          color: base,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.0,
-                        ),
-                      ),
-                      TextSpan(
-                        text: ' · ${utxoShareText(share)} of your $assetName',
-                        style: TextStyle(
-                          color: s.inkSecondary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  style: AppTypography.bodySmall,
-                ),
-              ),
-          ],
+        Text(
+          pending
+              ? 'Pending · ${utxoShareText(share)} of your $assetName once '
+                    'it confirms'
+              : '${tier.label} · ${utxoShareText(share)} of your $assetName',
+          style: caption,
         ),
         const SizedBox(height: AppSpacing.sm),
-        ShareMeter(share: share, color: base, height: 5),
+        ShareMeter(share: share),
         if (!pending) ...[
-          const SizedBox(height: AppSpacing.xs + 2),
+          const SizedBox(height: AppSpacing.sm),
           Text(tier.rule, style: caption),
         ],
+        if (utxo.isFrozen) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Frozen: this wallet will not spend it — not in a payment, not '
+            'in MAX, not in a consolidation — until you unfreeze it.',
+            style: caption,
+          ),
+        ],
         const SizedBox(height: AppSpacing.lg),
-        Divider(height: 1, color: s.edge),
-        const SizedBox(height: AppSpacing.lg),
-        Row(
-          children: [
-            Expanded(
-              child: fact(
-                'State',
-                stateBadge == null
-                    ? Text(
-                        _stateText,
-                        style: AppTypography.bodySmall.copyWith(color: s.ink),
-                      )
-                    : Align(
-                        alignment: Alignment.centerLeft,
-                        child: utxoStateChip(stateBadge),
-                      ),
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: fact(
-                'Confirmations',
-                Text(
-                  _confirmationsText,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: pending ? s.warning : s.ink,
-                  ),
-                ),
-              ),
-            ),
-          ],
+        Divider(height: 1, thickness: 1, color: s.edge),
+        KvRow(
+          label: 'Outpoint',
+          value: utxo.outpoint,
+          labelWidth: 112,
+          divider: true,
         ),
-        if (utxo.isFrozen)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: Text(
-              'Frozen: this wallet will not spend it — not in a payment, not '
-              'in MAX, not in a consolidation — until you unfreeze it.',
-              style: caption,
-            ),
-          ),
-        if (utxo.label case final label?)
-          fact(
-            'Label',
-            Text(label, style: AppTypography.bodySmall.copyWith(color: s.ink)),
-          ),
-        CodeBox(label: 'Outpoint', value: utxo.outpoint, maxLines: 3),
         if (utxo.address case final address?) ...[
-          const SizedBox(height: AppSpacing.md),
-          CodeBox(label: 'Address', value: address, maxLines: 3),
+          KvRow(
+            label: 'Address',
+            value: address,
+            labelWidth: 112,
+            divider: true,
+          ),
+          // What the user called the address, beside what they called the
+          // coin further down: the two labels are different things.
+          if (AddressLabelStore.instance.labelFor(address) case final name?)
+            KvRow(
+              label: 'Address label',
+              value: name,
+              labelWidth: 112,
+              divider: true,
+            ),
         ],
-        if (utxo.assetId case final assetId?) ...[
-          const SizedBox(height: AppSpacing.md),
-          CodeBox(label: 'Asset ID', value: assetId, maxLines: 3),
-        ],
+        KvRow(
+          label: 'Amount',
+          value: maskAmount(context, utxo.displayAmount),
+          labelWidth: 112,
+          divider: true,
+        ),
+        KvRow(
+          label: 'Confirmations',
+          value: _confirmationsText,
+          labelWidth: 112,
+          divider: true,
+        ),
+        KvRow(
+          label: 'State',
+          value: _stateText,
+          labelWidth: 112,
+          divider: true,
+        ),
+        if (utxo.label case final label?)
+          KvRow(label: 'Label', value: label, labelWidth: 112, divider: true),
+        if (utxo.assetId case final assetId?)
+          KvRow(
+            label: 'Asset ID',
+            value: assetId,
+            labelWidth: 112,
+            divider: true,
+          ),
       ],
     );
 
+    final copy = _CopyOutpointButton(outpoint: utxo.outpoint);
+    final explorer = GhostButton(
+      label: 'Open in explorer',
+      onPressed: () => _openExplorer(context),
+    );
+    final Widget? freeze = switch (onToggleFrozen) {
+      final toggle? => SecondaryButton(
+        label: utxo.isFrozen ? 'Unfreeze' : 'Freeze',
+        onPressed: () {
+          Navigator.of(context).pop();
+          toggle();
+        },
+      ),
+      null => null,
+    };
+    final close = SecondaryButton(
+      label: 'Close',
+      onPressed: () => Navigator.of(context).pop(),
+    );
+
+    // A row on desktop, read left to right with Close last. A phone's sheet
+    // stacks its actions from the bottom up, so the list is turned round to
+    // put the coin's own action on top, under the thumb, and Close at the
+    // foot.
     return AppDialog(
       title: const Text('Coin details'),
       scrollable: true,
-      content: SizedBox(width: phone ? double.infinity : 440, child: content),
-      actions: [
-        if (onToggleFrozen case final toggle?)
-          if (phone)
-            SecondaryButton(
-              label: utxo.isFrozen ? 'Unfreeze' : 'Freeze',
-              icon: kFrozenIcon,
-              onPressed: () {
-                Navigator.of(context).pop();
-                toggle();
-              },
-            )
-          else
-            GhostButton(
-              label: utxo.isFrozen ? 'Unfreeze' : 'Freeze',
-              icon: kFrozenIcon,
-              onPressed: () {
-                Navigator.of(context).pop();
-                toggle();
-              },
-            ),
-        if (phone)
-          SecondaryButton(
-            label: 'Open in explorer',
-            icon: Icons.open_in_new_rounded,
-            onPressed: () => _openExplorer(context),
-          )
-        else
-          GhostButton(
-            label: 'Open in explorer',
-            icon: Icons.open_in_new_rounded,
-            onPressed: () => _openExplorer(context),
-          ),
-        if (phone)
-          PrimaryButton(
-            label: 'Close',
-            onPressed: () => Navigator.of(context).pop(),
-          )
-        else
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-      ],
+      content: SizedBox(width: phone ? double.infinity : 480, child: content),
+      actions: phone
+          ? [close, explorer, copy, ?freeze]
+          : [copy, explorer, ?freeze, close],
     );
   }
+}
+
+// ── Label prompt ──────────────────────────────────────────────────────────────
+
+/// The longest label the prompt takes: a name for a coin, not a note.
+const int kUtxoLabelMaxLength = 64;
+
+/// Asks for a coin's label. A dialog on desktop, a sheet on a phone
+/// ([showAppDialog]).
+///
+/// Answers the trimmed label to save, an empty string to clear the one the
+/// coin has, or null when the user cancelled. [current] fills the field and
+/// offers "Clear label"; [count] above one titles it for a selection;
+/// [outpoint] names the one coin being labelled.
+///
+/// A label is display metadata kept on this device: the prompt only says
+/// what to show, the caller stores it.
+Future<String?> showUtxoLabelPrompt(
+  BuildContext context, {
+  String? current,
+  int count = 1,
+  String? outpoint,
+}) => showAppDialog<String>(
+  context,
+  builder: (_) =>
+      UtxoLabelPrompt(current: current, count: count, outpoint: outpoint),
+);
+
+class UtxoLabelPrompt extends StatefulWidget {
+  const UtxoLabelPrompt({
+    super.key,
+    this.current,
+    this.count = 1,
+    this.outpoint,
+  });
+
+  final String? current;
+  final int count;
+  final String? outpoint;
+
+  @override
+  State<UtxoLabelPrompt> createState() => _UtxoLabelPromptState();
+}
+
+class _UtxoLabelPromptState extends State<UtxoLabelPrompt> {
+  late final TextEditingController _ctrl = TextEditingController(
+    text: widget.current ?? '',
+  );
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _save() => Navigator.of(context).pop(_ctrl.text.trim());
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final current = widget.current;
+    final many = widget.count > 1;
+    final title = many
+        ? 'Label ${widget.count} coins'
+        : (current == null ? 'Add label' : 'Edit label');
+    return PromptDialog(
+      title: title,
+      icon: Icons.sell_outlined,
+      width: 420,
+      actions: [
+        GhostButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        if (current != null || many)
+          GhostButton(
+            label: 'Clear label',
+            onPressed: () => Navigator.of(context).pop(''),
+          ),
+        PrimaryButton(label: 'Save', onPressed: _save),
+      ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.outpoint case final outpoint? when !many) ...[
+            Text(
+              outpoint,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
+          Text(
+            'Label',
+            style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            maxLength: kUtxoLabelMaxLength,
+            textCapitalization: TextCapitalization.sentences,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              hintText: 'Savings, exchange withdrawal',
+              counterText: '',
+            ),
+            onSubmitted: (_) => _save(),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Kept on this device only',
+            style: AppTypography.caption.copyWith(color: s.inkFaint),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Copy outpoint" that turns into "Copied" for a moment — the same small
+/// reward a code box's copy button gives.
+class _CopyOutpointButton extends StatefulWidget {
+  const _CopyOutpointButton({required this.outpoint});
+  final String outpoint;
+
+  @override
+  State<_CopyOutpointButton> createState() => _CopyOutpointButtonState();
+}
+
+class _CopyOutpointButtonState extends State<_CopyOutpointButton> {
+  bool _copied = false;
+  Timer? _reset;
+
+  @override
+  void dispose() {
+    _reset?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: widget.outpoint));
+    if (!mounted) return;
+    setState(() => _copied = true);
+    _reset?.cancel();
+    _reset = Timer(const Duration(milliseconds: 1600), () {
+      if (mounted) setState(() => _copied = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => GhostButton(
+    label: _copied ? 'Copied' : 'Copy outpoint',
+    icon: _copied ? Icons.check : null,
+    onPressed: _copy,
+  );
 }

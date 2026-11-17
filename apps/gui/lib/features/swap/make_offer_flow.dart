@@ -20,20 +20,23 @@ import '../../shared/widgets/cards.dart';
 import '../../shared/widgets/code_box.dart';
 import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/step_flow_scaffold.dart';
+import '../../shared/widgets/step_header.dart' show StepHeaderVariant;
+import '../../services/price_service.dart';
+import '../liquid/form_parts.dart';
+import 'rate.dart';
 import '../../shared/widgets/utxo_views.dart';
-import '../../theme/app_colors.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'models/swap_offer.dart';
 import 'take_flow.dart' show swapError;
-import '../../shared/widgets/glass_dialog.dart';
+import '../../shared/widgets/app_dialog.dart';
 
 /// Push the make-offer wizard. Resolves to the created [MyOffer], or null
 /// when the user backed out.
 Future<MyOffer?> openMakeOfferFlow(BuildContext context) {
   // Root navigator on a phone: the wizard must cover the shell (header and
-  // carousel), not render inside the shell's page slot.
+  // tab bar), not render inside the shell's page slot.
   return Navigator.of(
     context,
     rootNavigator: AppLayout.isPhone(context),
@@ -290,11 +293,16 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
 
   // ── build ───────────────────────────────────────────────────────────────────
 
-  static const _titles = ['Offer', 'Want', 'Review & publish'];
-  static const _subtitles = [
-    'Pick the coin you are offering',
+  // One question per step.
+  static const _titles = [
+    'Which coin do you offer?',
     'What do you want in return?',
-    'Sign the proposal and share it',
+    'Review and sign the offer',
+  ];
+  static const _subtitles = [
+    'The taker receives the whole coin',
+    'An asset this wallet knows, or any asset id',
+    'Signing creates the proposal you share',
   ];
 
   @override
@@ -302,9 +310,12 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
     return StepFlowScaffold(
       currentStep: _step + 1,
       totalSteps: 3,
-      title: 'Make offer — ${_titles[_step]}',
+      title: _titles[_step],
       subtitle: _subtitles[_step],
-      maxWidth: 760,
+      headerVariants: [
+        for (var i = 0; i < _titles.length; i++)
+          StepHeaderVariant(_titles[i], _subtitles[i]),
+      ],
       onBack: _step == 0
           ? null
           : () => setState(() {
@@ -346,7 +357,7 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
             )
           else
             PrimaryButton(
-              label: _publishing ? 'Signing…' : 'Sign & create offer',
+              label: _publishing ? 'Signing…' : 'Sign and create offer',
               icon: Icons.storefront_outlined,
               onPressed: _canContinue ? _publish : null,
             ),
@@ -378,8 +389,8 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
             ? Padding(
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 child: Text(
-                  'No spendable Liquid coins found.',
-                  style: AppTypography.caption,
+                  'No spendable Liquid coins found',
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
                 ),
               )
             // Pending stays pickable here: LWK spends unconfirmed
@@ -426,57 +437,49 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
               'amount (a small network fee applies)',
           child: Column(
             children: [
-              DropdownButtonFormField<String>(
-                initialValue: _exactAssetId,
-                decoration: const InputDecoration(labelText: 'Asset'),
-                items: [
-                  for (final a in _assets)
-                    DropdownMenuItem(
-                      value: a.assetId,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          AssetLogo(ticker: a.ticker, size: 18),
-                          const SizedBox(width: AppSpacing.sm),
-                          Text(
-                            a.ticker == 'LBTC'
-                                ? 'LBTC'
-                                : AssetRegistryService.instance.displayTicker(
-                                    a,
-                                  ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Text(a.displayAmount, style: AppTypography.caption),
-                        ],
+              FieldBlock(
+                label: 'Asset',
+                child: DropdownButtonFormField<String>(
+                  initialValue: _exactAssetId,
+                  isExpanded: true,
+                  items: [
+                    for (final a in _assets)
+                      DropdownMenuItem(
+                        value: a.assetId,
+                        child: _assetItem(a, showBalance: true),
                       ),
-                    ),
-                ],
-                onChanged: (id) => setState(() => _exactAssetId = id),
+                  ],
+                  onChanged: (id) => setState(() => _exactAssetId = id),
+                ),
               ),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: _exactAmountCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
+              const SizedBox(height: AppSpacing.lg),
+              FieldBlock(
+                label: 'Amount',
+                child: TextField(
+                  controller: _exactAmountCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  style: AppTypography.numeric,
+                  decoration: InputDecoration(
+                    hintText:
+                        _assets
+                                .where((a) => a.assetId == _exactAssetId)
+                                .firstOrNull
+                                ?.ticker ==
+                            'LBTC'
+                        ? '0.00000000'
+                        : '0',
+                  ),
+                  onChanged: (_) => setState(() {}),
                 ),
-                style: AppTypography.numeric,
-                decoration: InputDecoration(
-                  labelText: 'Amount',
-                  hintText:
-                      _assets
-                              .where((a) => a.assetId == _exactAssetId)
-                              .firstOrNull
-                              ?.ticker ==
-                          'LBTC'
-                      ? '0.00000000'
-                      : '0',
-                ),
-                onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: AppSpacing.md),
               Align(
                 alignment: Alignment.centerRight,
-                child: PrimaryButton(
+                // The step's one filled control is "Continue"; this is a side
+                // errand inside it.
+                child: SecondaryButton(
                   label: _preparing ? 'Creating…' : 'Create coin',
                   icon: Icons.add_circle_outline,
                   onPressed:
@@ -498,93 +501,106 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
 
   List<Widget> _wantStep() {
     final s = AppScheme.of(context);
+    final sats = _wantAmountSats;
+    // L-BTC has a price; a token's amount has no fiat echo rather than a
+    // made-up one.
+    final fiat = _wantIsLbtc && sats != null
+        ? PriceService.instance.fiatDisplay(sats)
+        : null;
     return [
-      FormCard(
-        title: 'Asset you want',
-        subtitle: 'One of this wallet\'s known assets, or any asset id',
-        child: Column(
-          children: [
-            DropdownButtonFormField<String>(
-              initialValue: _wantAssetId,
-              decoration: const InputDecoration(labelText: 'Asset'),
-              items: [
-                for (final a in _assets)
-                  DropdownMenuItem(
-                    value: a.assetId,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AssetLogo(ticker: a.ticker, size: 18),
-                        const SizedBox(width: AppSpacing.sm),
-                        Text(
-                          a.ticker == 'LBTC'
-                              ? 'LBTC'
-                              : AssetRegistryService.instance.displayTicker(a),
-                        ),
-                      ],
-                    ),
+      FieldBlock(
+        label: 'Asset',
+        child: DropdownButtonFormField<String>(
+          initialValue: _wantAssetId,
+          isExpanded: true,
+          items: [
+            for (final a in _assets)
+              DropdownMenuItem(value: a.assetId, child: _assetItem(a)),
+            DropdownMenuItem(
+              value: _customAssetKey,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.edit_outlined,
+                    size: AppSpacing.iconSmall,
+                    color: s.inkSecondary,
                   ),
-                const DropdownMenuItem(
-                  value: _customAssetKey,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.edit_outlined, size: 16),
-                      SizedBox(width: AppSpacing.sm),
-                      Text('Other asset id…'),
-                    ],
-                  ),
-                ),
-              ],
-              onChanged: (id) => setState(() {
-                _wantAssetId = id;
-                _wantAmountCtrl.clear();
-              }),
-            ),
-            if (_wantIsCustom) ...[
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: _customAssetCtrl,
-                style: AppTypography.mono,
-                decoration: const InputDecoration(
-                  labelText: 'Asset id',
-                  hintText: '64-character hex asset id',
-                ),
-                onChanged: (_) => setState(() {}),
+                  const SizedBox(width: AppSpacing.sm),
+                  const Text('Other asset id'),
+                ],
               ),
-            ],
-            const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _wantAmountCtrl,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              style: AppTypography.numeric,
-              decoration: InputDecoration(
-                labelText: 'Amount',
-                hintText: _wantIsLbtc ? '0.00000000' : '0',
-                suffixText: _wantTicker,
-              ),
-              onChanged: (_) => setState(() {}),
             ),
           ],
+          onChanged: (id) => setState(() {
+            _wantAssetId = id;
+            _wantAmountCtrl.clear();
+          }),
         ),
       ),
-      const SizedBox(height: AppSpacing.md),
-      Text(
-        _wantIsLbtc
-            ? 'LBTC amounts use 8 decimals.'
-            : 'Token amounts are entered in base units (satoshi-like).',
-        style: AppTypography.caption.copyWith(color: s.inkSecondary),
+      if (_wantIsCustom) ...[
+        const SizedBox(height: AppSpacing.lg),
+        FieldBlock(
+          label: 'Asset id',
+          help: '64 hex characters',
+          child: TextField(
+            controller: _customAssetCtrl,
+            style: AppTypography.mono,
+            onChanged: (_) => setState(() {}),
+          ),
+        ),
+      ],
+      const SizedBox(height: AppSpacing.lg),
+      FieldBlock(
+        label: 'Amount',
+        help: _wantIsLbtc
+            ? (fiat ?? 'LBTC amounts use 8 decimals')
+            : 'Token amounts are entered in base units',
+        child: TextField(
+          controller: _wantAmountCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          style: AppTypography.numeric,
+          decoration: InputDecoration(
+            hintText: _wantIsLbtc ? '0.00000000' : '0',
+            suffixText: _wantTicker,
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
       ),
       if (_wantAssetIdResolved.isNotEmpty &&
           _wantAssetIdResolved.length != 64) ...[
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.lg),
         const WarningBanner(
-          message: 'A Liquid asset id is 64 hex characters — check the id.',
+          message: 'A Liquid asset id is 64 hex characters — check the id',
         ),
       ],
     ];
+  }
+
+  /// An asset in a picker: its glyph, its ticker and, where it helps, the
+  /// balance in the faint ink.
+  Widget _assetItem(AssetBalance a, {bool showBalance = false}) {
+    final s = AppScheme.of(context);
+    return Row(
+      children: [
+        AssetLogo(ticker: a.ticker, size: AppSpacing.icon),
+        const SizedBox(width: AppSpacing.sm),
+        Text(
+          a.ticker == 'LBTC'
+              ? 'LBTC'
+              : AssetRegistryService.instance.displayTicker(a),
+        ),
+        if (showBalance) ...[
+          const SizedBox(width: AppSpacing.sm),
+          Flexible(
+            child: Text(
+              a.displayAmount,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.numericSmall.copyWith(color: s.inkFaint),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 
   // ── Step 3: review ──────────────────────────────────────────────────────────
@@ -593,56 +609,49 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
     final s = AppScheme.of(context);
     final utxo = _selectedUtxo;
     if (utxo == null) return [const SizedBox.shrink()];
+    final offerTicker = utxo.ticker ?? 'LBTC';
+    final rate = swapRateLines(
+      utxo.displayAmount,
+      offerTicker,
+      _wantAmountDisplay,
+      _wantTicker,
+    );
+    Widget leg(String label, String ticker, String amount) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      child: Row(
+        children: [
+          AssetLogo(ticker: ticker, size: 24),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              label,
+              style: AppTypography.body.copyWith(color: s.inkSecondary),
+            ),
+          ),
+          Text(amount, style: AppTypography.numeric.copyWith(color: s.ink)),
+        ],
+      ),
+    );
     return [
       RailPanel(
         title: 'Your offer',
-        rail: s.liquid,
         child: Column(
           children: [
-            Row(
-              children: [
-                AssetLogo(ticker: utxo.ticker ?? 'LBTC', size: 22),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    'You offer (whole coin)',
-                    style: AppTypography.body.copyWith(color: s.inkSecondary),
-                  ),
-                ),
-                Text(
-                  utxo.displayAmount,
-                  style: AppTypography.numericLarge.copyWith(
-                    fontSize: 18,
-                    color: AppColors.accent,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                AssetLogo(ticker: _wantAsset?.ticker ?? '?', size: 22),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    'You want',
-                    style: AppTypography.body.copyWith(color: s.inkSecondary),
-                  ),
-                ),
-                Text(
-                  _wantAmountDisplay,
-                  style: AppTypography.numericSmall.copyWith(color: s.ink),
-                ),
-              ],
-            ),
+            leg('You offer (whole coin)', offerTicker, utxo.displayAmount),
+            Divider(height: 1, color: s.edge),
+            leg('You want', _wantAsset?.ticker ?? '?', _wantAmountDisplay),
           ],
         ),
       ),
-      const SizedBox(height: AppSpacing.md),
+      const SizedBox(height: AppSpacing.lg),
       DataWell(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (rate != null) ...[
+              KvRow(label: 'Rate', value: rate.$1),
+              KvRow(label: '', value: rate.$2),
+            ],
             KvRow(label: 'Coin', value: utxo.outpoint),
             KvRow(label: 'Want asset', value: _wantAssetIdResolved),
           ],
@@ -710,13 +719,7 @@ class _OfferCreatedDialogState extends State<_OfferCreatedDialog> {
     final s = AppScheme.of(context);
     final offer = widget.offer;
     return AppDialog(
-      title: Row(
-        children: [
-          Icon(Icons.storefront_outlined, color: AppColors.accent, size: 20),
-          const SizedBox(width: AppSpacing.sm),
-          const Text('Offer created'),
-        ],
-      ),
+      title: const Text('Offer created'),
       content: SizedBox(
         width: 520,
         child: SingleChildScrollView(
@@ -728,10 +731,7 @@ class _OfferCreatedDialogState extends State<_OfferCreatedDialog> {
                 '${offer.offers.displayAmount} ${offer.offers.ticker} → '
                 '${offer.wants.displayAmount} ${offer.wants.ticker}',
                 textAlign: TextAlign.center,
-                style: AppTypography.numericSmall.copyWith(
-                  color: s.ink,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: AppTypography.numeric.copyWith(color: s.ink),
               ),
               const SizedBox(height: AppSpacing.md),
               CodeBox(value: offer.proposalJson, label: 'Proposal (v0)'),
@@ -763,7 +763,7 @@ class _OfferCreatedDialogState extends State<_OfferCreatedDialog> {
               ),
               if (_publishedId != null) ...[
                 const SizedBox(height: AppSpacing.md),
-                InfoBanner(message: 'Published as local order #$_publishedId.'),
+                InfoBanner(message: 'Published as local order #$_publishedId'),
               ],
               if (_error != null) ...[
                 const SizedBox(height: AppSpacing.md),
@@ -780,7 +780,7 @@ class _OfferCreatedDialogState extends State<_OfferCreatedDialog> {
         ),
         SecondaryButton(
           label: 'Copy',
-          icon: Icons.copy,
+          icon: Icons.copy_outlined,
           onPressed: () =>
               Clipboard.setData(ClipboardData(text: offer.proposalJson)),
         ),

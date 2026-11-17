@@ -5,15 +5,17 @@ import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'buttons.dart';
-import 'glass_dialog.dart';
+import 'app_dialog.dart';
 import 'hybrid_kit.dart';
 import 'tx_recap.dart';
 
-/// Last stop before anything is signed: a full summary of the transaction —
-/// every recipient, the change, the fee, the total, and how it will be signed.
+/// Last stop before anything is signed: a compact recap of the transaction —
+/// every recipient, the change, the fee, the total — and how it will be
+/// signed.
 ///
 /// Returns true when the user confirms. The caller then runs its signing path
-/// (software key, hardware device, or air-gap QR) and shows the success recap.
+/// (software key behind the password gate, hardware device, or air-gap QR)
+/// and shows the success recap.
 Future<bool> showTxConfirmDialog(
   BuildContext context, {
   required TxPreview preview,
@@ -47,7 +49,7 @@ class _TxConfirmDialog extends StatelessWidget {
   final TxPreview preview;
   final String ticker;
 
-  /// Primary button text — differs per signing path ("Sign & send",
+  /// Primary button text — differs per signing path ("Sign and send",
   /// "Sign on device", "Export PSBT").
   final String signLabel;
 
@@ -59,63 +61,31 @@ class _TxConfirmDialog extends StatelessWidget {
     final s = AppScheme.of(context);
     final isLiquid = preview.chain == 'liquid';
     final phone = AppLayout.isPhone(context);
-    final badge = phone ? 48.0 : 56.0;
 
     final body = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Center(
-          child: Container(
-            width: badge,
-            height: badge,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: s.accentSoft,
-              border: Border.all(color: s.accent, width: 1.5),
-            ),
-            child: Icon(
-              Icons.fact_check_outlined,
-              color: s.accent,
-              size: phone ? 24 : 28,
-            ),
-          ),
-        ),
-        SizedBox(height: phone ? AppSpacing.md : AppSpacing.lg),
         Text(
-          'Confirm this transaction',
-          textAlign: TextAlign.center,
-          style: AppTypography.pageTitleOf(context),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'Nothing has been signed yet. Check every line — a sent '
-          'transaction cannot be recalled.',
-          textAlign: TextAlign.center,
-          style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+          'Nothing has been signed yet. A sent transaction cannot be recalled.',
+          style: AppTypography.bodyOf(context).copyWith(color: s.inkSecondary),
         ),
         SizedBox(height: phone ? AppSpacing.lg : AppSpacing.xl),
         TxRecapPanel(preview: preview, ticker: ticker),
-        const SizedBox(height: AppSpacing.md),
-        Row(
-          // The hint wraps to two or three lines in the narrow column; keep
-          // the chip on the first of them.
-          crossAxisAlignment: phone
-              ? CrossAxisAlignment.start
-              : CrossAxisAlignment.center,
-          children: [
-            TagChip(
-              label: isLiquid ? 'LIQUID TESTNET' : 'BITCOIN TESTNET',
-              color: isLiquid ? s.liquid : s.bitcoin,
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Text(
-                signHint,
-                style: AppTypography.caption.copyWith(color: s.inkSecondary),
-              ),
-            ),
-          ],
+        const SizedBox(height: AppSpacing.lg),
+        // The network is a fact of the transaction: its name with the
+        // chain's dot, and what confirming does.
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TagChip(
+            label: isLiquid ? 'Liquid testnet' : 'Bitcoin testnet',
+            color: isLiquid ? s.liquid : s.bitcoin,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          signHint,
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
         ),
       ],
     );
@@ -128,12 +98,11 @@ class _TxConfirmDialog extends StatelessWidget {
               children: [
                 PrimaryButton(
                   label: signLabel,
-                  icon: Icons.check_rounded,
                   isFullWidth: true,
                   onPressed: () => Navigator.of(context).pop(true),
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                SecondaryButton(
+                GhostButton(
                   label: 'Back',
                   isFullWidth: true,
                   onPressed: () => Navigator.of(context).pop(false),
@@ -148,12 +117,12 @@ class _TxConfirmDialog extends StatelessWidget {
             ),
             PrimaryButton(
               label: signLabel,
-              icon: Icons.check_rounded,
               onPressed: () => Navigator.of(context).pop(true),
             ),
           ];
 
     return AppDialog(
+      title: const Text('Confirm this transaction'),
       // The sheet scrolls its own content; the desktop dialog needs a width
       // and a scroll view of its own.
       content: phone

@@ -1,15 +1,15 @@
-// Signer donut — how many of a transaction's signers have signed it, and
-// the SignerChart block (donut + legend + quorum line) built on top of it.
+// Who has signed a transaction, and how many signatures are still missing.
 //
-// Pure presentation: it takes counts — or named slots — in and draws them.
-// One arc segment per signer, grey while that signature is missing and
-// coloured once it has been imported, so a PSBT coming back from a co-signer
-// visibly gains a wedge. With named slots the wedge takes the co-signer's own
-// colour, the one chosen for it in the wallet's key labels, so the ring here
-// and the Keys ring on the dashboard mean the same thing by the same colour.
-// The quorum only changes the colour of unnamed wedges — a marker for it on
-// the ring landed in a seam and read as a scratch, so the threshold is stated
-// in words beside the chart instead.
+// Two pictures of the same fact. [SignatureHeader] + [SignerList] are what
+// the co-sign panel and the hand-off sheets draw: the state in words, a seal
+// per required signature, and one row per key with its seal stamped once the
+// engine says that key has signed. [SignerDonut] / [SignerChart] are the
+// older ring form, kept for callers that still want a ring; they draw in the
+// same neutral material — a key is a hairline arc, a signature is ink.
+//
+// Pure presentation: counts and slots come in, nothing is computed here that
+// the engine did not report. The seal (design.md, "The seal") appears only
+// where signatures are counted.
 
 import 'dart:math' as math;
 
@@ -19,6 +19,8 @@ import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import 'list_rows.dart' show ListCard, kListPad, kListTile, kListGap;
+import 'seal_mark.dart';
 
 /// One signer of a transaction, as the chart draws it.
 ///
@@ -39,6 +41,9 @@ class SignerSlot {
   final String id;
   final bool signed;
   final String? name;
+
+  /// The colour the user gave this key, if any. User data: drawn as a small
+  /// dot beside the name, never as a fill.
   final Color? color;
 
   /// This key signs on a USB device — the hand-off sheet offers it.
@@ -48,16 +53,260 @@ class SignerSlot {
   final bool isLocal;
 
   String get label => (name?.trim().isNotEmpty ?? false) ? name!.trim() : id;
+
+  /// Whether the wallet has a name for this key (else [label] is the
+  /// fingerprint itself).
+  bool get isNamed => name?.trim().isNotEmpty ?? false;
 }
+
+// ── The header line and the list ─────────────────────────────────────────────
+
+/// Most seals [SignatureHeader] draws in a row; a larger quorum is stated in
+/// words only.
+const int maxTallySeals = 7;
+
+/// The transaction's state in words — "Needs 1 more signature" — with a seal
+/// per required signature beside it and the count in a caption.
+///
+/// [signed] and [required] are the engine's numbers (signatures present,
+/// signatures the policy needs). With no [required] the tally is not drawn:
+/// a row of seals for an unknown quorum would be a number nobody gave us.
+class SignatureHeader extends StatelessWidget {
+  const SignatureHeader({
+    super.key,
+    required this.state,
+    required this.signed,
+    this.required,
+    this.caption,
+  });
+
+  /// "Needs 1 more signature", "Fully signed, ready to broadcast", …
+  final String state;
+  final int signed;
+  final int? required;
+
+  /// Replaces the default "1 of 2 signatures" line.
+  final String? caption;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final r = required;
+    final count =
+        caption ??
+        (r != null
+            ? '$signed of $r signature${r == 1 ? '' : 's'}'
+            : '$signed signature${signed == 1 ? '' : 's'} collected');
+    final tally = r != null && r > 0 && r <= maxTallySeals
+        ? SealTally(signed: signed.clamp(0, r), required: r)
+        : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Flexible(
+              child: Text(
+                state,
+                style: AppTypography.sectionTitle.copyWith(color: s.ink),
+              ),
+            ),
+            if (tally != null) ...[const SizedBox(width: AppSpacing.md), tally],
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          count,
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+        ),
+      ],
+    );
+  }
+}
+
+/// One row per key the transaction names: its seal, its name, its
+/// fingerprint, and whether it has signed.
+///
+/// The seal is stamped only where the slot says the engine saw that key's
+/// signature. Rows are keyed by fingerprint, so a signature arriving flips
+/// the seal of the row it belongs to — the stamp animates itself.
+class SignerList extends StatelessWidget {
+  const SignerList({super.key, required this.slots, this.onRename});
+
+  final List<SignerSlot> slots;
+
+  /// Rename a key the wallet knows. Null, or a null answer for a slot, hides
+  /// the control on that row.
+  final VoidCallback? Function(SignerSlot slot)? onRename;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListCard(
+      children: [
+        for (final slot in slots)
+          _SignerRow(
+            key: ValueKey('signer-${slot.id}'),
+            slot: slot,
+            onRename: onRename?.call(slot),
+          ),
+      ],
+    );
+  }
+}
+
+class _SignerRow extends StatelessWidget {
+  const _SignerRow({super.key, required this.slot, this.onRename});
+
+  final SignerSlot slot;
+  final VoidCallback? onRename;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    final dot = slot.color;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: AppSpacing.rowHeight),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: kListPad,
+          vertical: AppSpacing.sm,
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: kListTile,
+              child: Center(child: SealMark(stamped: slot.signed)),
+            ),
+            const SizedBox(width: kListGap),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      if (dot != null) ...[
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: dot,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                      ],
+                      Flexible(
+                        child: Text(
+                          slot.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              (slot.isNamed
+                                      ? AppTypography.bodyOf(
+                                          context,
+                                        ).copyWith(fontWeight: FontWeight.w500)
+                                      : AppTypography.mono)
+                                  .copyWith(color: s.ink),
+                        ),
+                      ),
+                      if (slot.isHardware) ...[
+                        const SizedBox(width: AppSpacing.sm),
+                        Tooltip(
+                          message: 'Signs on a USB device',
+                          child: Icon(
+                            Icons.usb_outlined,
+                            size: AppSpacing.iconSmall,
+                            color: s.inkFaint,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (slot.isNamed)
+                    Text(
+                      slot.id,
+                      style: AppTypography.monoSmall.copyWith(
+                        color: s.inkFaint,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            if (slot.isLocal) ...[
+              _QuietWord('This wallet'),
+              const SizedBox(width: AppSpacing.sm),
+            ],
+            Text(
+              slot.signed ? 'Signed' : 'Not signed',
+              style: AppTypography.caption.copyWith(
+                color: slot.signed ? s.inkSecondary : s.inkFaint,
+              ),
+            ),
+            if (onRename != null) ...[
+              const SizedBox(width: AppSpacing.xs),
+              IconButton(
+                tooltip: 'Rename',
+                onPressed: onRename,
+                constraints: BoxConstraints.tightFor(
+                  width: phone ? AppLayout.minTouchTarget : 32,
+                  height: phone ? AppLayout.minTouchTarget : 32,
+                ),
+                padding: EdgeInsets.zero,
+                icon: Icon(
+                  Icons.edit_outlined,
+                  size: AppSpacing.iconSmall,
+                  color: s.inkSecondary,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The quiet tag (design.md, "Tag"): `eyebrow` in the secondary ink on the
+/// raised surface, radius 4.
+class _QuietWord extends StatelessWidget {
+  const _QuietWord(this.label);
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: s.panelInset,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
+      ),
+      child: Text(
+        label,
+        style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+      ),
+    );
+  }
+}
+
+// ── The ring ─────────────────────────────────────────────────────────────────
 
 /// Ring of [total] signer slots, [signed] of them filled.
 ///
-/// [requiredCount] is the quorum: reaching it turns the filled slots from the
-/// in-progress accent to the success colour, and it is what the ring reports
-/// to a screen reader. The centre reads `signed/total`.
+/// A slot is a hairline arc until its signature arrives, then ink. The
+/// centre reads "1 of 3" over "signed". [requiredCount] is what the ring
+/// reports to a screen reader; the threshold is not drawn on the ring.
 ///
-/// With [slots] the ring is drawn in their order and each filled wedge takes
-/// its slot's colour; [signed] and [total] are then read off the slots.
+/// With [slots] the ring is drawn in their order; [signed] and [total] are
+/// then read off the slots.
 class SignerDonut extends StatefulWidget {
   const SignerDonut({
     super.key,
@@ -75,13 +324,12 @@ class SignerDonut extends StatefulWidget {
   /// Signer slots the transaction knows about. Zero draws nothing.
   final int total;
 
-  /// Signatures needed to finalize, when the policy says. A 2-of-3 is done
-  /// before the ring is full, so this — not [total] — decides the colour.
+  /// Signatures needed to finalize, when the policy says.
   final int? requiredCount;
 
   final double size;
 
-  /// The signers by name and colour, when the wallet knows them.
+  /// The signers by name, when the wallet knows them.
   final List<SignerSlot>? slots;
 
   @override
@@ -112,8 +360,7 @@ class _SignerDonutState extends State<SignerDonut>
   @override
   void initState() {
     super.initState();
-    // First paint: sweep every filled wedge in, so a chart that opens on a
-    // partially signed transaction still reads as "these have arrived".
+    // First paint: one sweep draws the collected signatures in.
     _arriving = {
       for (var i = 0; i < _filled.length; i++)
         if (_filled[i]) i,
@@ -142,11 +389,6 @@ class _SignerDonutState extends State<SignerDonut>
     super.dispose();
   }
 
-  bool get _complete {
-    final r = widget.requiredCount;
-    return r != null && r > 0 && _filled.where((f) => f).length >= r;
-  }
-
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
@@ -160,22 +402,13 @@ class _SignerDonutState extends State<SignerDonut>
               '$r signature${r == 1 ? '' : 's'} required'
         : '$filled of $total signers have signed';
 
-    // The sweep animates so an imported signature reads as an arrival rather
-    // than as a redraw. Under reduced motion it lands already filled.
+    // Under reduced motion the ring lands already filled.
     final reduced =
         AppMotion.of(context, AppMotion.emphasized) == Duration.zero;
-    final defaultColor = _complete ? s.success : s.accent;
-    final slots = widget.slots;
-    final colors = [
-      for (var i = 0; i < total; i++)
-        (slots != null && i < slots.length ? slots[i].color : null) ??
-            defaultColor,
-    ];
 
     return Semantics(
-      // One node carrying the whole reading. The centre text is the same
-      // numbers in a shorter form, so it is excluded rather than announced
-      // twice in a row.
+      // One node carrying the whole reading; the centre text is the same
+      // numbers in a shorter form.
       container: true,
       excludeSemantics: true,
       label: label,
@@ -189,7 +422,7 @@ class _SignerDonutState extends State<SignerDonut>
                 ? 1.0
                 : AppMotion.settle.transform(_sweep.value.clamp(0.0, 1.0));
             return CustomPaint(
-              painter: _SignerDonutPainter(
+              painter: _SegmentRingPainter(
                 fills: [
                   for (var i = 0; i < total; i++)
                     !_filled[i]
@@ -198,30 +431,33 @@ class _SignerDonutState extends State<SignerDonut>
                         ? t
                         : 1.0,
                 ],
-                colors: colors,
-                pendingColor: s.edgeStrong,
+                fillColor: s.ink,
+                trackColor: s.edgeStrong,
+                strokeFraction: 0.1,
               ),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '$filled/$total',
-                      style: AppTypography.numericSmall.copyWith(
-                        color: s.ink,
-                        fontWeight: FontWeight.w700,
-                        height: 1.1,
-                      ),
+              child: Padding(
+                padding: EdgeInsets.all(widget.size * 0.18),
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$filled of $total',
+                          style: AppTypography.balanceMedium.copyWith(
+                            color: s.ink,
+                          ),
+                        ),
+                        Text(
+                          'signed',
+                          style: AppTypography.caption.copyWith(
+                            color: s.inkFaint,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      'signed',
-                      style: AppTypography.caption.copyWith(
-                        color: s.inkFaint,
-                        fontSize: 9.5,
-                        height: 1.1,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             );
@@ -232,20 +468,26 @@ class _SignerDonutState extends State<SignerDonut>
   }
 }
 
-class _SignerDonutPainter extends CustomPainter {
-  const _SignerDonutPainter({
+/// A ring cut into equal arcs. Each arc is a [trackColor] hairline-weight
+/// stroke, filled over by [fillColor] (or its own entry in [fillColors]) as
+/// far as its entry in [fills] says. Shared with the cosigner ring, so the
+/// two rings are one drawing.
+class _SegmentRingPainter extends CustomPainter {
+  const _SegmentRingPainter({
     required this.fills,
-    required this.colors,
-    required this.pendingColor,
+    required this.fillColor,
+    required this.trackColor,
+    required this.strokeFraction,
   });
 
   /// How much of each slot is filled: 0 while pending, fractional while the
   /// arriving signature sweeps in, 1 once it has.
   final List<double> fills;
+  final Color fillColor;
+  final Color trackColor;
 
-  /// The colour each slot fills with.
-  final List<Color> colors;
-  final Color pendingColor;
+  /// Stroke width as a fraction of the ring's side.
+  final double strokeFraction;
 
   /// Seam between two slots, as a multiple of the stroke width. Round caps
   /// grow each arc by half a stroke at both ends, so a seam narrower than the
@@ -260,7 +502,7 @@ class _SignerDonutPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final total = fills.length;
     if (total == 0) return;
-    final stroke = size.shortestSide * 0.115;
+    final stroke = size.shortestSide * strokeFraction;
     final rect = Rect.fromCircle(
       center: Offset(size.width / 2, size.height / 2),
       radius: (size.shortestSide - stroke) / 2,
@@ -284,10 +526,7 @@ class _SignerDonutPainter extends CustomPainter {
     for (var i = 0; i < total; i++) {
       final from = start + i * slot + gap / 2;
       final sweep = slot - gap;
-      canvas.drawArc(rect, from, sweep, false, paint..color = pendingColor);
-
-      // Partial fill while the sweep runs, so the arriving signature grows
-      // into its slot instead of blinking on.
+      canvas.drawArc(rect, from, sweep, false, paint..color = trackColor);
       final fill = fills[i].clamp(0.0, 1.0);
       if (fill > 0) {
         canvas.drawArc(
@@ -295,17 +534,18 @@ class _SignerDonutPainter extends CustomPainter {
           from,
           sweep * fill,
           false,
-          paint..color = colors[i],
+          paint..color = fillColor,
         );
       }
     }
   }
 
   @override
-  bool shouldRepaint(_SignerDonutPainter old) =>
+  bool shouldRepaint(_SegmentRingPainter old) =>
       !_listEq(old.fills, fills) ||
-      !_listEq(old.colors, colors) ||
-      old.pendingColor != pendingColor;
+      old.fillColor != fillColor ||
+      old.trackColor != trackColor ||
+      old.strokeFraction != strokeFraction;
 
   static bool _listEq<T>(List<T> a, List<T> b) {
     if (a.length != b.length) return false;
@@ -316,22 +556,15 @@ class _SignerDonutPainter extends CustomPainter {
   }
 }
 
-/// The donut, its legend and the quorum line — the whole "who has signed and
-/// how many are left" block.
-///
-/// Lives here rather than on the co-sign page because three surfaces show it
-/// now: that page, and the two multisig hand-off sheets where a returning
-/// PSBT/PSET is pasted in. They must never disagree about what a quorum
-/// looks like.
+/// The donut, its legend and the quorum line.
 ///
 /// [signed] and [total] are slots on the ring. [collected] is what the
 /// inspection actually reports, which can exceed [signed] when a signature
 /// could not be attributed to a named signer — it is the number the quorum
 /// line prints, never invented from the ring.
 ///
-/// With [slots] the legend names each signer — its label's name and colour,
-/// "this device" where the key lives here — with Signed or Waiting beside
-/// it, in place of the two summary rows.
+/// With [slots] the legend names each signer with its seal and Signed / Not
+/// signed beside it, in place of the two summary rows.
 class SignerChart extends StatelessWidget {
   const SignerChart({
     super.key,
@@ -355,7 +588,7 @@ class SignerChart extends StatelessWidget {
 
   final double donutSize;
 
-  /// The signers by name and colour, when the wallet knows them.
+  /// The signers by name, when the wallet knows them.
   final List<SignerSlot>? slots;
 
   @override
@@ -368,7 +601,6 @@ class SignerChart extends StatelessWidget {
     final present = collected ?? ringSigned;
     final pending = ringTotal - ringSigned;
     final r = requiredCount;
-    final complete = r != null && present >= r;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -389,23 +621,12 @@ class SignerChart extends StatelessWidget {
               if (named)
                 for (var i = 0; i < slots.length; i++) ...[
                   if (i > 0) const SizedBox(height: AppSpacing.xs),
-                  _SlotRow(
-                    slot: slots[i],
-                    fallbackColor: complete ? s.success : s.accent,
-                  ),
+                  _SlotRow(slot: slots[i]),
                 ]
               else ...[
-                _LegendRow(
-                  color: complete ? s.success : s.accent,
-                  label: 'Signed',
-                  count: ringSigned,
-                ),
+                _LegendRow(stamped: true, label: 'Signed', count: ringSigned),
                 const SizedBox(height: AppSpacing.xs),
-                _LegendRow(
-                  color: s.edgeStrong,
-                  label: 'Not signed',
-                  count: pending,
-                ),
+                _LegendRow(stamped: false, label: 'Not signed', count: pending),
               ],
               const SizedBox(height: AppSpacing.sm),
               Text(
@@ -429,11 +650,11 @@ class SignerChart extends StatelessWidget {
 
 class _LegendRow extends StatelessWidget {
   const _LegendRow({
-    required this.color,
+    required this.stamped,
     required this.label,
     required this.count,
   });
-  final Color color;
+  final bool stamped;
   final String label;
   final int count;
 
@@ -442,11 +663,7 @@ class _LegendRow extends StatelessWidget {
     final s = AppScheme.of(context);
     return Row(
       children: [
-        Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
+        SealMark(stamped: stamped, size: AppSpacing.iconSmall),
         const SizedBox(width: AppSpacing.sm),
         Text(
           '$label ($count)',
@@ -457,73 +674,118 @@ class _LegendRow extends StatelessWidget {
   }
 }
 
-/// One named signer in the legend: its colour, its name, and whether its
-/// signature has arrived. The status flips with a small pop, so a signature
-/// that has just been collected is seen landing on the person it came from.
+/// One named signer in the legend: its seal, its name, and whether its
+/// signature has arrived. The seal stamps itself when it does.
 class _SlotRow extends StatelessWidget {
-  const _SlotRow({required this.slot, required this.fallbackColor});
+  const _SlotRow({required this.slot});
 
   final SignerSlot slot;
-
-  /// Colour for a signer whose label has none.
-  final Color fallbackColor;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final color = slot.color ?? fallbackColor;
-    final motion = AppMotion.of(context, AppMotion.emphasized);
+    final dot = slot.color;
     return Row(
       children: [
-        AnimatedSwitcher(
-          duration: motion,
-          switchInCurve: AppMotion.spring,
-          transitionBuilder: (child, anim) =>
-              ScaleTransition(scale: anim, child: child),
-          child: slot.signed
-              ? Icon(
-                  Icons.check_circle_rounded,
-                  key: const ValueKey('signed'),
-                  size: 14,
-                  color: color,
-                )
-              : Container(
-                  key: const ValueKey('pending'),
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: color.withValues(alpha: 0.7),
-                      width: 1.5,
-                    ),
-                  ),
-                ),
-        ),
+        SealMark(stamped: slot.signed, size: AppSpacing.iconSmall),
         const SizedBox(width: AppSpacing.sm),
+        if (dot != null) ...[
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: dot,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+        ],
         Expanded(
           child: Text(
-            slot.isLocal ? '${slot.label} · this device' : slot.label,
+            slot.label,
             style: AppTypography.bodySmall.copyWith(
               color: slot.signed ? s.ink : s.inkSecondary,
-              fontWeight: slot.signed ? FontWeight.w600 : FontWeight.w400,
             ),
             overflow: TextOverflow.ellipsis,
           ),
         ),
+        if (slot.isLocal) ...[
+          const SizedBox(width: AppSpacing.sm),
+          const _QuietWord('This wallet'),
+        ],
         if (slot.isHardware) ...[
           const SizedBox(width: AppSpacing.xs),
-          Icon(Icons.usb_rounded, size: 13, color: s.inkFaint),
+          Icon(
+            Icons.usb_outlined,
+            size: AppSpacing.iconSmall,
+            color: s.inkFaint,
+          ),
         ],
         const SizedBox(width: AppSpacing.sm),
         Text(
-          slot.signed ? 'Signed' : 'Waiting',
+          slot.signed ? 'Signed' : 'Not signed',
           style: AppTypography.caption.copyWith(
-            color: slot.signed ? color : s.inkFaint,
-            fontWeight: FontWeight.w600,
+            color: slot.signed ? s.inkSecondary : s.inkFaint,
           ),
         ),
       ],
     );
+  }
+}
+
+/// The neutral segmented ring, for the cosigner ring next door: one arc per
+/// key in [colors] (a user-chosen colour, toned, or the key hairline), no
+/// fill sweep. [strokeFraction] sets the weight.
+CustomPainter keyRingPainter({
+  required List<Color> colors,
+  double strokeFraction = 0.08,
+}) => _KeyRingPainter(colors: colors, strokeFraction: strokeFraction);
+
+class _KeyRingPainter extends CustomPainter {
+  const _KeyRingPainter({required this.colors, required this.strokeFraction});
+
+  final List<Color> colors;
+  final double strokeFraction;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = colors.length;
+    if (total == 0) return;
+    final stroke = size.shortestSide * strokeFraction;
+    final rect = Rect.fromCircle(
+      center: Offset(size.width / 2, size.height / 2),
+      radius: (size.shortestSide - stroke) / 2,
+    );
+    const start = -math.pi / 2;
+    final slot = (2 * math.pi) / total;
+    final gap = total == 1
+        ? 0.0
+        : math.min(
+            stroke * _SegmentRingPainter._seamStrokes / (rect.width / 2),
+            slot * _SegmentRingPainter._maxSeamFraction,
+          );
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = total == 1 ? StrokeCap.butt : StrokeCap.round;
+    for (var i = 0; i < total; i++) {
+      canvas.drawArc(
+        rect,
+        start + i * slot + gap / 2,
+        slot - gap,
+        false,
+        paint..color = colors[i],
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_KeyRingPainter old) {
+    if (old.strokeFraction != strokeFraction) return true;
+    if (old.colors.length != colors.length) return true;
+    for (var i = 0; i < colors.length; i++) {
+      if (old.colors[i] != colors[i]) return true;
+    }
+    return false;
   }
 }

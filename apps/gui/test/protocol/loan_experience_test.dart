@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/features/loans/covenant_timeline.dart';
 import 'package:templar_wallet/features/loans/loan_detail_screen.dart';
 import 'package:templar_wallet/features/loans/loan_overview_card.dart';
@@ -96,11 +98,17 @@ ProtocolPendingRequest _request({required DateTime expiresAt}) =>
       expiresAt: expiresAt,
     );
 
-Widget _host(Widget child, {bool light = false}) => MaterialApp(
-  theme: light ? AppTheme.light() : AppTheme.dark(),
-  home: Scaffold(
-    body: SingleChildScrollView(
-      child: Padding(padding: const EdgeInsets.all(16), child: child),
+// Loan figures sit behind the privacy mask, which reads AppState.
+Widget _app(Widget app) =>
+    ChangeNotifierProvider(create: (_) => AppState(), child: app);
+
+Widget _host(Widget child, {bool light = false}) => _app(
+  MaterialApp(
+    theme: light ? AppTheme.light() : AppTheme.dark(),
+    home: Scaffold(
+      body: SingleChildScrollView(
+        child: Padding(padding: const EdgeInsets.all(16), child: child),
+      ),
     ),
   ),
 );
@@ -177,7 +185,7 @@ void main() {
 
     expect(find.text('Review and sign'), findsOneWidget);
     expect(find.textContaining('Signing request expired'), findsOneWidget);
-    expect(find.text('STALE DATA'), findsOneWidget);
+    expect(find.text('Stale data'), findsOneWidget);
     expect(find.byType(PrimaryButton), findsOneWidget);
   });
 
@@ -194,13 +202,15 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.light(),
-        home: LoanDetailScreen(
-          siteKey: 'site',
-          loanId: loan.id,
-          loan: loan,
-          now: DateTime.utc(2026, 11, 6, 12),
+      _app(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: LoanDetailScreen(
+            siteKey: 'site',
+            loanId: loan.id,
+            loan: loan,
+            now: DateTime.utc(2026, 11, 6, 12),
+          ),
         ),
       ),
     );
@@ -210,7 +220,7 @@ void main() {
     expect(find.text('Claim collateral remainder'), findsOneWidget);
     expect(
       find.text(
-        'Claims the collateral remainder already assigned to the borrower.',
+        'Claims the collateral remainder already assigned to the borrower',
       ),
       findsOneWidget,
     );
@@ -227,24 +237,26 @@ void main() {
     addTearDown(tester.view.reset);
     final loan = _loan(role: 'lender');
     await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.light(),
-        home: LoanDetailScreen(
-          siteKey: 'site',
-          loanId: loan.id,
-          loan: loan,
-          portfolio: ProtocolPortfolio(
-            version: 1,
-            site: 'Templar Protocol',
-            network: 'liquid-regtest',
-            tipHeight: 1570,
-            asOf: DateTime.utc(2026, 11, 6, 12),
-            wallet: const ProtocolPortfolioWallet(
-              label: 'Lender',
-              escrowFingerprint: '0bae4c8d',
+      _app(
+        MaterialApp(
+          theme: AppTheme.light(),
+          home: LoanDetailScreen(
+            siteKey: 'site',
+            loanId: loan.id,
+            loan: loan,
+            portfolio: ProtocolPortfolio(
+              version: 1,
+              site: 'Templar Protocol',
+              network: 'liquid-regtest',
+              tipHeight: 1570,
+              asOf: DateTime.utc(2026, 11, 6, 12),
+              wallet: const ProtocolPortfolioWallet(
+                label: 'Lender',
+                escrowFingerprint: '0bae4c8d',
+              ),
+              loans: [loan],
+              offers: const [],
             ),
-            loans: [loan],
-            offers: const [],
           ),
         ),
       ),
@@ -300,11 +312,11 @@ void main() {
     await tester.pump();
 
     for (final state in [
-      'PENDING',
-      'CURRENT',
-      'REPLACED',
-      'REPAID',
-      'DEFAULTED',
+      'Pending',
+      'Current',
+      'Replaced',
+      'Repaid',
+      'Defaulted',
     ]) {
       expect(find.text(state), findsOneWidget);
     }

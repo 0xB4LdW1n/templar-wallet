@@ -14,9 +14,10 @@ import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/cards.dart';
 import '../../shared/widgets/code_box.dart';
+import '../../shared/widgets/cosigner_label_editor.dart';
 import '../../shared/widgets/cosigner_ring.dart'
     show CosignerEntry, resolveCosigners, signerSlotsFor;
-import '../../shared/widgets/hybrid_kit.dart';
+import '../../shared/widgets/hybrid_kit.dart' show QuietTag;
 import '../../shared/widgets/signer_donut.dart';
 import '../../shared/widgets/step_header.dart' show SelectableOptionCard;
 import '../../shared/widgets/ur_qr.dart'
@@ -25,7 +26,7 @@ import '../../services/file_export.dart';
 import '../hardware/hw_error.dart';
 import '../hardware/hw_platform.dart' show usbHardwareSupported;
 import '../hardware/ledger_connect_dialog.dart';
-import 'cosign_handoff.dart' show reportSaved, stackOrRow;
+import 'cosign_handoff.dart' show equalOptions, reportSaved, stackOrRow;
 import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
@@ -91,6 +92,11 @@ class _CosignViewState extends State<CosignView> {
   bool _loading = false;
   bool _signing = false;
   String? _error;
+
+  /// A headline for [_error] when the error is the engine's own words: the
+  /// headline is shown, the engine's text folds away under it. Null when
+  /// [_error] is already a sentence written for the user.
+  String? _errorTitle;
   String? _signedPsbt;
 
   /// The open wallet's keys with their names and colours, so the quorum
@@ -145,6 +151,33 @@ class _CosignViewState extends State<CosignView> {
           ],
         );
 
+  /// The rename control for a signer row: only for a key the open wallet
+  /// knows, and it goes through the same label editor as the dashboard.
+  VoidCallback? _renameFor(SignerSlot slot) {
+    final walletId = context.read<AppState>().activeWalletId;
+    if (walletId == null) return null;
+    CosignerEntry? entry;
+    for (final e in _cosigners) {
+      if (e.fingerprint.isNotEmpty && e.fingerprint == slot.id.toLowerCase()) {
+        entry = e;
+        break;
+      }
+    }
+    final known = entry;
+    if (known == null) return null;
+    return () async {
+      final edited = await showCosignerLabelEditor(
+        context,
+        label: known.label,
+        index: known.index,
+        subtitle: '${known.fingerprint} · m/${known.path}',
+      );
+      if (edited == null || !mounted) return;
+      await CosignerLabelStore.instance.saveOne(walletId, edited);
+      await _loadCosigners();
+    };
+  }
+
   Future<void> _checkUsb() async {
     if (!Platform.isAndroid) return;
     bool supported;
@@ -174,6 +207,7 @@ class _CosignViewState extends State<CosignView> {
     final detected = _detectChain(trimmed);
     if (detected != chain) {
       setState(() {
+        _errorTitle = null;
         _error = chain == CosignChain.bitcoin
             ? 'This is a Liquid PSET, not a Bitcoin PSBT. Go back and choose '
                   'Liquid to co-sign it.'
@@ -186,6 +220,7 @@ class _CosignViewState extends State<CosignView> {
       _chain = chain;
       _loading = true;
       _error = null;
+      _errorTitle = null;
       _signedPsbt = null;
       _signedInspection = null;
       _txid = null;
@@ -202,6 +237,7 @@ class _CosignViewState extends State<CosignView> {
       if (mounted) {
         setState(() {
           _loading = false;
+          _errorTitle = 'This ${chain.artifact} could not be read';
           _error = e.toString().replaceFirst('Exception: wallet-ffi: ', '');
         });
       }
@@ -247,7 +283,7 @@ class _CosignViewState extends State<CosignView> {
   /// whether it asks for this wallet's signature and whether it is a script
   /// contract (a Templar Protocol escrow is a P2WSH input carrying our `2121'`
   /// key). Amounts are blinded commitments unless the PSET carries them
-  /// explicitly, so a row may show "amount blinded". Older engines without
+  /// explicitly, so a row may show "Confidential". Older engines without
   /// the script view leave the list empty and the panel is hidden.
   ///
   /// Outputs prefer the classified list (own / escrow / external / fee) and
@@ -271,11 +307,11 @@ class _CosignViewState extends State<CosignView> {
                       '${o.address ?? (o.isEscrow ? 'P2WSH contract (no address)' : 'confidential output')}',
                   amountSats: o.amountSats ?? 0,
                   displayAmount: o.unverified
-                      ? 'UNVERIFIABLE amount — do not sign'
+                      ? _unverifiable
                       : o.displayAmount ??
                             (o.ticker != null
-                                ? 'amount blinded (${o.ticker})'
-                                : 'blinded'),
+                                ? '$_confidential (${o.ticker})'
+                                : _confidential),
                 ),
           ]
         : [
@@ -284,11 +320,11 @@ class _CosignViewState extends State<CosignView> {
                 address: r.address ?? 'confidential output (not ours to read)',
                 amountSats: r.amountSats ?? 0,
                 displayAmount: r.unverified
-                    ? 'UNVERIFIABLE amount — do not sign'
+                    ? _unverifiable
                     : r.displayAmount ??
                           (r.ticker != null
-                              ? 'amount blinded (${r.ticker})'
-                              : 'blinded'),
+                              ? '$_confidential (${r.ticker})'
+                              : _confidential),
               ),
           ],
     feeSats: p.feeSats,
@@ -312,15 +348,22 @@ class _CosignViewState extends State<CosignView> {
         : PsbtUtxoStatus.ok,
   );
 
+  /// What a blinded Liquid amount is called on screen. Never a zero: the
+  /// value exists, this wallet just cannot read it.
+  static const _confidential = 'Confidential';
+
+  /// An output whose commitment does not prove its amount.
+  static const _unverifiable = 'Unverifiable amount — do not sign';
+
   /// Amount column of a Liquid input row: the explicit amount when the PSET
   /// carries one, plus who the input belongs to.
   static String _inputLabel(PsetInput i) {
     final amount = i.unverified && !i.isOurs
-        ? 'unverifiable amount'
+        ? 'Unverifiable amount'
         : i.displayAmount ??
               (i.ticker != null
-                  ? 'amount blinded (${i.ticker})'
-                  : 'amount blinded');
+                  ? '$_confidential (${i.ticker})'
+                  : _confidential);
     final who = i.isOurs
         ? (i.isScriptHash ? 'contract · your key' : 'your coin')
         : (i.isScriptHash ? 'contract · not yours' : 'not yours');
@@ -345,7 +388,12 @@ class _CosignViewState extends State<CosignView> {
       final bytes = await file.readAsBytes();
       await _inspectText(_psbtBytesToBase64(bytes));
     } catch (e) {
-      if (mounted) setState(() => _error = 'Could not read file: $e');
+      if (mounted) {
+        setState(() {
+          _errorTitle = 'Could not read the file';
+          _error = '$e';
+        });
+      }
     }
   }
 
@@ -391,11 +439,12 @@ class _CosignViewState extends State<CosignView> {
     // The engine refuses these too; saying so here spares a password prompt
     // for a signature that can never be made.
     if (!inspection.utxoCheckOk) {
-      setState(
-        () => _error =
+      setState(() {
+        _errorTitle = null;
+        _error =
             'This transaction hides what it spends — its amounts '
-            'cannot be proven, so it will not be signed.',
-      );
+            'cannot be proven, so it will not be signed.';
+      });
       return;
     }
     final walletId = context.read<AppState>().activeWalletId;
@@ -445,6 +494,7 @@ class _CosignViewState extends State<CosignView> {
     setState(() {
       _signing = true;
       _error = null;
+      _errorTitle = null;
     });
     try {
       final signed = await sign();
@@ -465,6 +515,7 @@ class _CosignViewState extends State<CosignView> {
       if (mounted) {
         setState(() {
           _signing = false;
+          _errorTitle = null;
           _error = friendlyHwError(e);
         });
       }
@@ -482,6 +533,7 @@ class _CosignViewState extends State<CosignView> {
     setState(() {
       _broadcasting = true;
       _error = null;
+      _errorTitle = null;
     });
     try {
       final txid = _chain == CosignChain.liquid
@@ -500,6 +552,7 @@ class _CosignViewState extends State<CosignView> {
       if (mounted) {
         setState(() {
           _broadcasting = false;
+          _errorTitle = null;
           _error = e.toString().replaceFirst('Exception: wallet-ffi: ', '');
         });
       }
@@ -523,6 +576,7 @@ class _CosignViewState extends State<CosignView> {
     _txid = null;
     _broadcasting = false;
     _error = null;
+    _errorTitle = null;
     _pasteController.clear();
   });
 
@@ -530,6 +584,7 @@ class _CosignViewState extends State<CosignView> {
     _chosen = chain;
     _chain = chain;
     _error = null;
+    _errorTitle = null;
   });
 
   /// Back to the chain question. Only offered before anything is loaded —
@@ -542,76 +597,93 @@ class _CosignViewState extends State<CosignView> {
   @override
   Widget build(BuildContext context) {
     final chosen = _chosen;
+    final Widget body;
     if (chosen == null) {
-      return _ChainStep(
+      body = _ChainStep(
         liquidAvailable: context.watch<AppState>().activeWalletLiquid,
         onChoose: _chooseChain,
       );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (_inspection == null && !_loading) ...[
+    } else if (_inspection == null && !_loading) {
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           Align(
             alignment: Alignment.centerLeft,
             child: GhostButton(
-              label: '‹ ${chosen.name} · change chain',
+              icon: Icons.arrow_back_outlined,
+              label: '${chosen.name} · change chain',
               onPressed: _changeChain,
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
-        ],
-        if (_error != null) ...[
-          DangerBanner(message: _error!),
-          const SizedBox(height: AppSpacing.xl),
-        ],
-        if (_inspection == null && !_loading)
+          const SizedBox(height: AppSpacing.lg),
           _LoadPsbtCard(
             chain: chosen,
             controller: _pasteController,
             onLoadPaste: _loadPsbt,
             onPickFile: _pickFile,
             onScan: _scanQr,
-          )
-        else if (_loading)
-          Center(
-            child: Padding(
-              padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-              child: const CircularProgressIndicator(),
-            ),
-          )
-        else
-          PsbtInspectionPanel(
-            inspection: _inspection!,
-            chain: _chain,
-            signedInspection: _signedInspection,
-            signing: _signing,
-            signedPsbt: _signedPsbt,
-            broadcasting: _broadcasting,
-            txid: _txid,
-            copied: _copied,
-            usbAvailable: _usbAvailable,
-            // Broadcasting belongs to the session that started the
-            // transaction — the coordinator's sheet. A co-signer on a phone
-            // signs and hands the copy back; it never sends.
-            allowBroadcast: !AppLayout.isMobilePlatform,
-            slots: _slotsFor(_signedInspection ?? _inspection!),
-            onSign: _sign,
-            onSignWithDevice: _signWithDevice,
-            onBroadcast: _broadcast,
-            onCopy: _copySignedPsbt,
-            onDecline: _reset,
+            error: _error,
+            errorTitle: _errorTitle,
           ),
-      ],
+        ],
+      );
+    } else if (_loading) {
+      body = Padding(
+        padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+        child: const Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    } else {
+      body = PsbtInspectionPanel(
+        inspection: _inspection!,
+        chain: _chain,
+        signedInspection: _signedInspection,
+        signing: _signing,
+        signedPsbt: _signedPsbt,
+        broadcasting: _broadcasting,
+        txid: _txid,
+        copied: _copied,
+        usbAvailable: _usbAvailable,
+        // Broadcasting belongs to the session that started the
+        // transaction — the coordinator's sheet. A co-signer on a phone
+        // signs and hands the copy back; it never sends.
+        allowBroadcast: !AppLayout.isMobilePlatform,
+        slots: _slotsFor(_signedInspection ?? _inspection!),
+        error: _error,
+        onRename: _renameFor,
+        onSign: _sign,
+        onSignWithDevice: _signWithDevice,
+        onBroadcast: _broadcast,
+        onCopy: _copySignedPsbt,
+        onDecline: _reset,
+      );
+    }
+    // One readable column for the whole flow, the same width on every step,
+    // aligned with the page title above it.
+    return Align(
+      alignment: Alignment.topLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _columnWidth),
+        child: body,
+      ),
     );
   }
 }
 
+/// The co-sign flow's column: one width from the chain question to the
+/// signed hand-off.
+const double _columnWidth = 720;
+
 // ── Chain step ────────────────────────────────────────────────────────────────
 
-/// "Bitcoin or Liquid?" — the co-sign flow's first question. Picking a card
-/// moves on, as the Send wizard's type step does; there is nothing else to
-/// decide on this screen.
+/// "Which chain?" — the co-sign flow's first question. Picking a card moves
+/// on, as the Send wizard's type step does; there is nothing else to decide
+/// on this screen.
 class _ChainStep extends StatelessWidget {
   const _ChainStep({required this.liquidAvailable, required this.onChoose});
 
@@ -623,45 +695,48 @@ class _ChainStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'WHICH CHAIN?',
-          style: AppTypography.label.copyWith(letterSpacing: 1.2),
+          'Which chain?',
+          style: AppTypography.sectionTitle.copyWith(color: s.ink),
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'The transaction you were handed belongs to one of them',
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+        ),
+        const SizedBox(height: AppSpacing.lg),
         SelectableOptionCard(
           title: 'Bitcoin',
           description:
-              'A PSBT — from a Bitcoin multisig, an air-gapped '
-              'signer, or another Bitcoin wallet.',
+              'A PSBT from a Bitcoin multisig, an air-gapped signer, or '
+              'another Bitcoin wallet',
           isSelected: false,
           icon: Icons.currency_bitcoin,
           onTap: () => onChoose(CosignChain.bitcoin),
         ),
         const SizedBox(height: AppSpacing.md),
-        Opacity(
-          opacity: liquidAvailable ? 1 : 0.5,
-          child: SelectableOptionCard(
-            title: 'Liquid',
-            description: liquidAvailable
-                ? 'A PSET from a Liquid multisig. Its amounts are '
-                      'confidential, so open the wallet the transaction '
-                      'belongs to — this one — before loading it.'
-                : 'This wallet has no Liquid side. Open the Liquid wallet '
-                      'the transaction belongs to, then come back here.',
-            isSelected: false,
-            icon: Icons.water_drop_outlined,
-            onTap: liquidAvailable ? () => onChoose(CosignChain.liquid) : null,
-          ),
+        SelectableOptionCard(
+          title: 'Liquid',
+          description: liquidAvailable
+              ? 'A PSET from a Liquid multisig. Its amounts are '
+                    'confidential, so it must be opened with the wallet it '
+                    'belongs to — this one.'
+              : 'This wallet has no Liquid side. Open the Liquid wallet the '
+                    'transaction belongs to, then come back here.',
+          isSelected: false,
+          icon: Icons.water_drop_outlined,
+          onTap: liquidAvailable ? () => onChoose(CosignChain.liquid) : null,
         ),
       ],
     );
   }
 }
 
-// ── Load section (paste / file / scan) ────────────────────────────────────────
+// ── Load step (paste / file / scan) ───────────────────────────────────────────
 
 class _LoadPsbtCard extends StatefulWidget {
   const _LoadPsbtCard({
@@ -670,6 +745,8 @@ class _LoadPsbtCard extends StatefulWidget {
     required this.onLoadPaste,
     required this.onPickFile,
     required this.onScan,
+    this.error,
+    this.errorTitle,
   });
 
   /// Names the artifact on every tile: a PSBT on Bitcoin, a PSET on Liquid.
@@ -678,6 +755,10 @@ class _LoadPsbtCard extends StatefulWidget {
   final VoidCallback onLoadPaste;
   final Future<void> Function() onPickFile;
   final Future<void> Function() onScan;
+
+  /// Why the last load failed, shown under the sources.
+  final String? error;
+  final String? errorTitle;
 
   @override
   State<_LoadPsbtCard> createState() => _LoadPsbtCardState();
@@ -690,28 +771,26 @@ class _LoadPsbtCardState extends State<_LoadPsbtCard> {
 
   @override
   Widget build(BuildContext context) {
-    // Three square selectors straight on the page — no wrapper panel or
-    // banner. Flat surfaces like the rest of the app's option menus.
-    //
-    // Three 190 dp squares need 570 dp plus their gaps, which no phone has:
-    // the Row ran 255 px off the right edge and took Scan QR with it, so the
-    // camera route was invisible on the very platform that has a camera. On a
-    // phone the same three become full-width rows, stacked.
+    final s = AppScheme.of(context);
+    // Three equal sources: side by side on a desktop, stacked full-width
+    // rows on a phone, where three squares do not fit a line.
     final phone = AppLayout.isPhone(context);
     final artifact = widget.chain.artifact;
     final tiles = <Widget>[
       _SourceTile(
-        icon: Icons.content_paste,
+        icon: Icons.content_paste_outlined,
         label: 'Paste',
         sub: 'base64 $artifact text',
+        tooltip: 'Paste the $artifact as text',
         selected: _pasteOpen,
         wide: phone,
         onTap: () => setState(() => _pasteOpen = !_pasteOpen),
       ),
       _SourceTile(
-        icon: Icons.folder_open,
-        label: 'File',
+        icon: Icons.folder_open_outlined,
+        label: 'Open file',
         sub: '.${artifact.toLowerCase()}',
+        tooltip: 'Open a .${artifact.toLowerCase()} or .txt file',
         wide: phone,
         onTap: () {
           setState(() => _pasteOpen = false);
@@ -724,9 +803,10 @@ class _LoadPsbtCardState extends State<_LoadPsbtCard> {
       // animation another Templar shows for it.
       if (cameraScanSupported)
         _SourceTile(
-          icon: Icons.qr_code_scanner,
+          icon: Icons.qr_code_scanner_outlined,
           label: 'Scan QR',
           sub: 'camera',
+          tooltip: 'Scan the $artifact QR with the camera',
           wide: phone,
           onTap: () {
             setState(() => _pasteOpen = false);
@@ -734,62 +814,65 @@ class _LoadPsbtCardState extends State<_LoadPsbtCard> {
           },
         ),
     ];
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 760),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (phone)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var i = 0; i < tiles.length; i++) ...[
-                    if (i > 0) const SizedBox(height: AppSpacing.md),
-                    tiles[i],
-                  ],
-                ],
-              )
-            else
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (var i = 0; i < tiles.length; i++) ...[
-                    if (i > 0) const SizedBox(width: AppSpacing.xxl),
-                    tiles[i],
-                  ],
-                ],
-              ),
-            // Paste tile expands to a text field + load button below.
-            AnimatedSize(
-              duration: AppMotion.of(context, AppMotion.quick),
-              curve: AppMotion.settle,
-              alignment: Alignment.topCenter,
-              child: _pasteOpen
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.xl),
-                      child: _PasteSource(
-                        artifact: artifact,
-                        controller: widget.controller,
-                        onLoad: widget.onLoadPaste,
-                      ),
-                    )
-                  : const SizedBox(width: double.infinity),
-            ),
-          ],
+    final error = widget.error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Load the $artifact',
+          style: AppTypography.sectionTitle.copyWith(color: s.ink),
         ),
-      ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'Paste it, open its file, or scan its QR',
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        if (phone)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < tiles.length; i++) ...[
+                if (i > 0) const SizedBox(height: AppSpacing.sm),
+                tiles[i],
+              ],
+            ],
+          )
+        else
+          Row(
+            children: [
+              for (var i = 0; i < tiles.length; i++) ...[
+                if (i > 0) const SizedBox(width: AppSpacing.md),
+                Expanded(child: tiles[i]),
+              ],
+            ],
+          ),
+        if (_pasteOpen) ...[
+          const SizedBox(height: AppSpacing.xl),
+          _PasteSource(
+            artifact: artifact,
+            controller: widget.controller,
+            onLoad: widget.onLoadPaste,
+          ),
+        ],
+        if (error != null) ...[
+          const SizedBox(height: AppSpacing.lg),
+          _InlineError(title: widget.errorTitle, message: error),
+        ],
+      ],
     );
   }
 }
 
-/// One square source selector (Paste / File / Scan QR).
+/// One source (Paste / Open file / Scan QR): the raised-surface grammar of
+/// every option in the app — a hairline at rest, a hover step, and the
+/// selected surface with a firmer edge while its box is open.
 class _SourceTile extends StatefulWidget {
   const _SourceTile({
     required this.icon,
     required this.label,
     required this.sub,
+    required this.tooltip,
     required this.onTap,
     this.selected = false,
     this.wide = false,
@@ -797,11 +880,11 @@ class _SourceTile extends StatefulWidget {
   final IconData icon;
   final String label;
   final String sub;
+  final String tooltip;
   final VoidCallback onTap;
   final bool selected;
 
-  /// Phone shape: a full-width row instead of a fixed 190 dp square, so three
-  /// of them stack down the column rather than running off its right edge.
+  /// Phone shape: a full-width row, so the sources stack down the column.
   final bool wide;
 
   @override
@@ -810,95 +893,112 @@ class _SourceTile extends StatefulWidget {
 
 class _SourceTileState extends State<_SourceTile> {
   bool _hover = false;
+  bool _focus = false;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final active = widget.selected || _hover;
+    final selected = widget.selected;
+    final radius = widget.wide
+        ? AppSpacing.radiusPhoneControl
+        : AppSpacing.radiusLg;
+    final fill = selected
+        ? s.selected
+        : _hover
+        ? Color.alphaBlend(s.hover, s.panel)
+        : s.panel;
+    final edge = selected || _hover ? s.edgeStrong : s.edge;
 
-    // Flat option-card styling — same language as the wizard's
-    // SelectableOptionCard: solid surface, plain border, accent when active.
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: AppMotion.of(context, AppMotion.quick),
-          curve: AppMotion.settle,
-          width: widget.wide ? null : 190,
-          height: widget.wide ? null : 190,
-          padding: widget.wide
-              ? const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                  vertical: AppSpacing.md,
-                )
-              : null,
-          decoration: BoxDecoration(
-            color: widget.selected ? s.accentSoft : s.surfaceSolid,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            border: Border.all(
-              color: active ? s.accent : s.edge,
-              width: widget.selected ? 2 : 1,
-            ),
-          ),
-          child: widget.wide
-              ? Row(
-                  children: [
-                    Icon(
-                      widget.icon,
-                      size: 26,
-                      color: active ? s.accent : s.inkSecondary,
-                    ),
-                    const SizedBox(width: AppSpacing.lg),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            widget.label,
-                            style: AppTypography.sectionTitle.copyWith(
-                              color: active ? s.accent : s.ink,
-                            ),
-                          ),
-                          Text(
-                            widget.sub,
-                            style: AppTypography.caption.copyWith(
-                              color: s.inkFaint,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                )
-              : Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      widget.icon,
-                      size: 36,
-                      color: active ? s.accent : s.inkSecondary,
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    Text(
-                      widget.label,
-                      style: AppTypography.sectionTitle.copyWith(
-                        color: active ? s.accent : s.ink,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      widget.sub,
-                      style: AppTypography.caption.copyWith(color: s.inkFaint),
-                    ),
-                  ],
+    final label = Text(
+      widget.label,
+      style: AppTypography.bodyOf(
+        context,
+      ).copyWith(color: s.ink, fontWeight: FontWeight.w500),
+    );
+    final sub = Text(
+      widget.sub,
+      style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
+    );
+    final icon = Icon(
+      widget.icon,
+      size: widget.wide ? 22 : AppSpacing.icon,
+      color: selected ? s.ink : s.inkSecondary,
+    );
+
+    final tile = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.instant),
+      curve: AppMotion.settle,
+      constraints: BoxConstraints(
+        minHeight: widget.wide ? AppSpacing.phoneFieldHeight : 96,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: edge),
+      ),
+      foregroundDecoration: _focus
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(color: s.focus, width: 2),
+            )
+          : null,
+      child: widget.wide
+          ? Row(
+              children: [
+                icon,
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [label, sub],
+                  ),
                 ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                icon,
+                const SizedBox(height: AppSpacing.md),
+                label,
+                sub,
+              ],
+            ),
+    );
+
+    final control = Semantics(
+      button: true,
+      selected: selected,
+      label: widget.label,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowHoverHighlight: (v) => setState(() => _hover = v),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onTap();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: tile,
         ),
       ),
     );
+    // A phone has no hover to show a tooltip on; the sub-line says it.
+    if (widget.wide) return control;
+    return Tooltip(message: widget.tooltip, child: control);
   }
 }
 
@@ -914,37 +1014,114 @@ class _PasteSource extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Text(
+          '$artifact text',
+          style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+        ),
+        const SizedBox(height: AppSpacing.sm),
         TextField(
           controller: controller,
           maxLines: 6,
-          decoration: InputDecoration(
-            hintText: 'Paste the base64 $artifact here…',
-            alignLabelWithHint: true,
-          ),
-          style: AppTypography.mono,
+          minLines: 4,
+          autocorrect: false,
+          enableSuggestions: false,
+          decoration: InputDecoration(hintText: 'Base64 $artifact'),
+          style: AppTypography.mono.copyWith(color: s.ink),
         ),
         const SizedBox(height: AppSpacing.lg),
-        PrimaryButton(
-          label: 'Load & Inspect',
-          icon: Icons.search,
-          isFullWidth: true,
-          onPressed: onLoad,
+        Align(
+          alignment: Alignment.centerRight,
+          child: PrimaryButton(
+            label: 'Load and inspect',
+            isFullWidth: phone,
+            onPressed: onLoad,
+          ),
         ),
       ],
     );
   }
 }
 
-// ── Loaded PSBT view ──────────────────────────────────────────────────────────
+/// A load that failed, said where the sources are. A sentence written for
+/// the user stands alone; the engine's own words fold away under a headline,
+/// in a mono well, for whoever needs them.
+class _InlineError extends StatefulWidget {
+  const _InlineError({required this.message, this.title});
+  final String message;
+  final String? title;
 
-/// Everything shown once a PSBT or PSET has been decoded: the summary, the
-/// signature quorum chart, the inputs and outputs, and the action row.
+  @override
+  State<_InlineError> createState() => _InlineErrorState();
+}
+
+class _InlineErrorState extends State<_InlineError> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final title = widget.title;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(
+                Icons.error_outline,
+                size: AppSpacing.iconSmall,
+                color: s.danger,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                title ?? widget.message,
+                style: AppTypography.caption.copyWith(color: s.danger),
+              ),
+            ),
+            if (title != null)
+              GhostButton(
+                label: _open ? 'Hide details' : 'Details',
+                onPressed: () => setState(() => _open = !_open),
+              ),
+          ],
+        ),
+        if (title != null && _open) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: s.well,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              border: Border.all(color: s.edge),
+            ),
+            child: SelectableText(
+              widget.message,
+              style: AppTypography.mono.copyWith(color: s.inkSecondary),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ── Loaded transaction ────────────────────────────────────────────────────────
+
+/// Everything shown once a PSBT or PSET has been decoded: where its
+/// signatures stand, who has signed, what it does, and the actions.
 ///
 /// Public so it can be driven from a test with a hand-written
-/// [PsbtInspection] — reaching the signer chart and the action row through the
+/// [PsbtInspection] — reaching the signer list and the action row through the
 /// real engine would need a multisig PSBT fixture to assert on what are pure
 /// layout decisions.
 class PsbtInspectionPanel extends StatelessWidget {
@@ -961,6 +1138,8 @@ class PsbtInspectionPanel extends StatelessWidget {
     this.usbAvailable = true,
     this.allowBroadcast = true,
     this.slots,
+    this.error,
+    this.onRename,
     required this.onSign,
     required this.onSignWithDevice,
     required this.onBroadcast,
@@ -971,7 +1150,7 @@ class PsbtInspectionPanel extends StatelessWidget {
   final PsbtInspection inspection;
 
   /// Which chain this transaction is on. Only changes wording and the inputs
-  /// panel — a PSET reports what it pays, not what it spends.
+  /// block — a PSET reports what it pays, not what it spends.
   final CosignChain chain;
 
   final PsbtInspection? signedInspection;
@@ -985,13 +1164,21 @@ class PsbtInspectionPanel extends StatelessWidget {
   /// whose engine is linked without the hardware stack.
   final bool usbAvailable;
 
-  /// Whether "Finalize & Broadcast" is offered here at all. False on a phone:
-  /// broadcasting is the coordinator's move, in the session that built the
-  /// transaction; a co-signer's job ends at handing the signed copy back.
+  /// Whether "Finalize and broadcast" is offered here at all. False on a
+  /// phone: broadcasting is the coordinator's move, in the session that
+  /// built the transaction; a co-signer's job ends at handing the signed
+  /// copy back.
   final bool allowBroadcast;
 
-  /// The signers by name and colour, when the open wallet knows them.
+  /// The signers by name, when the open wallet knows them. Null: one row
+  /// per fingerprint the inspection names.
   final List<SignerSlot>? slots;
+
+  /// A signing or broadcast failure, shown above the actions.
+  final String? error;
+
+  /// The rename control for a signer row, or null where there is none.
+  final VoidCallback? Function(SignerSlot slot)? onRename;
 
   final VoidCallback onSign;
 
@@ -1011,119 +1198,49 @@ class PsbtInspectionPanel extends StatelessWidget {
   /// Complete AND this surface may broadcast.
   bool get _offersBroadcast => allowBroadcast && _isComplete;
 
+  /// The transaction's state in words. Every count in it is the engine's.
+  String _stateLine(PsbtInspection i, List<SignerSlot> rows) {
+    if (_isComplete) {
+      return allowBroadcast
+          ? 'Fully signed, ready to broadcast'
+          : 'Fully signed';
+    }
+    final mineSigned = rows.any((x) => x.isLocal && x.signed);
+    if (signedPsbt == null && mineSigned) return 'You have already signed this';
+    final required = i.sigsRequired;
+    if (required != null) {
+      final left = required - i.sigsPresent;
+      return 'Needs $left more signature${left == 1 ? '' : 's'}';
+    }
+    return i.sigsPresent > 0 ? 'Partially signed' : 'Not signed yet';
+  }
+
   @override
   Widget build(BuildContext context) {
     // Post-signature inspection supersedes the original: same transaction,
-    // but with our signature counted in the quorum display.
+    // but with our signature counted.
     final i = signedInspection ?? inspection;
+    final rows = (slots != null && slots!.isNotEmpty)
+        ? slots!
+        : [
+            for (final x in i.signers)
+              SignerSlot(id: x.fingerprint, signed: x.hasSigned),
+          ];
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Summary banner
-        Reveal(child: _SummaryBanner(inspection: i)),
-        const SizedBox(height: AppSpacing.xl),
-        // Signers (if multisig)
-        if (i.signers.isNotEmpty) ...[
-          Reveal(
-            delay: 1,
-            child: _SignersCard(inspection: i, slots: slots),
-          ),
-          const SizedBox(height: AppSpacing.xl),
-        ],
-        // Inputs — full outpoints, never truncated. A PSET lists them only
-        // when the engine's script view is present (it tags each input with
-        // whose key it asks for); without it an empty panel would read as
-        // "spends nothing", so it is hidden.
-        if (chain == CosignChain.bitcoin || i.inputs.isNotEmpty) ...[
-          Reveal(
-            delay: 2,
-            child: RailPanel(
-              title: 'Inputs (${i.inputs.length})',
-              rail: AppScheme.of(context).bitcoin,
-              child: Column(
-                children: [
-                  for (final inp in i.inputs) ...[
-                    DataWell(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Spacer(),
-                              Text(
-                                inp.displayAmount,
-                                style: AppTypography.numericSmall.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: AppScheme.of(context).ink,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          KvRow(label: 'Outpoint', value: inp.outpoint),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xl),
-        ],
-        // Outputs — full addresses, never truncated.
-        Reveal(
-          delay: 3,
-          child: RailPanel(
-            title: 'Outputs (${i.outputs.length})',
-            rail: AppScheme.of(context).liquid,
-            child: Column(
-              children: [
-                for (final out in i.outputs) ...[
-                  DataWell(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Spacer(),
-                            Text(
-                              out.displayAmount,
-                              style: AppTypography.numericSmall.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: AppScheme.of(context).ink,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        KvRow(label: 'Address', value: out.address),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                ],
-              ],
-            ),
-          ),
+        SignatureHeader(
+          state: _stateLine(i, rows),
+          signed: i.sigsPresent,
+          required: i.sigsRequired,
         ),
+        if (rows.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.lg),
+          SignerList(slots: rows, onRename: onRename),
+        ],
         const SizedBox(height: AppSpacing.xl),
-        // Fee summary
-        SummaryCard(
-          title: 'Transaction Summary',
-          rows: [
-            (label: 'Fee', value: i.feeDisplay, isMono: false),
-            (label: 'Policy', value: i.policyHint, isMono: false),
-            if (i.sigsRequired != null)
-              (
-                label: 'Signatures',
-                value: '${i.sigsPresent} of ${i.sigsRequired} collected',
-                isMono: false,
-              ),
-          ],
-        ),
-        // Broadcast result / signed PSBT export
+        _FlowCard(inspection: i, chain: chain),
+        // Broadcast result / signed copy going out
         if (txid != null) ...[
           const SizedBox(height: AppSpacing.xl),
           _BroadcastResultCard(txid: txid!),
@@ -1137,21 +1254,20 @@ class PsbtInspectionPanel extends StatelessWidget {
             message: _exportMessage(i),
           ),
         ],
-        const SizedBox(height: AppSpacing.xxl),
-        // Action row. Three labelled buttons ("Decline", "Sign with device",
-        // "Sign & Export") never fitted one phone line — the Row ran off the
-        // right edge and Flutter painted the overflow stripes. On a phone the
-        // same buttons stack full width, most important first, which is also
-        // where a thumb expects them.
+        if (error != null) ...[
+          const SizedBox(height: AppSpacing.xl),
+          DangerBanner(message: error!),
+        ],
+        const SizedBox(height: AppSpacing.xl),
         _actionRow(context),
       ],
     );
   }
 
-  /// The buttons under the transaction: one line on a desktop, a full-width
-  /// stack on a phone. [stackOrRow] orders them as given, so the list is
-  /// written most-important-first and the desktop row reverses back to its
-  /// established right-aligned order.
+  /// The buttons under the transaction: one right-aligned line on a desktop,
+  /// a full-width stack on a phone. The list is written most important
+  /// first, which is the stack's order; the desktop row reverses it so the
+  /// primary sits last, at the right.
   Widget _actionRow(BuildContext context) {
     final phone = AppLayout.isPhone(context);
     final buttons = <Widget>[];
@@ -1160,7 +1276,6 @@ class PsbtInspectionPanel extends StatelessWidget {
       buttons.add(
         SecondaryButton(
           label: 'Co-sign another transaction',
-          icon: Icons.swap_horiz,
           isFullWidth: phone,
           onPressed: onDecline,
         ),
@@ -1178,16 +1293,16 @@ class PsbtInspectionPanel extends StatelessWidget {
       if (_offersBroadcast) {
         buttons.add(
           PrimaryButton(
-            label: 'Finalize & Broadcast',
-            icon: Icons.cell_tower,
+            label: 'Finalize and broadcast',
+            icon: Icons.send_outlined,
             isFullWidth: phone,
             onPressed: onBroadcast,
           ),
         );
         buttons.add(
           SecondaryButton(
-            label: 'Sign & Export',
-            icon: Icons.verified_outlined,
+            label: 'Sign',
+            icon: Icons.draw_outlined,
             isFullWidth: phone,
             onPressed: onSign,
           ),
@@ -1195,8 +1310,8 @@ class PsbtInspectionPanel extends StatelessWidget {
       } else {
         buttons.add(
           PrimaryButton(
-            label: 'Sign & Export',
-            icon: Icons.verified_outlined,
+            label: 'Sign',
+            icon: Icons.draw_outlined,
             isFullWidth: phone,
             onPressed: onSign,
           ),
@@ -1208,7 +1323,7 @@ class PsbtInspectionPanel extends StatelessWidget {
           buttons.add(
             SecondaryButton(
               label: 'Sign with device',
-              icon: Icons.usb_rounded,
+              icon: Icons.usb_outlined,
               isFullWidth: phone,
               onPressed: onSignWithDevice,
             ),
@@ -1216,12 +1331,7 @@ class PsbtInspectionPanel extends StatelessWidget {
         }
       }
       buttons.add(
-        DangerButton(
-          label: 'Decline',
-          icon: Icons.close,
-          isFullWidth: phone,
-          onPressed: onDecline,
-        ),
+        GhostButton(label: 'Decline', isFullWidth: phone, onPressed: onDecline),
       );
     } else {
       if (_offersBroadcast) {
@@ -1233,8 +1343,8 @@ class PsbtInspectionPanel extends StatelessWidget {
         }
         buttons.add(
           PrimaryButton(
-            label: 'Finalize & Broadcast',
-            icon: Icons.cell_tower,
+            label: 'Finalize and broadcast',
+            icon: Icons.send_outlined,
             isFullWidth: phone,
             onPressed: onBroadcast,
           ),
@@ -1243,7 +1353,6 @@ class PsbtInspectionPanel extends StatelessWidget {
       buttons.add(
         SecondaryButton(
           label: 'Co-sign another transaction',
-          icon: Icons.swap_horiz,
           isFullWidth: phone,
           onPressed: onDecline,
         ),
@@ -1251,8 +1360,6 @@ class PsbtInspectionPanel extends StatelessWidget {
     }
 
     if (phone) return stackOrRow(true, buttons);
-    // Desktop keeps the right-aligned row it always had, in its established
-    // order (the list above is written most-important-first for the stack).
     final row = buttons.reversed.toList();
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
@@ -1275,7 +1382,8 @@ class PsbtInspectionPanel extends StatelessWidget {
     if (_isComplete) {
       return allowBroadcast
           ? 'All ${i.sigsRequired} required signatures are present. Finalize '
-                '& broadcast below, or copy the $_artifact to broadcast elsewhere.'
+                'and broadcast below, or copy the $_artifact to broadcast '
+                'elsewhere.'
           : 'All ${i.sigsRequired} required signatures are present. Hand this '
                 '$_artifact back to whoever started the transaction — it is '
                 'broadcast from there.';
@@ -1284,10 +1392,10 @@ class PsbtInspectionPanel extends StatelessWidget {
     if (required != null) {
       final missing = (required - i.sigsPresent).clamp(1, required);
       return 'Your signature has been added. $missing more '
-          'signature${missing == 1 ? '' : 's'} needed — copy the $_artifact and '
-          'send it to the other signers or the coordinator.';
+          'signature${missing == 1 ? '' : 's'} needed — pass the $_artifact '
+          'on to the other signers or the coordinator.';
     }
-    return 'Your signature has been added. Copy the $_artifact and send it to the '
+    return 'Your signature has been added. Pass the $_artifact on to the '
         'other signers or the coordinator.';
   }
 }
@@ -1308,126 +1416,204 @@ class _ActionSpinner extends StatelessWidget {
   }
 }
 
-class _SummaryBanner extends StatelessWidget {
-  const _SummaryBanner({required this.inspection});
+/// What the transaction does, in the neutral flow grammar of Send's review:
+/// what goes in, where it goes, the fee. Every amount and address is the
+/// inspection's text, untouched; outpoints and addresses are never
+/// truncated.
+class _FlowCard extends StatelessWidget {
+  const _FlowCard({required this.inspection, required this.chain});
   final PsbtInspection inspection;
+  final CosignChain chain;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final i = inspection;
-    return HeroPanel(
+    // A PSET lists its inputs only when the engine's script view is present
+    // (it tags each input with whose key it asks for); without it an empty
+    // block would read as "spends nothing", so it is left out.
+    final showInputs = chain == CosignChain.bitcoin || i.inputs.isNotEmpty;
+    final known = i.ownershipKnown;
+    final rule = Divider(height: AppSpacing.xl, thickness: 1, color: s.edge);
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.cardPadding),
+      decoration: BoxDecoration(
+        color: s.panel,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(color: s.edge),
+        boxShadow: s.panelShadow,
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'What it does',
+            style: AppTypography.sectionTitle.copyWith(color: s.ink),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          if (showInputs) ...[
+            for (var n = 0; n < i.inputs.length; n++) ...[
+              if (n > 0) const SizedBox(height: AppSpacing.md),
+              _FlowRow(
+                role: 'In',
+                subject: i.inputs[n].outpoint,
+                amount: i.inputs[n].displayAmount,
+                yours: known && i.inputs[n].isMine == true,
+              ),
+            ],
+            rule,
+          ],
+          for (var n = 0; n < i.outputs.length; n++) ...[
+            if (n > 0) const SizedBox(height: AppSpacing.md),
+            _FlowRow(
+              role: 'To',
+              subject: i.outputs[n].address,
+              amount: i.outputs[n].displayAmount,
+              yours: known && i.outputs[n].isMine == true,
+            ),
+          ],
+          rule,
+          _TotalRow(label: 'Fee', value: i.feeDisplay, figure: true),
+          if (i.policyHint.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            _TotalRow(label: 'Policy', value: i.policyHint),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One leg of the flow: a quiet role word, the outpoint or address in mono,
+/// the amount in the tabular figure face. A blinded Liquid amount is a word
+/// in the faint ink, never a zero; an unverifiable one is in the danger ink.
+class _FlowRow extends StatelessWidget {
+  const _FlowRow({
+    required this.role,
+    required this.subject,
+    required this.amount,
+    this.yours = false,
+  });
+
+  final String role;
+  final String subject;
+  final String amount;
+
+  /// The engine says this coin or address belongs to the open wallet.
+  final bool yours;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    final lower = amount.toLowerCase();
+    final TextStyle amountStyle;
+    if (lower.contains('unverifiable')) {
+      amountStyle = AppTypography.caption.copyWith(color: s.danger);
+    } else if (lower.startsWith('confidential')) {
+      amountStyle = AppTypography.caption.copyWith(color: s.inkFaint);
+    } else {
+      amountStyle = AppTypography.numeric.copyWith(color: s.ink);
+    }
+    final roleText = SizedBox(
+      width: 48,
+      child: Text(
+        role,
+        style: AppTypography.caption.copyWith(color: s.inkFaint),
+      ),
+    );
+    final subjectText = SelectableText(
+      subject,
+      style: AppTypography.mono.copyWith(color: s.ink),
+    );
+    final amountCol = Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        if (yours) ...[
+          const QuietTag(label: 'Yours'),
+          const SizedBox(width: AppSpacing.sm),
+        ],
+        Flexible(
+          child: Text(amount, style: amountStyle, textAlign: TextAlign.right),
+        ),
+      ],
+    );
+    if (phone) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Transaction',
-                style: AppTypography.caption.copyWith(color: s.inkSecondary),
+              roleText,
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: amountCol,
+                ),
               ),
-              const Spacer(),
-              TagChip(label: i.policyHint, color: s.accent),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            '${i.inputs.length} input${i.inputs.length == 1 ? '' : 's'}  ·  '
-            '${i.outputs.length} output${i.outputs.length == 1 ? '' : 's'}  ·  '
-            'Fee: ${i.feeDisplay}',
-            style: AppTypography.numericSmall.copyWith(color: s.ink),
-          ),
+          const SizedBox(height: AppSpacing.xs),
+          subjectText,
         ],
-      ),
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        roleText,
+        Expanded(child: subjectText),
+        const SizedBox(width: AppSpacing.lg),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 280),
+          child: amountCol,
+        ),
+      ],
     );
   }
 }
 
-class _SignersCard extends StatelessWidget {
-  const _SignersCard({required this.inspection, this.slots});
-  final PsbtInspection inspection;
-
-  /// Named slots, when the wallet knows the signers; the chart then lists
-  /// them itself and the fingerprint rows below are not drawn twice.
-  final List<SignerSlot>? slots;
+/// A key and its value on one line, the value right-aligned.
+class _TotalRow extends StatelessWidget {
+  const _TotalRow({
+    required this.label,
+    required this.value,
+    this.figure = false,
+  });
+  final String label;
+  final String value;
+  final bool figure;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final i = inspection;
-    final named = slots != null && slots!.isNotEmpty;
-    return RailPanel(
-      title: 'Signature quorum',
-      trailing: i.sigsRequired != null
-          ? Text(
-              '${i.sigsPresent} OF ${i.sigsRequired} REQUIRED',
-              style: AppTypography.navSection.copyWith(
-                color: s.accent,
-                fontSize: 10.5,
-              ),
-            )
-          : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Ring counts come from the signer list rather than from
-          // `sigsPresent`, so the ring can never disagree with the rows
-          // printed under it: `sigsPresent` is the minimum partial-signature
-          // count across all inputs and may include a signature the
-          // inspection could not attribute to a named signer. That number is
-          // still reported, verbatim, in the quorum line beside the legend.
-          SignerChart(
-            signed: i.signers.where((x) => x.hasSigned).length,
-            total: i.signers.length,
-            requiredCount: i.sigsRequired,
-            collected: i.sigsPresent,
-            slots: slots,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: AppTypography.label.copyWith(color: s.inkSecondary)),
+        const SizedBox(width: AppSpacing.lg),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: (figure ? AppTypography.numeric : AppTypography.body)
+                .copyWith(color: s.ink),
           ),
-          if (!named) const SizedBox(height: AppSpacing.lg),
-          if (!named)
-            ...i.signers.map((sig) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                child: Row(
-                  children: [
-                    Icon(
-                      sig.hasSigned
-                          ? Icons.check_circle
-                          : Icons.radio_button_unchecked,
-                      size: 16,
-                      color: sig.hasSigned ? s.success : s.inkFaint,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Text(
-                      sig.fingerprint,
-                      style: AppTypography.mono.copyWith(
-                        color: sig.hasSigned ? s.ink : s.inkSecondary,
-                      ),
-                    ),
-                    const Spacer(),
-                    TagChip(
-                      label: sig.hasSigned ? 'Signed' : 'Pending',
-                      color: sig.hasSigned ? s.success : s.inkFaint,
-                    ),
-                  ],
-                ),
-              );
-            }),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-/// What a co-signer does with the transaction once they have signed it: read
-/// it back as a QR, hand it over as a file, or copy the text.
+/// What a co-signer does with the transaction once they have signed it:
+/// read it back as a QR, copy the text, or hand it over as a file.
 ///
-/// The card used to offer Copy alone, which on a phone is the one route that
-/// goes nowhere — there is no second window to paste base64 into, and the
-/// clipboard is not how a signed PSBT reaches a coordinator across the room.
-/// The QR is the air-gap route the rest of the app already speaks (BC-UR,
-/// animated when the payload needs more than one frame); the share sheet is
-/// how a phone moves a file at all.
+/// Copy alone is the one route that goes nowhere on a phone — there is no
+/// second window to paste base64 into. The QR is the air-gap route the rest
+/// of the app already speaks (BC-UR, animated when the payload needs more
+/// than one part); the share sheet is how a phone moves a file at all.
 class _SignedExportCard extends StatefulWidget {
   const _SignedExportCard({
     required this.signedPsbt,
@@ -1499,6 +1685,7 @@ class _SignedExportCardState extends State<_SignedExportCard> {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
     final artifact = widget.chain == CosignChain.liquid ? 'PSET' : 'PSBT';
     final saveLabel = FileExport.sharesInsteadOfSaves
@@ -1508,11 +1695,34 @@ class _SignedExportCardState extends State<_SignedExportCard> {
     return FormCard(
       title: 'Signed $artifact',
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           InfoBanner(message: widget.message),
+          const SizedBox(height: AppSpacing.lg),
+          equalOptions(phone, [
+            SecondaryButton(
+              label: _showQr ? 'Hide QR' : 'Show QR',
+              icon: Icons.qr_code_2_outlined,
+              isFullWidth: true,
+              onPressed: _toggleQr,
+            ),
+            SecondaryButton(
+              label: widget.copied ? 'Copied' : 'Copy $artifact',
+              icon: widget.copied ? Icons.check : Icons.content_copy_outlined,
+              isFullWidth: true,
+              onPressed: widget.onCopy,
+            ),
+            SecondaryButton(
+              label: saveLabel,
+              icon: FileExport.sharesInsteadOfSaves
+                  ? Icons.ios_share_outlined
+                  : Icons.save_alt_outlined,
+              isFullWidth: true,
+              onPressed: _saveFile,
+            ),
+          ]),
           if (_showQr) ...[
-            const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.xl),
             Center(
               child: _urParts != null
                   ? UrAnimatedQr(
@@ -1522,41 +1732,20 @@ class _SignedExportCardState extends State<_SignedExportCard> {
                   : _urError != null
                   ? Text(
                       _urError!,
-                      style: AppTypography.bodySmall.copyWith(
-                        color: AppScheme.of(context).danger,
-                      ),
+                      style: AppTypography.caption.copyWith(color: s.danger),
                     )
                   : const Padding(
                       padding: EdgeInsets.all(AppSpacing.xl),
-                      child: CircularProgressIndicator(),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                     ),
             ),
           ],
           const SizedBox(height: AppSpacing.lg),
           CodeBox(value: widget.signedPsbt, maxLines: 5),
-          const SizedBox(height: AppSpacing.lg),
-          stackOrRow(phone, [
-            SecondaryButton(
-              label: _showQr ? 'Hide QR' : 'Show QR',
-              icon: _showQr ? Icons.qr_code_2_outlined : Icons.qr_code_2,
-              isFullWidth: phone,
-              onPressed: _toggleQr,
-            ),
-            SecondaryButton(
-              label: saveLabel,
-              icon: FileExport.sharesInsteadOfSaves
-                  ? Icons.ios_share
-                  : Icons.save_alt,
-              isFullWidth: phone,
-              onPressed: _saveFile,
-            ),
-            SecondaryButton(
-              label: widget.copied ? 'Copied!' : 'Copy $artifact',
-              icon: widget.copied ? Icons.check : Icons.copy,
-              isFullWidth: phone,
-              onPressed: widget.onCopy,
-            ),
-          ]),
         ],
       ),
     );
@@ -1572,7 +1761,7 @@ class _BroadcastResultCard extends StatelessWidget {
     return FormCard(
       title: 'Transaction broadcast',
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const InfoBanner(
             message:
@@ -1580,14 +1769,9 @@ class _BroadcastResultCard extends StatelessWidget {
                 'was finalized and sent to the network.',
           ),
           const SizedBox(height: AppSpacing.lg),
-          CodeBox(value: txid, label: 'TxID'),
+          CodeBox(value: txid, label: 'Transaction ID'),
         ],
       ),
     );
   }
 }
-
-// Note for a future FFI proposal (not done silently here): PsbtInspection
-// lacks per-input addresses and mine/change attribution for outputs. Once the
-// bridge exposes them, inputs/outputs gain YOURS / CHANGE TagChips like the
-// send review dialog.

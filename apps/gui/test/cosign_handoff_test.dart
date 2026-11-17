@@ -2,8 +2,8 @@
 // it is out with its co-signers.
 //
 // The behaviour under test is the round trip. The sheet hands out one copy and
-// takes copies back, and every copy that lands in it is read: the quorum chart
-// has to move, the co-signer's row has to flip to Signed, the copy going out
+// takes copies back, and every copy that lands in it is read: the header has
+// to move, the co-signer's row has to flip to Signed, the copy going out
 // has to GROW by the signatures that came back — and a copy that brings
 // nothing (the original pasted back) has to be refused with the reason rather
 // than adopted as if it were progress.
@@ -21,6 +21,7 @@ import 'package:templar_wallet/features/psbt/models/pset_inspection.dart';
 import 'package:templar_wallet/features/wallet_info/models/wallet_info.dart';
 import 'package:templar_wallet/services/cosigner_label_store.dart';
 import 'package:templar_wallet/shared/models/cosigner_label.dart';
+import 'package:templar_wallet/shared/widgets/buttons.dart';
 import 'package:templar_wallet/shared/widgets/code_box.dart';
 import 'package:templar_wallet/shared/widgets/signer_donut.dart';
 import 'package:templar_wallet/shared/widgets/ur_qr.dart';
@@ -168,8 +169,8 @@ const _psbt = 'cHNidP8BAH0partial~sigA';
 /// inside a scroll view, which would leave its height unbounded and send the
 /// dialog looking for intrinsics its QR cannot give.
 ///
-/// Animations are off: the donut's sweep would otherwise never settle, and
-/// under reduced motion it lands on the count it is being asserted for.
+/// Animations are off: under reduced motion every seal lands on the state
+/// it is being asserted for.
 Widget _host(Widget sheet) => MaterialApp(
   home: MediaQuery(
     data: const MediaQueryData(disableAnimations: true),
@@ -223,22 +224,23 @@ void main() {
       onBroadcast: (_) {},
     );
 
-    testWidgets('charts the quorum the exported copy carries, by signer', (
+    testWidgets('lists the quorum the exported copy carries, by signer', (
       t,
     ) async {
       await _pump(t, sheet(_QuorumBridge()));
 
-      expect(find.byType(SignerDonut), findsOneWidget);
-      expect(find.text('1/3'), findsOneWidget);
-      expect(find.text('1 MORE SIGNATURE NEEDED'), findsOneWidget);
-      // Every signer is a row: the local key marked as this device, the
+      expect(find.byType(SignerList), findsOneWidget);
+      expect(find.text('1 of 2 signatures'), findsOneWidget);
+      expect(find.text('Needs 1 more signature'), findsOneWidget);
+      // Every signer is a row: the local key tagged as this wallet, the
       // others by their position until they are named — the same "Key N"
       // the dashboard's Keys ring calls them.
-      expect(find.text('Key 1 · this device'), findsOneWidget);
+      expect(find.text('Key 1'), findsOneWidget);
+      expect(find.text('This wallet'), findsOneWidget);
       expect(find.text('Key 2'), findsOneWidget);
       expect(find.text('Key 3'), findsOneWidget);
       expect(find.text('Signed'), findsOneWidget);
-      expect(find.text('Waiting'), findsNWidgets(2));
+      expect(find.text('Not signed'), findsNWidgets(2));
     });
 
     testWidgets(
@@ -256,8 +258,8 @@ void main() {
 
         expect(find.text('Anna’s phone'), findsOneWidget);
         expect(find.text('Key 2'), findsNothing);
-        final donut = t.widget<SignerDonut>(find.byType(SignerDonut));
-        expect(donut.slots![1].color, const Color(0xFF1D4ED8));
+        final list = t.widget<SignerList>(find.byType(SignerList));
+        expect(list.slots[1].color, const Color(0xFF1D4ED8));
       },
     );
 
@@ -280,16 +282,16 @@ void main() {
       expect(find.text('Close paste box'), findsOneWidget);
     });
 
-    testWidgets('a pasted signature moves the chart and lands on its signer', (
+    testWidgets('a pasted signature moves the header and lands on its signer', (
       t,
     ) async {
       await _pump(t, sheet(_QuorumBridge()));
-      expect(find.text('1/3'), findsOneWidget);
+      expect(find.text('1 of 2 signatures'), findsOneWidget);
 
       await _paste(t, '$_psbt~sigB');
 
-      expect(find.text('2/3'), findsOneWidget);
-      expect(find.text('QUORUM MET'), findsOneWidget);
+      expect(find.text('2 of 2 signatures'), findsOneWidget);
+      expect(find.text('Fully signed, ready to broadcast'), findsOneWidget);
       expect(find.text('Signed'), findsNWidgets(2));
       // The note says whose signature arrived and where that leaves things.
       expect(
@@ -332,10 +334,10 @@ void main() {
         ),
       );
       await _paste(t, 'cHNidP8BAH0partial~sigB');
-      expect(find.text('1/3'), findsOneWidget);
+      expect(find.text('1 of 2 signatures'), findsOneWidget);
 
       await _paste(t, 'cHNidP8BAH0partial~sigC');
-      expect(find.text('2/3'), findsOneWidget);
+      expect(find.text('2 of 2 signatures'), findsOneWidget);
       expect(_artifactOnScreen(t), 'cHNidP8BAH0partial~sigB~sigC');
     });
 
@@ -350,7 +352,7 @@ void main() {
       await _paste(t, _psbt);
 
       expect(find.textContaining('carries nothing new'), findsOneWidget);
-      expect(find.text('1/3'), findsOneWidget);
+      expect(find.text('1 of 2 signatures'), findsOneWidget);
       expect(bridge.combines, 0);
       // The box stays open, with the verdict in it.
       expect(find.byType(TextField), findsOneWidget);
@@ -364,7 +366,7 @@ void main() {
         find.textContaining('No new signature in that copy'),
         findsOneWidget,
       );
-      expect(find.text('1/3'), findsOneWidget);
+      expect(find.text('1 of 2 signatures'), findsOneWidget);
     });
 
     testWidgets('an unreadable paste says so and leaves the chart alone', (
@@ -376,21 +378,21 @@ void main() {
 
       expect(find.textContaining('that is not a PSBT'), findsOneWidget);
       // Still the quorum of the copy that went out — nothing was adopted.
-      expect(find.text('1/3'), findsOneWidget);
+      expect(find.text('1 of 2 signatures'), findsOneWidget);
       expect(_artifactOnScreen(t), _psbt);
     });
 
     testWidgets('broadcast waits for the quorum', (t) async {
       await _pump(t, sheet(_QuorumBridge()));
-      final before = t.widget<ElevatedButton>(
-        find.widgetWithText(ElevatedButton, 'Review & Broadcast'),
+      final before = t.widget<PrimaryButton>(
+        find.widgetWithText(PrimaryButton, 'Review and broadcast'),
       );
       expect(before.onPressed, isNull);
 
       await _paste(t, '$_psbt~sigB');
 
-      final after = t.widget<ElevatedButton>(
-        find.widgetWithText(ElevatedButton, 'Review & Broadcast'),
+      final after = t.widget<PrimaryButton>(
+        find.widgetWithText(PrimaryButton, 'Review and broadcast'),
       );
       expect(after.onPressed, isNotNull);
     });
@@ -402,7 +404,7 @@ void main() {
       );
       await _pump(t, sheet(_QuorumBridge()));
       expect(find.text('Sign with USB hardware wallet'), findsOneWidget);
-      expect(find.byIcon(Icons.usb_rounded), findsWidgets);
+      expect(find.byIcon(Icons.usb_outlined), findsWidgets);
 
       // Once that key has signed, the button has nothing left to do.
       await _paste(t, '$_psbt~sigC');
@@ -429,8 +431,8 @@ void main() {
         ),
       );
 
-      expect(find.text('1/3'), findsOneWidget);
-      expect(find.text('1 MORE SIGNATURE NEEDED'), findsOneWidget);
+      expect(find.text('1 of 2 signatures'), findsOneWidget);
+      expect(find.text('Needs 1 more signature'), findsOneWidget);
       // The PSET goes out as a QR too — the ur:bytes frames the stub hands
       // back — beside the clipboard, file and paste routes.
       expect(find.byType(UrAnimatedQr), findsOneWidget);
@@ -440,8 +442,8 @@ void main() {
 
       await _paste(t, 'cHNldP8Bpartial~sigB');
 
-      expect(find.text('2/3'), findsOneWidget);
-      expect(find.text('QUORUM MET'), findsOneWidget);
+      expect(find.text('2 of 2 signatures'), findsOneWidget);
+      expect(find.text('Fully signed, ready to broadcast'), findsOneWidget);
       expect(bridge.combines, 1);
       expect(_artifactOnScreen(t), 'cHNldP8Bpartial~sigA~sigB');
     });

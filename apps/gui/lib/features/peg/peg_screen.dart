@@ -1,15 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
+import '../../services/price_service.dart';
 import '../../shared/widgets/badges.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
+import '../../shared/widgets/cards.dart';
 import '../../shared/widgets/code_box.dart';
 import '../../shared/widgets/hex_text.dart';
 import '../../shared/widgets/hybrid_kit.dart';
@@ -17,10 +20,10 @@ import '../../shared/widgets/list_rows.dart';
 import '../../shared/widgets/page_header.dart';
 import '../../shared/widgets/scan_button.dart';
 import '../../shared/widgets/segmented_switch.dart';
-import '../../theme/app_colors.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import '../liquid/form_parts.dart';
 import 'models/peg_models.dart';
 
 /// Peg screen — move between Bitcoin and Liquid Bitcoin through a peg
@@ -332,7 +335,6 @@ class _PegScreenState extends State<PegScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
     final list = ListView(
       padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
@@ -343,36 +345,44 @@ class _PegScreenState extends State<PegScreen> {
           title: 'Peg',
           subtitle: 'Move between Bitcoin and Liquid Bitcoin',
         ),
+        // A fact about every number below, so it stays at the top.
         const WarningBanner(
           message:
               'Simulated provider — no real funds move. '
               'A real peg provider arrives in a later update.',
         ),
         const SizedBox(height: AppSpacing.xl),
-        Reveal(child: _pegForm(s)),
+        _pegForm(),
         const SizedBox(height: AppSpacing.xl),
-        Reveal(delay: 1, child: _ordersPanel(s)),
+        _ordersPanel(),
       ],
     );
     return Scaffold(
       body: PageBackground.flat(
-        // Pull-to-refresh replaces the 16 dp refresh button in the orders
-        // panel header, which the phone list grammar has no header for. A
-        // desktop pointer cannot pull, so it keeps the button and the bare
-        // ListView.
-        child: phone
-            ? RefreshIndicator(
-                onRefresh: () => _loadOrders(silent: true),
-                child: list,
-              )
-            : list,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: AppSpacing.formMaxWidth,
+            ),
+            // Pull-to-refresh on a phone; a desktop pointer cannot pull, so
+            // it keeps the refresh button over the orders.
+            child: phone
+                ? RefreshIndicator(
+                    onRefresh: () => _loadOrders(silent: true),
+                    child: list,
+                  )
+                : list,
+          ),
+        ),
       ),
     );
   }
 
   // ── New-peg form ──────────────────────────────────────────────────────────
 
-  Widget _pegForm(AppScheme s) {
+  Widget _pegForm() {
+    final s = AppScheme.of(context);
     // The quote must match the current amount — editing the field after a
     // quote arrived disables Start until the debounced re-quote lands.
     final sats = _amountSats;
@@ -382,37 +392,60 @@ class _PegScreenState extends State<PegScreen> {
         _quote != null &&
         _quote!.amountSats == sats &&
         _addressCtrl.text.trim().isNotEmpty;
-    return HeroPanel(
+    final fiat = sats == null ? null : PriceService.instance.fiatDisplay(sats);
+    return SectionCard(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _directionToggle(s),
+          SegmentedSwitch<String>(
+            options: [
+              SegOption(
+                value: 'in',
+                label: 'Peg in',
+                enabled: !_starting,
+                tooltip: 'Starting a peg — wait for it to finish',
+              ),
+              SegOption(
+                value: 'out',
+                label: 'Peg out',
+                enabled: !_starting,
+                tooltip: 'Starting a peg — wait for it to finish',
+              ),
+            ],
+            selected: _direction,
+            onChanged: _setDirection,
+            expand: true,
+          ),
           const SizedBox(height: AppSpacing.xl),
-          _fieldLabel(s, 'You send'),
-          const SizedBox(height: AppSpacing.sm),
-          TextField(
-            controller: _amountCtrl,
-            enabled: !_starting,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: AppTypography.numeric,
-            decoration: InputDecoration(
-              hintText: '0.00000000',
-              suffixIcon: Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.md),
-                child: Text(
-                  _fromTicker,
-                  style: AppTypography.label.copyWith(
-                    color: s.inkFaint,
-                    fontWeight: FontWeight.w800,
+          FieldBlock(
+            label: 'You send',
+            // The other denomination echoes under the field while typing.
+            help: fiat,
+            child: TextField(
+              controller: _amountCtrl,
+              enabled: !_starting,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              style: AppTypography.numeric,
+              decoration: InputDecoration(
+                hintText: '0.00000000',
+                suffixIcon: Padding(
+                  padding: const EdgeInsets.only(right: AppSpacing.md),
+                  child: Text(
+                    _fromTicker,
+                    style: AppTypography.numericSmall.copyWith(
+                      color: s.inkFaint,
+                    ),
                   ),
                 ),
+                suffixIconConstraints: const BoxConstraints(
+                  minWidth: 0,
+                  minHeight: 0,
+                ),
               ),
-              suffixIconConstraints: const BoxConstraints(
-                minWidth: 0,
-                minHeight: 0,
-              ),
+              onChanged: (_) => _onAmountChanged(),
             ),
-            onChanged: (_) => _onAmountChanged(),
           ),
           if (_quote != null)
             Padding(
@@ -425,48 +458,53 @@ class _PegScreenState extends State<PegScreen> {
             ),
           const SizedBox(height: AppSpacing.lg),
           _quotePanel(s),
-          const SizedBox(height: AppSpacing.lg),
-          _fieldLabel(s, 'Payout address'),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            _isPegIn
-                ? 'Where the LBTC is delivered — pre-filled with this '
-                      'wallet\'s Liquid address.'
-                : 'Where the BTC is delivered — pre-filled with this '
-                      'wallet\'s Bitcoin address.',
-            style: AppTypography.caption.copyWith(color: s.inkFaint),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          TextField(
-            controller: _addressCtrl,
-            enabled: !_starting,
-            style: AppTypography.mono,
-            // A full address needs two lines beside the suffix icons.
-            maxLines: AppLayout.isPhone(context) ? 2 : 1,
-            autocorrect: false,
-            enableSuggestions: false,
-            decoration: InputDecoration(
-              hintText: 'Enter, paste, or scan a $_toTicker address',
-              suffixIcon: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: 'Use this wallet\'s address',
-                    icon: const Icon(
-                      Icons.account_balance_wallet_outlined,
-                      size: 18,
+          const SizedBox(height: AppSpacing.xl),
+          FieldBlock(
+            label: 'Payout address',
+            help: _isPegIn
+                ? 'Where the LBTC is delivered — this wallet\'s Liquid '
+                      'address by default'
+                : 'Where the BTC is delivered — this wallet\'s Bitcoin '
+                      'address by default',
+            child: TextField(
+              controller: _addressCtrl,
+              enabled: !_starting,
+              style: AppTypography.mono,
+              // A full address needs two lines beside the suffix icons.
+              maxLines: AppLayout.isPhone(context) ? 2 : 1,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                hintText: '$_toTicker address',
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Paste',
+                      icon: const Icon(
+                        Icons.content_paste_outlined,
+                        size: AppSpacing.icon,
+                      ),
+                      onPressed: _starting ? null : _pasteAddress,
                     ),
-                    onPressed: _starting ? null : _prefillAddress,
-                  ),
-                  ScanIconButton(
-                    controller: _addressCtrl,
-                    title: 'Scan payout address',
-                    onScanned: (_) => setState(() {}),
-                  ),
-                ],
+                    ScanIconButton(
+                      controller: _addressCtrl,
+                      title: 'Scan payout address',
+                      onScanned: (_) => setState(() {}),
+                    ),
+                    IconButton(
+                      tooltip: 'Use this wallet\'s address',
+                      icon: const Icon(
+                        Icons.account_balance_wallet_outlined,
+                        size: AppSpacing.icon,
+                      ),
+                      onPressed: _starting ? null : _prefillAddress,
+                    ),
+                  ],
+                ),
               ),
+              onChanged: (_) => setState(() {}),
             ),
-            onChanged: (_) => setState(() {}),
           ),
           if (_startError != null) ...[
             const SizedBox(height: AppSpacing.lg),
@@ -475,7 +513,6 @@ class _PegScreenState extends State<PegScreen> {
           const SizedBox(height: AppSpacing.xl),
           PrimaryButton(
             label: _isPegIn ? 'Start peg-in' : 'Start peg-out',
-            icon: Icons.swap_vert,
             isFullWidth: true,
             isLoading: _starting,
             onPressed: canStart ? _start : null,
@@ -485,121 +522,20 @@ class _PegScreenState extends State<PegScreen> {
     );
   }
 
-  /// A field's name. On a phone it is the same uppercase micro-label that
-  /// ListSectionLabel and CodeBox draw, so a field name and a section name
-  /// read as one object; desktop keeps the mixed-case sentence label.
-  Widget _fieldLabel(AppScheme s, String text) {
-    if (AppLayout.isPhone(context)) {
-      return Text(
-        text.toUpperCase(),
-        style: AppTypography.navSection.copyWith(
-          color: s.inkFaint,
-          letterSpacing: 1.3,
-        ),
-      );
-    }
-    return Text(
-      text,
-      style: AppTypography.label.copyWith(color: s.inkSecondary),
-    );
-  }
-
-  Widget _directionToggle(AppScheme s) {
-    if (AppLayout.isPhone(context)) {
-      // The shared track: 54 dp segments, a ripple, ellipsising labels and the
-      // same selected treatment every segmented control in the app uses — the
-      // bespoke version below lands at ~46 dp and duplicates it line for line.
-      // The 'BTC → LBTC' sub-line is dropped here because the amount field's
-      // suffix and the quote panel already print both tickers.
-      return SegmentedSwitch<String>(
-        options: [
-          SegOption(
-            value: 'in',
-            label: 'Peg-in',
-            color: s.liquid, // peg-in delivers LBTC
-            enabled: !_starting,
-            tooltip: 'Starting a peg — wait for it to finish.',
-          ),
-          SegOption(
-            value: 'out',
-            label: 'Peg-out',
-            color: s.bitcoin, // peg-out delivers BTC
-            enabled: !_starting,
-            tooltip: 'Starting a peg — wait for it to finish.',
-          ),
-        ],
-        selected: _direction,
-        onChanged: _setDirection,
-        expand: true,
-      );
-    }
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: s.surfaceSolid,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm + 3),
-        border: Border.all(color: s.edge),
-      ),
-      child: Row(
-        children: [
-          _segment(s, 'in', 'Peg-in', 'BTC → LBTC'),
-          const SizedBox(width: 3),
-          _segment(s, 'out', 'Peg-out', 'LBTC → BTC'),
-        ],
-      ),
-    );
-  }
-
-  Widget _segment(AppScheme s, String dir, String label, String sub) {
-    final selected = _direction == dir;
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        onTap: _starting || selected ? null : () => _setDirection(dir),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm + 2),
-          decoration: BoxDecoration(
-            color: selected ? s.accentSoft : Colors.transparent,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-            border: Border.all(
-              color: selected
-                  ? AppColors.accent.withValues(alpha: 0.55)
-                  : Colors.transparent,
-            ),
-          ),
-          child: Column(
-            children: [
-              Text(
-                label,
-                style: AppTypography.label.copyWith(
-                  color: selected ? AppColors.accent : s.inkSecondary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                sub,
-                style: AppTypography.caption.copyWith(
-                  fontSize: 11,
-                  color: selected ? s.ink : s.inkFaint,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  Future<void> _pasteAddress() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim();
+    if (text == null || text.isEmpty || !mounted) return;
+    setState(() => _addressCtrl.text = text);
   }
 
   Widget _quotePanel(AppScheme s) {
-    final Widget body;
     if (_quoting) {
-      body = Row(
+      return Row(
         children: [
           const SizedBox(
-            width: 14,
-            height: 14,
+            width: AppSpacing.iconSmall,
+            height: AppSpacing.iconSmall,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: AppSpacing.md),
@@ -609,11 +545,16 @@ class _PegScreenState extends State<PegScreen> {
           ),
         ],
       );
-    } else if (_quoteError != null) {
-      body = Row(
+    }
+    if (_quoteError != null) {
+      return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.error_outline, size: 16, color: s.danger),
+          Icon(
+            Icons.error_outline,
+            size: AppSpacing.iconSmall,
+            color: s.danger,
+          ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
@@ -623,93 +564,89 @@ class _PegScreenState extends State<PegScreen> {
           ),
         ],
       );
-    } else if (_quote == null) {
-      body = Text(
-        'Enter an amount to get a live quote.',
+    }
+    if (_quote == null) {
+      return Text(
+        'Enter an amount to get a live quote',
         style: AppTypography.caption.copyWith(color: s.inkFaint),
       );
-    } else {
-      final q = _quote!;
-      body = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          KvRow(
-            label: 'Rate',
-            value: q.rate == 1.0 ? '1:1' : q.rate.toStringAsFixed(8),
-          ),
-          KvRow(label: 'Service fee', value: '${q.serviceFeeSats} sats'),
-          KvRow(label: 'Network fee', value: '${q.networkFeeSats} sats'),
-          KvRow(label: 'ETA', value: '~${q.etaMinutes} min'),
-          Divider(height: AppSpacing.lg, color: s.edge),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'You receive',
-                  style: AppTypography.label.copyWith(color: s.inkSecondary),
-                ),
-              ),
-              Text(
-                '${_fmtBtc(q.receiveSats)} $_toTicker',
-                style: AppTypography.numericLarge.copyWith(
-                  fontSize: 18,
-                  color: AppColors.accent,
-                ),
-              ),
-            ],
-          ),
-        ],
-      );
     }
-    return DataWell(child: body);
-  }
-
-  // ── Orders panel ──────────────────────────────────────────────────────────
-
-  Widget _ordersPanel(AppScheme s) {
-    final hasOrders =
-        !_ordersLoading && _ordersError == null && _orders.isNotEmpty;
-    if (AppLayout.isPhone(context)) {
-      // The phone's list grammar (list_rows.dart): an uppercase label over one
-      // card whose hairlines start past the glyph column — the same object the
-      // Dashboard and Settings draw. The RailPanel below is a desktop
-      // instrument: rail, header strip, zebra rows, and a 16 dp refresh button
-      // as its only control (replaced here by pull-to-refresh in build()).
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const ListSectionLabel(label: 'Your peg orders'),
-          ListCard(
-            children: hasOrders
-                ? [for (final o in _orders) _orderTile(s, o)]
-                : [_ordersPlaceholder(s)],
-          ),
-        ],
-      );
-    }
-    final Widget body = hasOrders
-        ? Column(
-            children: [
-              for (var i = 0; i < _orders.length; i++)
-                _orderRow(s, _orders[i], i.isOdd),
-            ],
-          )
-        : _ordersPlaceholder(s);
-    return RailPanel(
-      title: 'Your peg orders',
-      padding: EdgeInsets.zero,
-      trailing: IconButton(
-        tooltip: 'Refresh',
-        icon: const Icon(Icons.refresh, size: 16),
-        visualDensity: VisualDensity.compact,
-        onPressed: _ordersLoading ? null : _loadOrders,
-      ),
-      child: body,
+    final q = _quote!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        KvRow(
+          label: 'You receive',
+          value: '${_fmtBtc(q.receiveSats)} $_toTicker',
+          labelWidth: 120,
+          divider: true,
+        ),
+        KvRow(
+          label: 'Rate',
+          value: q.rate == 1.0 ? '1:1' : q.rate.toStringAsFixed(8),
+          labelWidth: 120,
+          divider: true,
+        ),
+        KvRow(
+          label: 'Service fee',
+          value: '${q.serviceFeeSats} sats',
+          labelWidth: 120,
+          divider: true,
+        ),
+        KvRow(
+          label: 'Network fee',
+          value: '${q.networkFeeSats} sats',
+          labelWidth: 120,
+          divider: true,
+        ),
+        KvRow(label: 'Time', value: '~${q.etaMinutes} min', labelWidth: 120),
+      ],
     );
   }
 
-  /// Loading, failed or empty — the same three bodies on both platforms; only
-  /// the frame around them differs.
+  // ── Orders ────────────────────────────────────────────────────────────────
+
+  Widget _ordersPanel() {
+    final s = AppScheme.of(context);
+    final hasOrders =
+        !_ordersLoading && _ordersError == null && _orders.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (AppLayout.isPhone(context))
+          const ListSectionLabel(label: 'Your peg orders')
+        else
+          // The section label with the one control a desktop pointer needs
+          // in place of pull-to-refresh, centred on the label's line.
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Your peg orders',
+                    style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Refresh',
+                  icon: const Icon(Icons.refresh, size: AppSpacing.iconSmall),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _ordersLoading ? null : _loadOrders,
+                ),
+              ],
+            ),
+          ),
+        ListCard(
+          children: hasOrders
+              ? [for (final o in _orders) _orderTile(s, o)]
+              : [_ordersPlaceholder(s)],
+        ),
+      ],
+    );
+  }
+
+  /// Loading, failed or empty.
   Widget _ordersPlaceholder(AppScheme s) {
     if (_ordersLoading) {
       return const Padding(
@@ -722,7 +659,10 @@ class _PegScreenState extends State<PegScreen> {
         padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           children: [
-            Text('Could not load peg orders', style: AppTypography.body),
+            Text(
+              'Could not load peg orders',
+              style: AppTypography.body.copyWith(color: s.ink),
+            ),
             const SizedBox(height: AppSpacing.xs),
             Text(
               _ordersError!,
@@ -743,18 +683,16 @@ class _PegScreenState extends State<PegScreen> {
       padding: const EdgeInsets.all(AppSpacing.xl),
       child: Center(
         child: Text(
-          'No peg orders yet — start one above.',
+          'No peg orders yet',
           style: AppTypography.caption.copyWith(color: s.inkFaint),
         ),
       ),
     );
   }
 
-  /// One order as a phone list row: the glyph tile carries the direction (the
-  /// two colours the desktop TagChip uses), then the two legs on their own
-  /// line — 8 decimals twice does not fit beside a status badge at 360 dp —
-  /// then state and time. The order id moves into the expanded detail, where
-  /// it is the only place it is needed.
+  /// One order as a list row: the glyph tile carries the direction in the
+  /// hue of the chain it pays out on, then the two legs, then state and time.
+  /// Tapping opens the detail under it.
   Widget _orderTile(AppScheme s, PegOrder o) {
     final expanded = _expanded.contains(o.orderId);
     final fromTicker = o.isPegIn ? 'BTC' : 'LBTC';
@@ -778,13 +716,15 @@ class _PegScreenState extends State<PegScreen> {
                     ? _expanded.remove(o.orderId)
                     : _expanded.add(o.orderId);
               }),
-              child: Padding(
+              child: Container(
+                constraints: const BoxConstraints(
+                  minHeight: AppSpacing.rowHeight,
+                ),
                 padding: const EdgeInsets.symmetric(
                   horizontal: kListPad,
                   vertical: AppSpacing.md,
                 ),
                 child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ListIconTile(
                       icon: Icons.swap_vert,
@@ -799,12 +739,10 @@ class _PegScreenState extends State<PegScreen> {
                           Text(
                             '${_fmtBtc(o.depositExpectedSats)} $fromTicker → '
                             '${_fmtBtc(o.payoutExpectedSats)} $toTicker',
-                            style: AppTypography.numericSmall.copyWith(
-                              color: s.ink,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.numeric.copyWith(color: s.ink),
                           ),
-                          const SizedBox(height: AppSpacing.sm - 2),
+                          const SizedBox(height: AppSpacing.xs),
                           Row(
                             children: [
                               Flexible(child: _statusBadge(o)),
@@ -815,7 +753,6 @@ class _PegScreenState extends State<PegScreen> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: AppTypography.caption.copyWith(
-                                    fontSize: 12,
                                     color: s.inkFaint,
                                   ),
                                 ),
@@ -827,8 +764,10 @@ class _PegScreenState extends State<PegScreen> {
                     ),
                     const SizedBox(width: AppSpacing.sm),
                     Icon(
-                      expanded ? Icons.expand_less : Icons.expand_more,
-                      size: 22,
+                      expanded
+                          ? Icons.expand_less_outlined
+                          : Icons.expand_more_outlined,
+                      size: AppSpacing.icon,
                       color: s.inkFaint,
                     ),
                   ],
@@ -842,88 +781,19 @@ class _PegScreenState extends State<PegScreen> {
     );
   }
 
-  /// The desktop table row. A phone never reaches this — [_ordersPanel] hands
-  /// the phone [_orderTile] instead — so the two-line phone branch that used
-  /// to live inside it is gone rather than unreachable.
-  Widget _orderRow(AppScheme s, PegOrder o, bool zebra) {
-    final expanded = _expanded.contains(o.orderId);
-    final fromTicker = o.isPegIn ? 'BTC' : 'LBTC';
-    final toTicker = o.isPegIn ? 'LBTC' : 'BTC';
-    return Column(
-      children: [
-        HoverRow(
-          zebra: zebra,
-          onTap: () => setState(() {
-            expanded ? _expanded.remove(o.orderId) : _expanded.add(o.orderId);
-          }),
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg,
-              vertical: AppSpacing.md,
-            ),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: s.edge)),
-            ),
-            child: Row(
-              children: [
-                TagChip(
-                  label: o.isPegIn ? 'Peg-in' : 'Peg-out',
-                  color: o.isPegIn ? s.liquid : s.bitcoin,
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${_fmtBtc(o.depositExpectedSats)} $fromTicker → '
-                        '${_fmtBtc(o.payoutExpectedSats)} $toTicker',
-                        style: AppTypography.numericSmall.copyWith(
-                          color: s.ink,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${o.orderId} · ${_fmtTime(o.createdAt)}',
-                        style: AppTypography.caption.copyWith(
-                          color: s.inkFaint,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                _statusBadge(o),
-                const SizedBox(width: AppSpacing.sm),
-                Icon(
-                  expanded ? Icons.expand_less : Icons.expand_more,
-                  size: 18,
-                  color: s.inkFaint,
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (expanded) _orderDetail(s, o),
-      ],
-    );
-  }
-
   StatusBadge _statusBadge(PegOrder o) {
     final (label, variant) = _statusParts(o);
-    return StatusBadge(label: label, variant: variant, dot: !o.isTerminal);
+    return StatusBadge(label: label, variant: variant);
   }
 
-  /// The badge's words on their own, so the phone row can also say them to a
+  /// The badge's words on their own, so the row can also say them to a
   /// screen reader (its badge is inside an excluded subtree).
   (String, BadgeVariant) _statusParts(PegOrder o) {
     return switch (o.status) {
       'awaiting_deposit' => ('Awaiting deposit', BadgeVariant.warning),
-      'deposit_seen' => ('Deposit seen', BadgeVariant.accent),
-      'confirming' => ('Confirming', BadgeVariant.accent),
-      'settling' => ('Settling', BadgeVariant.accent),
+      'deposit_seen' => ('Deposit seen', BadgeVariant.neutral),
+      'confirming' => ('Confirming', BadgeVariant.neutral),
+      'settling' => ('Settling', BadgeVariant.neutral),
       'completed' => ('Completed', BadgeVariant.success),
       'cancelled' => ('Cancelled', BadgeVariant.neutral),
       _ => (o.status, BadgeVariant.neutral),
@@ -938,16 +808,13 @@ class _PegScreenState extends State<PegScreen> {
     final payoutIsLiquid = o.isPegIn;
     final cancelling = _cancelling.contains(o.orderId);
     final phone = AppLayout.isPhone(context);
+    // A recess inside the list card: the page tone, lined up with the row's
+    // glyph tile. The card already clips and draws the hairline between
+    // orders.
     return Container(
-      // On a phone the detail is an inset well inside the list card: kListPad
-      // lines its left edge up with the row's glyph tile, and the card already
-      // clips and draws the hairline between orders, so a second bottom border
-      // would double up.
-      padding: EdgeInsets.all(phone ? kListPad : AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: phone ? s.panelInset : s.zebra,
-        border: phone ? null : Border(bottom: BorderSide(color: s.edge)),
-      ),
+      width: double.infinity,
+      padding: const EdgeInsets.all(kListPad),
+      color: s.well,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -965,10 +832,8 @@ class _PegScreenState extends State<PegScreen> {
             Flex(
               // QR beside the address on desktop; QR above it on a phone,
               // where the side-by-side pair leaves the address ~150 dp.
-              direction: AppLayout.isPhone(context)
-                  ? Axis.vertical
-                  : Axis.horizontal,
-              crossAxisAlignment: AppLayout.isPhone(context)
+              direction: phone ? Axis.vertical : Axis.horizontal,
+              crossAxisAlignment: phone
                   ? CrossAxisAlignment.center
                   : CrossAxisAlignment.start,
               children: [
@@ -976,21 +841,17 @@ class _PegScreenState extends State<PegScreen> {
                   padding: const EdgeInsets.all(AppSpacing.sm),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                   ),
                   child: QrImageView(
                     data: o.depositAddress,
                     version: QrVersions.auto,
-                    size: AppLayout.isPhone(context)
-                        ? AppLayout.qrSide(context, max: 200)
-                        : 110,
+                    size: phone ? AppLayout.qrSide(context, max: 200) : 112,
                   ),
                 ),
                 const SizedBox(width: AppSpacing.lg, height: AppSpacing.md),
                 Flexible(
-                  fit: AppLayout.isPhone(context)
-                      ? FlexFit.loose
-                      : FlexFit.tight,
+                  fit: phone ? FlexFit.loose : FlexFit.tight,
                   child: SizedBox(
                     width: double.infinity,
                     child: CodeBox(
@@ -1003,9 +864,7 @@ class _PegScreenState extends State<PegScreen> {
             ),
             const SizedBox(height: AppSpacing.lg),
           ],
-          // The phone row prints state and time, not the id — it lands here,
-          // the one place the id is worth reading.
-          if (phone) KvRow(label: 'Order', value: o.orderId),
+          KvRow(label: 'Order', value: o.orderId),
           KvRow(
             label: 'Payout',
             value:
@@ -1017,9 +876,8 @@ class _PegScreenState extends State<PegScreen> {
             _txRow(s, 'Payout tx', o.txidPayout!, liquid: payoutIsLiquid),
           if (o.awaitingDeposit) ...[
             const SizedBox(height: AppSpacing.sm),
-            // The one action in an expanded order: full width on a phone,
-            // where a right-hugging tertiary control is a thumb-hostile
-            // target sized to whatever its label happens to be.
+            // Full width on a phone, where a right-hugging tertiary control
+            // is a thumb-hostile target.
             if (phone)
               GhostButton(
                 label: cancelling ? 'Cancelling…' : 'Cancel order',
@@ -1048,30 +906,25 @@ class _PegScreenState extends State<PegScreen> {
     String txid, {
     required bool liquid,
   }) {
+    final phone = AppLayout.isPhone(context);
     final explorer = IconButton(
       tooltip: 'View in explorer',
-      icon: const Icon(Icons.open_in_new, size: 14),
-      visualDensity: AppLayout.isPhone(context)
-          ? VisualDensity.standard
-          : VisualDensity.compact,
-      color: s.inkSecondary,
+      icon: const Icon(Icons.open_in_new, size: AppSpacing.iconSmall),
+      visualDensity: phone ? VisualDensity.standard : VisualDensity.compact,
       onPressed: () => _openExplorer(txid, liquid: liquid),
     );
-    if (AppLayout.isPhone(context)) {
-      // Stacked, the way KvRow stacks a long value: an 86 dp label column
-      // plus a 48 dp icon leaves the txid ~180 dp on a 360 dp screen.
+    final key = Text(
+      label,
+      style: AppTypography.label.copyWith(color: s.inkSecondary),
+    );
+    if (phone) {
+      // Stacked, the way KvRow stacks a long value.
       return Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.sm),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              label.toUpperCase(),
-              style: AppTypography.navSection.copyWith(
-                color: s.inkFaint,
-                fontSize: 10,
-              ),
-            ),
+            key,
             Row(
               children: [
                 Expanded(child: HexText(txid, truncate: true)),
@@ -1086,16 +939,8 @@ class _PegScreenState extends State<PegScreen> {
       padding: const EdgeInsets.only(bottom: AppSpacing.xs),
       child: Row(
         children: [
-          SizedBox(
-            width: 86,
-            child: Text(
-              label.toUpperCase(),
-              style: AppTypography.navSection.copyWith(
-                color: s.inkFaint,
-                fontSize: 10,
-              ),
-            ),
-          ),
+          SizedBox(width: 96, child: key),
+          const SizedBox(width: AppSpacing.sm),
           Expanded(child: HexText(txid, truncate: true)),
           explorer,
         ],
@@ -1103,7 +948,10 @@ class _PegScreenState extends State<PegScreen> {
     );
   }
 
-  // ── Status stepper ────────────────────────────────────────────────────────
+  // ── Status steps ──────────────────────────────────────────────────────────
+  //
+  // Neutral steps: done and current in the ink, the rest in the hairline.
+  // The only colour is the 6 px dot of a step that has happened.
 
   Widget _stepper(AppScheme s, PegOrder o) {
     if (o.status == 'cancelled') {
@@ -1113,14 +961,15 @@ class _PegScreenState extends State<PegScreen> {
           .firstOrNull;
       return Row(
         children: [
-          Icon(Icons.cancel_outlined, size: 16, color: s.danger),
+          Icon(
+            Icons.cancel_outlined,
+            size: AppSpacing.iconSmall,
+            color: s.danger,
+          ),
           const SizedBox(width: AppSpacing.sm),
           Text(
             'Order cancelled',
-            style: AppTypography.bodySmall.copyWith(
-              color: s.danger,
-              fontWeight: FontWeight.w600,
-            ),
+            style: AppTypography.label.copyWith(color: s.danger),
           ),
           const Spacer(),
           if (at != null)
@@ -1139,10 +988,9 @@ class _PegScreenState extends State<PegScreen> {
     bool active(int i) => i == current && !completed;
 
     if (AppLayout.isPhone(context)) {
-      // Five captions across a 300 dp detail wrap to two lines of 10 px text
-      // and read as noise. A phone gets the progress as bars plus the name of
-      // the step it is on — and the timestamp that is otherwise locked inside
-      // a Tooltip no finger can open.
+      // Five captions across a 300 dp detail wrap and read as noise: the
+      // phone gets the progress as thin segments plus the name of the step
+      // it is on, and the timestamp a Tooltip would hide from a finger.
       final at = o.statusHistory
           .where((e) => e.status == _statusFlow[current].$1)
           .map((e) => e.at)
@@ -1158,11 +1006,8 @@ class _PegScreenState extends State<PegScreen> {
                   child: Container(
                     height: 4,
                     decoration: BoxDecoration(
-                      // The same three states the dots carry on desktop.
-                      color: done(i)
-                          ? s.success
-                          : (active(i) ? AppColors.accent : s.edgeStrong),
-                      borderRadius: BorderRadius.circular(2),
+                      color: done(i) || active(i) ? s.ink : s.edge,
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
                     ),
                   ),
                 ),
@@ -1175,10 +1020,7 @@ class _PegScreenState extends State<PegScreen> {
               Expanded(
                 child: Text(
                   _statusFlow[current].$2,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: s.ink,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AppTypography.label.copyWith(color: s.ink),
                 ),
               ),
               if (at != null)
@@ -1197,50 +1039,13 @@ class _PegScreenState extends State<PegScreen> {
       children: [
         for (var i = 0; i < _statusFlow.length; i++)
           Expanded(
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        height: 2,
-                        color: i == 0
-                            ? Colors.transparent
-                            : (done(i) || active(i) ? s.success : s.edgeStrong),
-                      ),
-                    ),
-                    _stepDot(s, o, i, done: done(i), active: active(i)),
-                    Expanded(
-                      child: Container(
-                        height: 2,
-                        color: i == _statusFlow.length - 1
-                            ? Colors.transparent
-                            : (done(i + 1) || active(i + 1)
-                                  ? s.success
-                                  : s.edgeStrong),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  _statusFlow[i].$2,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  style: AppTypography.caption.copyWith(
-                    fontSize: 10,
-                    color: done(i) || active(i) ? s.ink : s.inkFaint,
-                    fontWeight: active(i) ? FontWeight.w700 : FontWeight.w400,
-                  ),
-                ),
-              ],
-            ),
+            child: _step(s, o, i, done: done(i), active: active(i)),
           ),
       ],
     );
   }
 
-  Widget _stepDot(
+  Widget _step(
     AppScheme s,
     PegOrder o,
     int i, {
@@ -1252,33 +1057,35 @@ class _PegScreenState extends State<PegScreen> {
         .where((e) => e.status == key)
         .map((e) => e.at)
         .firstOrNull;
-    final dot = Container(
-      width: 18,
-      height: 18,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: done ? s.success : (active ? s.accentSoft : Colors.transparent),
-        border: Border.all(
-          color: done ? s.success : (active ? AppColors.accent : s.edgeStrong),
-          width: active ? 2 : 1,
+    final reached = done || active;
+    final step = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            StatusDot(done ? s.success : (active ? s.ink : s.edgeStrong)),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Container(
+                height: 1,
+                color: reached ? s.edgeStrong : s.edge,
+              ),
+            ),
+          ],
         ),
-      ),
-      child: done
-          ? const Icon(Icons.check, size: 12, color: Colors.white)
-          : (active
-                ? Center(
-                    child: Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.accent,
-                      ),
-                    ),
-                  )
-                : null),
+        const SizedBox(height: AppSpacing.sm),
+        Padding(
+          padding: const EdgeInsets.only(right: AppSpacing.sm),
+          child: Text(
+            _statusFlow[i].$2,
+            maxLines: 2,
+            style: (active ? AppTypography.label : AppTypography.caption)
+                .copyWith(color: reached ? s.ink : s.inkFaint),
+          ),
+        ),
+      ],
     );
-    if (at == null) return dot;
-    return Tooltip(message: _fmtTime(at), child: dot);
+    if (at == null) return step;
+    return Tooltip(message: _fmtTime(at), child: step);
   }
 }

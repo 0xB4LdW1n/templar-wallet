@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,11 +10,13 @@ import 'routes.dart';
 import '../bridge/bridge_provider.dart';
 import '../dev/shot_mode.dart';
 import '../bridge/wallet_bridge.dart';
+import '../services/wallet_customization_store.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_motion.dart';
 import '../theme/app_scheme.dart';
 import '../shared/widgets/app_logo.dart';
-import '../shared/widgets/carousel_nav.dart';
+import '../shared/widgets/hybrid_kit.dart' show CurrentMark;
+import '../shared/widgets/mobile_tab_bar.dart';
 import '../shared/widgets/segmented_switch.dart';
 import '../shared/widgets/wallet_plate.dart';
 import '../features/wallet_picker/wallet_flags.dart';
@@ -23,24 +24,10 @@ import '../features/vault/lock_action.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_typography.dart';
 
-// ── Theme-adaptive sidebar color palette (resolved from AppScheme) ────────────
-
-class _SC {
-  _SC(this.scheme);
-  final AppScheme scheme;
-
-  bool get dark => scheme.isDark;
-  Color get bg => dark ? const Color(0xFF08080A) : const Color(0xFFECEFF3);
-  Color get border => scheme.edge;
-  Color get text => scheme.inkSecondary;
-  Color get textActive => scheme.ink;
-  Color get activeItemBg => scheme.accentSoft;
-  Color get sectionLabel => scheme.inkFaint;
-  Color get divider => scheme.edge;
-}
-
 // ── Shell ─────────────────────────────────────────────────────────────────────
 
+/// The frame around every in-wallet page: the sidebar on a desktop, the
+/// header and tab bar on a phone (design.md, "Navigation").
 class AppShell extends StatefulWidget {
   const AppShell({super.key, required this.child, required this.currentPath});
   final Widget child;
@@ -53,42 +40,55 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   bool _expanded = true;
 
+  /// The wallet this shell last stamped as opened.
+  String? _stamped;
+
   void _toggle() => setState(() => _expanded = !_expanded);
+
+  /// Being inside a wallet's shell is what "opened" means, however it was
+  /// reached — picked from the list, just created, restored, or chosen by a
+  /// protocol link. The wallet list starts on the one stamped last. Local
+  /// display metadata, best effort: a failed write changes nothing else.
+  void _stampOpened(String? walletId) {
+    if (walletId == null || walletId == _stamped) return;
+    _stamped = walletId;
+    WalletCustomizationStore.instance.markOpened(walletId).catchError((_) {});
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Phones and tablets get the header + carousel shell; the desktop
-    // sidebar below is untouched.
-    if (Platform.isAndroid || Platform.isIOS) {
+    _stampOpened(context.select<AppState, String?>((st) => st.activeWalletId));
+    // Phones and tablets get the header + tab bar shell.
+    if (AppLayout.isMobilePlatform) {
       return MobileShell(currentPath: widget.currentPath, child: widget.child);
     }
 
-    final sc = _SC(AppScheme.of(context));
+    final s = AppScheme.of(context);
+    final width = _expanded
+        ? AppSpacing.sidebarWidth
+        : AppSpacing.sidebarWidthCollapsed;
 
     return Scaffold(
+      backgroundColor: s.canvas,
       body: Row(
         children: [
+          // The width changes in one step: animating it would re-lay out the
+          // whole page on every frame of the move.
           RepaintBoundary(
-            child: AnimatedContainer(
-              duration: AppMotion.of(context, AppMotion.standard),
-              curve: AppMotion.settle,
-              width: _expanded
-                  ? AppSpacing.sidebarWidth
-                  : AppSpacing.sidebarWidthCollapsed,
+            child: Container(
+              width: width,
               clipBehavior: Clip.hardEdge,
               decoration: BoxDecoration(
-                color: sc.bg,
-                border: Border(right: BorderSide(color: sc.border)),
+                color: s.chrome,
+                border: Border(right: BorderSide(color: s.edge)),
               ),
               child: _Sidebar(
                 currentPath: widget.currentPath,
                 expanded: _expanded,
                 onToggle: _toggle,
-                sc: sc,
               ),
             ),
           ),
-          // No VerticalDivider — border is on the AnimatedContainer itself.
           Expanded(
             child: RepaintBoundary(child: _BadgedContent(child: widget.child)),
           ),
@@ -131,13 +131,13 @@ class _BadgedContent extends StatelessWidget {
 
 // ── Mobile shell ──────────────────────────────────────────────────────────────
 
-/// The phone shell: a thin header (wallet, sync), the page, and the bottom
-/// carousel in place of the sidebar. Lock and theme live in Settings here.
+/// The phone shell: a thin header (wallet, sync), the page, and the tab
+/// bar in place of the sidebar. Lock and theme live in Settings here.
 ///
 /// Also owns the Android back button for everything inside the shell. A
 /// screen may claim it through [BackHandler] (the Send wizard steps back);
 /// otherwise back leaves a sub-page for its parent ([mobileParentRouteFor]),
-/// leaves a carousel page for the Dashboard, and leaves the app from the
+/// leaves a tab for the Dashboard, and leaves the app from the
 /// Dashboard. The `PopScope` sits on the shell route itself — the page the
 /// root navigator shows — because every in-shell navigation is a `go`, so
 /// the nested navigator never has anything to pop and go_router hands the
@@ -157,7 +157,7 @@ class MobileShell extends StatefulWidget {
 
 class _MobileShellState extends State<MobileShell> {
   /// The page's outermost vertical scrollable, as last reported by its
-  /// notifications, so a tap on the centred nav icon can bring it back to
+  /// notifications, so a tap on the current tab can bring it back to
   /// the top. Forgotten when the page changes.
   BuildContext? _scrollContext;
 
@@ -248,8 +248,8 @@ class _MobileShellState extends State<MobileShell> {
           body: Column(
             children: [
               _MobileHeader(currentPath: widget.currentPath, onBack: _goBack),
-              // The Liquid hub: Assets, LiquiDEX and Peg share one carousel
-              // slot and are told apart by this strip.
+              // The Liquid hub: Assets, LiquiDEX and Peg share one tab and
+              // are told apart by this strip.
               if (isLiquidHubRoute(widget.currentPath) &&
                   (optionalLiquidTools.$1 || optionalLiquidTools.$2))
                 _LiquidHubTabs(currentPath: widget.currentPath),
@@ -279,11 +279,11 @@ class _MobileShellState extends State<MobileShell> {
             selector: (_, st) => (st.activeWalletLiquid, st.loansEnabled),
             builder: (context, flags, _) {
               final (liquid, loans) = flags;
-              return CarouselNav(
+              return MobileTabBar(
                 items: mobileNavItems(liquid: liquid, loans: loans),
                 currentRoute: mobileNavRouteFor(widget.currentPath),
                 onSelect: (route) => context.go(route),
-                onCenterTap: _scrollToTop,
+                onReselect: _scrollToTop,
               );
             },
           ),
@@ -293,73 +293,63 @@ class _MobileShellState extends State<MobileShell> {
   }
 }
 
-/// The carousel entries: the five places a wallet is *browsed* from, plus
-/// Loans when asked for. The bar used to carry ten; Send and Receive now
-/// live on the Dashboard hero (where the balance they act on is), Wallet
-/// Info sits inside Settings, and LiquiDEX and Peg share the Liquid slot as
-/// tabs. The Liquid slot is gated — a Bitcoin-only wallet has nothing to put
-/// behind it; Loans is opt-in (`AppState.loansEnabled`) and Liquid-only.
-List<CarouselNavItem> mobileNavItems({
-  required bool liquid,
-  bool loans = false,
-}) {
+/// The tabs: the places a wallet is *browsed* from, plus Loans when asked
+/// for — six at most, every one visible and labelled. Send and Receive live
+/// on the Dashboard (where the balance they act on is), Wallet info sits
+/// inside Settings, and LiquiDEX and Peg share the Liquid tab as a switch
+/// under the header. The Liquid tab is gated — a Bitcoin-only wallet has
+/// nothing to put behind it; Loans is opt-in (`AppState.loansEnabled`) and
+/// Liquid-only.
+List<MobileTabItem> mobileNavItems({required bool liquid, bool loans = false}) {
   return [
-    const CarouselNavItem(
+    const MobileTabItem(
       id: 'dashboard',
       label: 'Dashboard',
       route: AppRoutes.dashboard,
       icon: Icons.home_outlined,
-      activeIcon: Icons.home,
     ),
     if (liquid && loans)
-      const CarouselNavItem(
+      const MobileTabItem(
         id: 'loans',
         label: 'Loans',
         route: AppRoutes.loans,
         icon: Icons.handshake_outlined,
-        activeIcon: Icons.handshake,
       ),
-    const CarouselNavItem(
+    const MobileTabItem(
       id: 'history',
       label: 'Activity',
       route: AppRoutes.history,
       icon: Icons.history_outlined,
-      activeIcon: Icons.history,
     ),
-    const CarouselNavItem(
+    const MobileTabItem(
       id: 'utxos',
-      label: 'UTXOs',
+      label: 'Coins',
       route: AppRoutes.utxos,
       icon: Icons.account_balance_wallet_outlined,
-      activeIcon: Icons.account_balance_wallet,
     ),
     if (liquid)
-      const CarouselNavItem(
+      const MobileTabItem(
         id: 'liquid',
         label: 'Liquid',
         route: AppRoutes.liquid,
-        icon: Icons.water_outlined,
-        activeIcon: Icons.water,
-        group: CarouselNavGroup.liquid,
+        icon: Icons.water_drop_outlined,
       ),
-    const CarouselNavItem(
+    const MobileTabItem(
       id: 'settings',
       label: 'Settings',
       route: AppRoutes.settings,
       icon: Icons.settings_outlined,
-      activeIcon: Icons.settings,
-      group: CarouselNavGroup.system,
     ),
   ];
 }
 
 // ── Mobile route map ──────────────────────────────────────────────────────────
 //
-// Every in-shell route is either a carousel page or a sub-page of one. The
-// three functions below are the whole map: which slot a path keeps centred,
+// Every in-shell route is either a tab or a sub-page of one. The three
+// functions below are the whole map: which tab a path keeps selected,
 // where its back arrow goes, and what the header calls it.
 
-/// Assets, LiquiDEX and Peg: one carousel slot, a tab strip under the header.
+/// Liquid assets, LiquiDEX and Peg: one tab, a switch under the header.
 bool isLiquidHubRoute(String path) =>
     path == AppRoutes.liquid || path == AppRoutes.swap || path == AppRoutes.peg;
 
@@ -372,8 +362,8 @@ bool _isLiquidSubScreen(String path) =>
 bool _isSettingsSection(String path) =>
     path != AppRoutes.settings && path.startsWith('${AppRoutes.settings}/');
 
-/// The carousel item a path belongs to. A sub-page keeps its parent's slot
-/// centred, so the bar always says where the user came from.
+/// The tab a path belongs to. A sub-page keeps its parent's tab selected, so
+/// the bar always says where the user came from.
 String mobileNavRouteFor(String path) {
   if (path == AppRoutes.loanDetail) return AppRoutes.loans;
   if (path == AppRoutes.send ||
@@ -391,7 +381,7 @@ String mobileNavRouteFor(String path) {
 }
 
 /// Where the header's arrow and the system back lead from [path]; null on a
-/// carousel page, where back means "to the Dashboard" (the shell's default).
+/// tab, where back means "to the Dashboard" (the shell's default).
 String? mobileParentRouteFor(String path) {
   if (path == AppRoutes.loanDetail) return AppRoutes.loans;
   if (path == AppRoutes.send || path == AppRoutes.receive) {
@@ -405,7 +395,7 @@ String? mobileParentRouteFor(String path) {
   return null;
 }
 
-/// The header title of a sub-page; null on a carousel page, where the
+/// The header title of a sub-page; null on a tab, where the
 /// header shows the wallet instead.
 String? mobileSubPageTitle(String path) => switch (path) {
   AppRoutes.loanDetail => 'Loan detail',
@@ -413,10 +403,10 @@ String? mobileSubPageTitle(String path) => switch (path) {
   AppRoutes.receive => 'Receive',
   AppRoutes.receiveAddresses => 'All addresses',
   AppRoutes.walletInfo => 'Wallet info',
-  AppRoutes.settingsNetwork => 'Nodes & explorers',
+  AppRoutes.settingsNetwork => 'Nodes and explorers',
   AppRoutes.settingsProtocol => 'Templar Protocol',
-  AppRoutes.settingsSecurity => 'Vault & backup',
-  AppRoutes.settingsAppearance => 'Theme & units',
+  AppRoutes.settingsSecurity => 'Vault and backup',
+  AppRoutes.settingsAppearance => 'Theme and units',
   AppRoutes.settingsAdvanced => 'Advanced',
   AppRoutes.settingsAbout => 'About',
   AppRoutes.issueAsset => 'Issue asset',
@@ -428,11 +418,11 @@ String? mobileSubPageTitle(String path) => switch (path) {
 
 // ── Liquid hub tabs ───────────────────────────────────────────────────────────
 
-/// Assets · LiquiDEX · Peg under the header, in Liquid teal. Each tab is a
-/// route, so the strip is only a switch: the three screens are untouched and
-/// the carousel keeps Liquid centred through all of them. Peg needs a
-/// Bitcoin side to peg out to; on a Liquid-only wallet the segment stays in
-/// place, dimmed, and says why when tapped.
+/// Liquid assets · LiquiDEX · Peg under the header. Each segment is a route, so the
+/// strip is only a switch: the three screens are untouched and the tab bar
+/// keeps Liquid selected through all of them. Peg needs a Bitcoin side to
+/// peg out to; on a Liquid-only wallet the segment stays in place, dimmed,
+/// and says why when tapped.
 class _LiquidHubTabs extends StatelessWidget {
   const _LiquidHubTabs({required this.currentPath});
   final String currentPath;
@@ -444,9 +434,9 @@ class _LiquidHubTabs extends StatelessWidget {
       (st) => (st.activeWalletBitcoin, st.liquidDexEnabled, st.pegEnabled),
     );
     final (bitcoin, liquidDex, peg) = flags;
-    final tint = s.liquid;
     return DecoratedBox(
       decoration: BoxDecoration(
+        color: s.chrome,
         border: Border(bottom: BorderSide(color: s.edge)),
       ),
       child: Padding(
@@ -464,29 +454,17 @@ class _LiquidHubTabs extends StatelessWidget {
             if (route != currentPath) context.go(route);
           },
           options: [
-            SegOption(
-              value: AppRoutes.liquid,
-              label: 'Assets',
-              icon: Icons.water_drop_outlined,
-              color: tint,
-            ),
+            const SegOption(value: AppRoutes.liquid, label: 'Liquid assets'),
             if (liquidDex)
-              SegOption(
-                value: AppRoutes.swap,
-                label: 'LiquiDEX',
-                icon: Icons.swap_horiz,
-                color: tint,
-              ),
+              const SegOption(value: AppRoutes.swap, label: 'LiquiDEX'),
             if (peg)
               SegOption(
                 value: AppRoutes.peg,
                 label: 'Peg',
-                icon: Icons.swap_vert_outlined,
-                color: tint,
                 enabled: bitcoin,
                 tooltip: bitcoin
                     ? null
-                    : 'Peg needs a Bitcoin side — this wallet is Liquid-only.',
+                    : 'Peg needs a Bitcoin side — this wallet is Liquid-only',
               ),
           ],
         ),
@@ -507,15 +485,15 @@ const double _headerRowHeight = AppLayout.minTouchTarget;
 const double _headerVerticalPad = 2;
 
 /// Wallet plate, name and kind on the left (tap: the wallet list), the sync
-/// pill on the right. Sits under the status bar by its own SafeArea and is
+/// state on the right. Sits under the status bar by its own SafeArea and is
 /// the only thing that takes that inset — the page below strips it again.
 ///
 /// On a sub-page (Send, Receive, a Settings section, Wallet info) the left
-/// half is a back arrow and the page's name instead: the carousel below
-/// still shows the parent, so the wallet is one tap away and the header can
-/// spend its width on where the user is and how to leave.
+/// half is a back arrow and the page's name instead: the tab bar below still
+/// shows the parent, so the wallet is one tap away and the header can spend
+/// its width on where the user is and how to leave.
 ///
-/// Kept to one 48-dp row (~52 dp with its pads) so that, with the carousel,
+/// Kept to one 48-dp row (~52 dp with its pads) so that, with the tab bar,
 /// chrome stays well under a fifth of a phone screen. Both controls fill the
 /// row, so the whole strip is tappable.
 class _MobileHeader extends StatelessWidget {
@@ -539,10 +517,8 @@ class _MobileHeader extends StatelessWidget {
       builder: (context, wallet, _) {
         final (walletId, walletName, walletType, bitcoin, liquid) = wallet;
         return DecoratedBox(
-          // The bottom hairline separates the strip from the page — the
-          // carousel has the same edge on top — so the header reads as
-          // chrome instead of merging with the first card.
           decoration: BoxDecoration(
+            color: s.chrome,
             border: Border(bottom: BorderSide(color: s.edge)),
           ),
           child: SafeArea(
@@ -595,8 +571,6 @@ class _MobileHeader extends StatelessWidget {
   }
 }
 
-/// The header's left half: plate, wallet name and kind, one 48-dp target
-/// that opens the wallet list.
 /// "Singlesig · Bitcoin + Liquid" — what kind of wallet this is and what it
 /// holds, on the one line under its name. Null before a wallet is open.
 String? _walletSubtitle(
@@ -615,6 +589,8 @@ String? _walletSubtitle(
   return parts.isEmpty ? null : parts.join(' · ');
 }
 
+/// The header's left half: plate, wallet name and kind, one 48-dp target
+/// that opens the wallet list.
 class _WalletButton extends StatelessWidget {
   const _WalletButton({
     required this.walletId,
@@ -641,12 +617,7 @@ class _WalletButton extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: _headerRowHeight),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.xs,
-              0,
-              AppSpacing.sm,
-              0,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -654,53 +625,47 @@ class _WalletButton extends StatelessWidget {
                   icon: walletId != null
                       ? kindIcon
                       : Icons.account_balance_wallet_outlined,
-                  size: 30,
-                  shadow: false,
+                  tint: walletId != null ? s.accent : null,
+                  size: 32,
                 ),
-                const SizedBox(width: AppSpacing.sm + 2),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        walletId != null ? (walletName ?? '…') : 'Open wallet…',
-                        style: AppTypography.sectionTitle.copyWith(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          height: 1.15,
-                          color: s.ink,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              walletId != null
+                                  ? (walletName ?? '…')
+                                  : 'Open wallet…',
+                              style: AppTypography.sectionTitle.copyWith(
+                                height: 1.2,
+                                color: s.ink,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          Icon(
+                            Icons.unfold_more_outlined,
+                            size: AppSpacing.iconSmall,
+                            color: s.inkFaint,
+                          ),
+                        ],
                       ),
                       if (type != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 1),
-                          child: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  type,
-                                  style: AppTypography.caption.copyWith(
-                                    fontSize: 11,
-                                    height: 1.2,
-                                    color: s.inkFaint,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: AppSpacing.xs),
-                              // A picker chevron — not the swap glyph the
-                              // carousel already uses for LiquiDEX.
-                              Icon(
-                                Icons.unfold_more,
-                                size: 16,
-                                color: s.inkFaint,
-                              ),
-                            ],
+                        Text(
+                          type,
+                          style: AppTypography.eyebrow.copyWith(
+                            fontWeight: FontWeight.w400,
+                            color: s.inkFaint,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                     ],
                   ),
@@ -715,8 +680,8 @@ class _WalletButton extends StatelessWidget {
 }
 
 /// The header's left half on a sub-page: an arrow and the page's name, one
-/// 48-dp target. Tapping it is the system back — the Send wizard steps back
-/// a page before the screen is left, exactly as the hardware button does.
+/// 48-dp target. Tapping it is the system back — the Send flow steps back a
+/// page before the screen is left, exactly as the hardware button does.
 class _BackButton extends StatelessWidget {
   const _BackButton({required this.title, required this.onTap});
 
@@ -743,22 +708,13 @@ class _BackButton extends StatelessWidget {
                 SizedBox(
                   width: AppLayout.minTouchTarget - AppSpacing.sm,
                   child: Center(
-                    child: Icon(
-                      Icons.arrow_back_rounded,
-                      size: 24,
-                      color: s.ink,
-                    ),
+                    child: Icon(Icons.arrow_back, size: 22, color: s.ink),
                   ),
                 ),
                 Expanded(
                   child: Text(
                     title,
-                    style: AppTypography.sectionTitle.copyWith(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      height: 1.15,
-                      color: s.ink,
-                    ),
+                    style: AppTypography.sectionTitle.copyWith(color: s.ink),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -772,12 +728,11 @@ class _BackButton extends StatelessWidget {
   }
 }
 
-/// Sync state as a pill: a dot and a short word. Tap to sync. Runs the
-/// first sync on mount when auto-sync is on, exactly as the desktop footer.
+/// Sync state: a dot and a short word. Tap to sync. Runs the first sync on
+/// mount when auto-sync is on, exactly as the desktop footer.
 ///
-/// The pill itself is visually compact (~26 dp); its hit box is the full
-/// 48-dp header row, so the one control a user taps repeatedly is never
-/// under the touch minimum.
+/// The mark itself is small; its hit box is the full 48-dp header row, so the
+/// one control a user taps repeatedly is never under the touch minimum.
 class _SyncPill extends StatefulWidget {
   const _SyncPill();
 
@@ -803,78 +758,46 @@ class _SyncPillState extends State<_SyncPill> {
         final (syncState, syncDetail) = data;
         final isSyncing = syncState == SyncState.syncing;
         final (dotColor, label) = syncStatusPresentation(
+          s,
           syncState,
           syncDetail,
           compact: true,
         );
-        final dot = SizedBox(
-          width: 10,
-          height: 10,
-          child: Center(
-            child: isSyncing
-                ? const SizedBox(
-                    width: 10,
-                    height: 10,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.5,
-                      color: AppColors.warning,
-                    ),
-                  )
-                : DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: dotColor,
-                      shape: BoxShape.circle,
-                      boxShadow: syncState == SyncState.synced
-                          ? [
-                              BoxShadow(
-                                color: dotColor.withValues(alpha: 0.7),
-                                blurRadius: 8,
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: const SizedBox(width: 8, height: 8),
-                  ),
-          ),
-        );
-        final pill = Container(
-          constraints: const BoxConstraints(minWidth: AppLayout.minTouchTarget),
-          padding: const EdgeInsets.fromLTRB(8, 5, 9, 5),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: s.edge),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              dot,
-              const SizedBox(width: 7),
-              Text(
-                label,
-                style: AppTypography.label.copyWith(
-                  fontSize: 12,
-                  color: s.inkSecondary,
-                ),
-              ),
-            ],
-          ),
-        );
+        void sync() => syncActiveWallet(context.read<AppState>(), _bridge);
         return Semantics(
           button: true,
           label: isSyncing ? 'Syncing' : 'Sync now. $label',
           excludeSemantics: true,
-          onTap: isSyncing
-              ? null
-              : () => syncActiveWallet(context.read<AppState>(), _bridge),
+          onTap: isSyncing ? null : sync,
           child: SizedBox(
             height: _headerRowHeight,
             child: InkWell(
-              onTap: isSyncing
-                  ? null
-                  : () => syncActiveWallet(context.read<AppState>(), _bridge),
-              borderRadius: BorderRadius.circular(_headerRowHeight / 2),
-              child: Center(child: pill),
+              onTap: isSyncing ? null : sync,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minWidth: AppLayout.minTouchTarget,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _SyncDot(color: dotColor, syncing: isSyncing),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        label,
+                        style: AppTypography.eyebrow.copyWith(
+                          color: s.inkSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         );
@@ -883,10 +806,36 @@ class _SyncPillState extends State<_SyncPill> {
   }
 }
 
-// ── Mock-data badge ───────────────────────────────────────────────────────────
+/// The sync state's mark: a 6 px dot in the state's colour, or a small
+/// spinner while a sync is running (the one thing here that is live).
+class _SyncDot extends StatelessWidget {
+  const _SyncDot({required this.color, required this.syncing});
+  final Color color;
+  final bool syncing;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: AppSpacing.md,
+      height: AppSpacing.md,
+      child: Center(
+        child: syncing
+            ? CircularProgressIndicator(strokeWidth: 1.5, color: color)
+            : Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+      ),
+    );
+  }
+}
+
+// ── Mock-data and regtest strips ──────────────────────────────────────────────
 
 /// Unmissable strip shown whenever the UI runs on the mock bridge (debug
 /// fallback after a failed native load): everything on screen is fake data.
+/// The one place a solid danger fill is right — a balance nobody owns.
 class _MockDataBadge extends StatelessWidget {
   const _MockDataBadge();
 
@@ -894,27 +843,23 @@ class _MockDataBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return const _BadgeStrip(
       color: AppColors.danger,
-      textColor: Colors.white,
-      text: 'MOCK DATA — wallet engine not loaded',
-      phoneText: 'MOCK DATA — engine not loaded',
+      text: 'Mock data — wallet engine not loaded',
+      phoneText: 'Mock data — engine not loaded',
     );
   }
 }
 
-/// One line of bold small caps on a coloured ground, full width. On a phone
-/// the copy is the shorter [phoneText], padded at the sides and never
-/// wrapped, so the strip is one compact line on every screen width; on
-/// desktop the strip is exactly what it always was.
+/// One line on a coloured ground, full width, in ink dark enough to read on
+/// it. On a phone the copy is the shorter [phoneText], padded at the sides
+/// and never wrapped, so the strip is one compact line on every width.
 class _BadgeStrip extends StatelessWidget {
   const _BadgeStrip({
     required this.color,
-    required this.textColor,
     required this.text,
     required this.phoneText,
   });
 
   final Color color;
-  final Color textColor;
   final String text;
   final String phoneText;
 
@@ -933,12 +878,7 @@ class _BadgeStrip extends StatelessWidget {
         textAlign: TextAlign.center,
         maxLines: phone ? 1 : null,
         overflow: phone ? TextOverflow.ellipsis : null,
-        style: TextStyle(
-          color: textColor,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
-        ),
+        style: AppTypography.eyebrow.copyWith(color: AppColors.textPrimary),
       ),
     );
   }
@@ -953,27 +893,26 @@ class _RegtestBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const _BadgeStrip(
-      color: AppColors.warning,
-      textColor: Colors.black,
-      text: 'LIQUID REGTEST — local elementsd, not the public testnet',
-      phoneText: 'LIQUID REGTEST — local node, not testnet',
+      color: AppColors.warningMuted,
+      text: 'Liquid regtest — local elementsd, not the public testnet',
+      phoneText: 'Liquid regtest — local node, not testnet',
     );
   }
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
+/// The desktop navigation, on [AppScheme.chrome]: the wallet at the top, the
+/// destinations in three groups, the sync state at the foot.
 class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.currentPath,
     required this.expanded,
     required this.onToggle,
-    required this.sc,
   });
   final String currentPath;
   final bool expanded;
   final VoidCallback onToggle;
-  final _SC sc;
 
   /// A settings section route (`/settings/security`) lights the Settings
   /// entry: on desktop the section is a pane inside that one page.
@@ -984,6 +923,7 @@ class _Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     // Only show the Liquid section when the active wallet has Liquid enabled.
     final appState = context.watch<AppState>();
     final showLiquid = appState.activeWalletLiquid;
@@ -992,336 +932,267 @@ class _Sidebar extends StatelessWidget {
     // A peg moves value between the two chains, so it needs both sides. A
     // Liquid-only wallet has no Bitcoin address to peg out to.
     final showPeg = showLiquid && appState.activeWalletBitcoin;
-    final group = _groupOf(currentPath);
     return Column(
       children: [
-        _SidebarHeader(expanded: expanded, onToggle: onToggle, sc: sc),
-        Divider(color: sc.divider, height: 1),
+        _SidebarHeader(expanded: expanded, onToggle: onToggle),
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              0,
+              AppSpacing.md,
+              AppSpacing.md,
+            ),
             children: [
-              _section('WALLET', active: group == _NavGroup.wallet),
-              _item(
-                AppRoutes.dashboard,
-                'Dashboard',
-                Icons.home_outlined,
-                Icons.home,
-              ),
-              // Loans sit beside the Dashboard, not under Liquid: they are
-              // what the wallet is for in the protocol, and a site's loan
-              // state is read here first. Opt-in: Settings › Templar Protocol
-              // (or the connect screen's checkbox) puts it here.
-              if (showLiquid && appState.loansEnabled)
-                _item(
-                  AppRoutes.loans,
-                  'Loans',
-                  Icons.handshake_outlined,
-                  Icons.handshake,
-                ),
+              _section('Wallet', first: true),
+              _item(AppRoutes.dashboard, 'Dashboard', Icons.home_outlined),
               if (showSend)
-                _item(AppRoutes.send, 'Send', Icons.send_outlined, Icons.send),
-              _item(
-                AppRoutes.receive,
-                'Receive',
-                Icons.call_received_outlined,
-                Icons.call_received,
-              ),
-              _item(
-                AppRoutes.history,
-                'Activity',
-                Icons.history_outlined,
-                Icons.history,
-              ),
+                _item(AppRoutes.send, 'Send', Icons.arrow_outward_outlined),
+              _item(AppRoutes.receive, 'Receive', Icons.call_received_outlined),
+              _item(AppRoutes.history, 'Activity', Icons.history_outlined),
               _item(
                 AppRoutes.utxos,
                 'UTXOs',
                 Icons.account_balance_wallet_outlined,
-                Icons.account_balance_wallet,
               ),
               if (showLiquid) ...[
-                _section('LIQUID', active: group == _NavGroup.liquid),
+                _section('Liquid'),
                 _item(
                   AppRoutes.liquid,
-                  'Liquid',
-                  Icons.water_outlined,
-                  Icons.water,
+                  'Liquid assets',
+                  Icons.water_drop_outlined,
                 ),
+                // A loan is a Liquid covenant, so it lives with Liquid.
+                // Opt-in: Settings › Templar Protocol (or the connect
+                // screen's checkbox) puts it here.
+                if (appState.loansEnabled)
+                  _item(AppRoutes.loans, 'Loans', Icons.handshake_outlined),
                 if (appState.liquidDexEnabled)
                   // Named for the protocol it actually speaks. "Swap" is
                   // reserved for the future Boltz-style Bitcoin <> Liquid <>
                   // Lightning section, which is a different thing entirely.
-                  _item(
-                    AppRoutes.swap,
-                    'LiquiDEX',
-                    Icons.swap_horiz,
-                    Icons.swap_horiz,
-                  ),
+                  _item(AppRoutes.swap, 'LiquiDEX', Icons.swap_horiz_outlined),
                 if (showPeg && appState.pegEnabled)
-                  _item(
-                    AppRoutes.peg,
-                    'Peg',
-                    Icons.swap_vert_outlined,
-                    Icons.swap_vert,
-                  ),
+                  _item(AppRoutes.peg, 'Peg', Icons.swap_vert_outlined),
               ],
-              _section('SYSTEM', active: group == _NavGroup.system),
-              _item(
-                AppRoutes.walletInfo,
-                'Wallet Info',
-                Icons.info_outline,
-                Icons.info,
-              ),
-              _item(
-                AppRoutes.settings,
-                'Settings',
-                Icons.settings_outlined,
-                Icons.settings,
-              ),
+              _section('System'),
+              _item(AppRoutes.walletInfo, 'Wallet info', Icons.info_outlined),
+              _item(AppRoutes.settings, 'Settings', Icons.settings_outlined),
             ],
           ),
         ),
-        Divider(color: sc.divider, height: 1),
-        _SidebarFooter(expanded: expanded, sc: sc),
+        Divider(color: s.edge, height: 1),
+        _SidebarFooter(expanded: expanded),
       ],
     );
   }
 
-  static _NavGroup _groupOf(String path) {
-    if (path == AppRoutes.liquid ||
-        path == AppRoutes.swap ||
-        path == AppRoutes.peg) {
-      return _NavGroup.liquid;
-    }
-    if (path == AppRoutes.walletInfo ||
-        path == AppRoutes.settings ||
-        _isSettingsSection(path)) {
-      return _NavGroup.system;
-    }
-    return _NavGroup.wallet;
-  }
+  Widget _section(String label, {bool first = false}) =>
+      _SidebarSection(label: label, expanded: expanded, first: first);
 
-  Widget _section(String label, {required bool active}) =>
-      _SidebarSection(label: label, expanded: expanded, active: active, sc: sc);
-
-  Widget _item(
-    String route,
-    String label,
-    IconData icon,
-    IconData activeIcon,
-  ) => _SidebarItem(
+  Widget _item(String route, String label, IconData icon) => _SidebarItem(
     route: route,
     label: label,
     icon: icon,
-    activeIcon: activeIcon,
     isActive: _isActive(route),
     expanded: expanded,
-    sc: sc,
   );
 }
 
 // ── Header ────────────────────────────────────────────────────────────────────
 
+/// The product's name, the collapse control, and the wallet in use — the
+/// wallet row is the switcher: it opens the wallet list.
 class _SidebarHeader extends StatelessWidget {
-  const _SidebarHeader({
-    required this.expanded,
-    required this.onToggle,
-    required this.sc,
-  });
+  const _SidebarHeader({required this.expanded, required this.onToggle});
   final bool expanded;
   final VoidCallback onToggle;
-  final _SC sc;
-
-  static const Widget _logo = AppLogo(size: 28, radius: AppSpacing.radiusSm);
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     return Selector<AppState, (String?, String?, String?)>(
-      selector: (_, s) =>
-          (s.activeWalletId, s.activeWalletName, s.activeWalletType),
+      selector: (_, st) =>
+          (st.activeWalletId, st.activeWalletName, st.activeWalletType),
       builder: (context, wallet, _) {
         final (walletId, walletName, walletType) = wallet;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top bar: logo (only expanded) + title + chevron.
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Row(
-                children: [
-                  if (expanded) ...[
-                    _logo,
-                    const SizedBox(width: AppSpacing.sm),
+        final collapse = _ChromeIconButton(
+          tooltip: expanded ? 'Collapse sidebar' : 'Expand sidebar',
+          icon: expanded
+              ? Icons.keyboard_double_arrow_left_outlined
+              : Icons.keyboard_double_arrow_right_outlined,
+          onTap: onToggle,
+        );
+        if (!expanded) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+            child: Column(
+              children: [
+                collapse,
+                const SizedBox(height: AppSpacing.sm),
+                Tooltip(
+                  message: walletName ?? 'Open wallet',
+                  child: InkWell(
+                    onTap: () => context.go(AppRoutes.walletPicker),
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                    child: WalletPlate(
+                      icon: walletId != null
+                          ? WalletFlags.kindIconForLabel(walletType)
+                          : Icons.account_balance_wallet_outlined,
+                      tint: walletId != null ? s.accent : null,
+                      size: 36,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.lg,
+            AppSpacing.md,
+            0,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(left: AppSpacing.xs),
+                child: Row(
+                  children: [
+                    const AppLogo(size: 28, radius: AppSpacing.radiusSm),
+                    const SizedBox(width: AppSpacing.md),
                     Expanded(
-                      // No network line here. It said "Testnet" on every
-                      // screen of a testnet-only build, which is wallpaper —
-                      // the badge on Home carries that fact once, where it is
-                      // read.
                       child: Text(
                         'Templar Wallet',
-                        style: TextStyle(
-                          color: sc.textActive,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
+                        style: AppTypography.navItem.copyWith(
+                          color: s.ink,
+                          fontWeight: FontWeight.w500,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    collapse,
                   ],
-                  // When collapsed, center the chevron.
-                  if (!expanded) const Spacer(),
-                  _CollapseButton(
-                    expanded: expanded,
-                    onToggle: onToggle,
-                    sc: sc,
-                  ),
-                  if (!expanded) const Spacer(),
-                ],
+                ),
               ),
-            ),
-            // Wallet selector row.
-            if (expanded)
-              _WalletRow(
+              const SizedBox(height: AppSpacing.lg),
+              _WalletSwitcher(
                 walletId: walletId,
                 walletName: walletName,
                 walletType: walletType,
-                sc: sc,
-              )
-            else if (walletId != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                child: Center(
-                  child: _SidebarTooltip(
-                    message: walletName ?? 'Wallet',
-                    child: InkWell(
-                      onTap: () => context.go(AppRoutes.walletPicker),
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                      child: WalletPlate(
-                        icon: WalletFlags.kindIconForLabel(walletType),
-                        size: 28,
-                        shadow: false,
-                      ),
-                    ),
-                  ),
-                ),
               ),
-          ],
+            ],
+          ),
         );
       },
     );
   }
 }
 
-class _CollapseButton extends StatelessWidget {
-  const _CollapseButton({
-    required this.expanded,
-    required this.onToggle,
-    required this.sc,
-  });
-  final bool expanded;
-  final VoidCallback onToggle;
-  final _SC sc;
-
-  @override
-  Widget build(BuildContext context) {
-    return _SidebarTooltip(
-      message: expanded ? 'Collapse' : 'Expand',
-      child: InkWell(
-        onTap: onToggle,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: AnimatedRotation(
-            turns: expanded ? 0 : 0.5,
-            duration: const Duration(milliseconds: 200),
-            child: Icon(Icons.chevron_left, size: 16, color: sc.text),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _WalletRow extends StatelessWidget {
-  const _WalletRow({
+/// The wallet in use, as a control: one row that opens the wallet list.
+class _WalletSwitcher extends StatefulWidget {
+  const _WalletSwitcher({
     required this.walletId,
     required this.walletName,
     required this.walletType,
-    required this.sc,
   });
   final String? walletId;
   final String? walletName;
   final String? walletType;
-  final _SC sc;
+
+  @override
+  State<_WalletSwitcher> createState() => _WalletSwitcherState();
+}
+
+class _WalletSwitcherState extends State<_WalletSwitcher> {
+  bool _hover = false;
+  bool _focus = false;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        0,
-        AppSpacing.sm,
-        AppSpacing.sm,
-      ),
-      child: InkWell(
-        onTap: () => context.go(AppRoutes.walletPicker),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: AppSpacing.sm,
+    final s = AppScheme.of(context);
+    final open = widget.walletId != null;
+    void go() => context.go(AppRoutes.walletPicker);
+    return Semantics(
+      button: true,
+      label: open ? 'Wallet ${widget.walletName ?? ''}' : 'Open wallet',
+      hint: 'Opens the wallet list',
+      excludeSemantics: true,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowHoverHighlight: (v) => setState(() => _hover = v),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              go();
+              return null;
+            },
           ),
-          child: walletId != null
-              ? Row(
-                  children: [
-                    WalletPlate(
-                      icon: WalletFlags.kindIconForLabel(walletType),
-                      size: 26,
-                      shadow: false,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            walletName ?? '…',
-                            style: TextStyle(
-                              color: sc.textActive,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (walletType != null)
-                            Text(
-                              walletType!,
-                              style: TextStyle(color: sc.text, fontSize: 10),
-                            ),
-                        ],
-                      ),
-                    ),
-                    Icon(Icons.swap_horiz, size: 13, color: sc.text),
-                  ],
-                )
-              : Row(
-                  children: [
-                    Icon(
-                      Icons.account_balance_wallet_outlined,
-                      size: 15,
-                      color: sc.text,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        'Open wallet…',
-                        style: TextStyle(color: sc.text, fontSize: 12),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: go,
+          child: AnimatedContainer(
+            duration: AppMotion.of(context, AppMotion.instant),
+            height: 56,
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            decoration: BoxDecoration(
+              color: _hover ? s.hover : s.hover.withValues(alpha: 0),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              border: Border.all(
+                color: _focus ? s.focus : s.edge,
+                width: _focus ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                WalletPlate(
+                  icon: open
+                      ? WalletFlags.kindIconForLabel(widget.walletType)
+                      : Icons.account_balance_wallet_outlined,
+                  // The wallet's own colour — the accent while it is open.
+                  tint: open ? s.accent : null,
+                  size: 40,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        open ? (widget.walletName ?? '…') : 'Open wallet…',
+                        style: AppTypography.navItem.copyWith(
+                          color: s.ink,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    Icon(Icons.chevron_right, size: 13, color: sc.text),
-                  ],
+                      if (open && widget.walletType != null)
+                        Text(
+                          widget.walletType!,
+                          style: AppTypography.caption.copyWith(
+                            color: s.inkFaint,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
                 ),
+                Icon(
+                  Icons.unfold_more_outlined,
+                  size: AppSpacing.iconSmall,
+                  color: s.inkFaint,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1330,84 +1201,33 @@ class _WalletRow extends StatelessWidget {
 
 // ── Section label ─────────────────────────────────────────────────────────────
 
-/// Which block of the nav a route belongs to. Only used to mark the separator
-/// above the group the user is currently inside.
-enum _NavGroup { wallet, liquid, system }
-
-/// A group separator: the label, then a hairline running to the sidebar edge.
-///
-/// The label on its own was doing two jobs badly — naming the group and
-/// dividing it — and at the sidebar's type size it read as one more quiet
-/// item rather than a break. The rule does the dividing, so the label can go
-/// back to only naming. The group holding the current page picks up an accent
-/// tick and a brighter rule, which means the sidebar answers "where am I"
-/// twice: once at the item, once at the section.
+/// A group's name: closer to its own rows (8) than to the group above (24).
+/// Collapsed there is no room for a word, so the gap alone does the grouping.
 class _SidebarSection extends StatelessWidget {
   const _SidebarSection({
     required this.label,
     required this.expanded,
-    required this.active,
-    required this.sc,
+    this.first = false,
   });
   final String label;
   final bool expanded;
-  final bool active;
-  final _SC sc;
+  final bool first;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-
-    // Collapsed there is no room for a label, and a full-width rule under a
-    // 56px strip reads as a border. A short centred rule keeps the rhythm.
-    if (!expanded) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-        child: Center(
-          child: Container(
-            width: 16,
-            height: 1,
-            color: active ? s.accent : sc.divider,
-          ),
-        ),
-      );
-    }
-
+    final top = first ? AppSpacing.lg : AppSpacing.xl;
+    if (!expanded) return SizedBox(height: first ? AppSpacing.sm : top);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.lg,
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        top,
+        AppSpacing.md,
         AppSpacing.sm,
       ),
-      child: Row(
-        children: [
-          if (active) ...[
-            Container(
-              width: 2,
-              height: 9,
-              decoration: BoxDecoration(
-                color: s.accent,
-                borderRadius: BorderRadius.circular(1),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-          ],
-          Text(
-            label,
-            style: AppTypography.navSection.copyWith(
-              color: active ? s.ink : sc.sectionLabel,
-              fontWeight: active ? FontWeight.w700 : null,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Container(
-              height: 1,
-              color: active ? s.accent.withValues(alpha: 0.35) : sc.divider,
-            ),
-          ),
-        ],
+      child: Text(
+        label,
+        style: AppTypography.navSection.copyWith(color: s.inkFaint),
       ),
     );
   }
@@ -1415,34 +1235,24 @@ class _SidebarSection extends StatelessWidget {
 
 // ── Nav item ──────────────────────────────────────────────────────────────────
 
-/// A sidebar entry, built as the same object as a home gallery card: rounded
-/// rect, hairline border, translucent card surface, and the accent used only to
-/// mark state — never as decoration.
-///
-/// Hover mirrors the wallet cards exactly (surface steps up, border firms) so
-/// the two screens feel like one material. Active adds the red rule, which on
-/// the home screen means "the one you are pointing at" and here means "the one
-/// you are on".
+/// A destination. Rows are 40 tall and 2 apart; icons sit in one column and
+/// labels start on one line. The current row is the raised surface with the
+/// primary ink — a surface step — and wears the [CurrentMark], a short bar
+/// in the accent on its leading edge.
 class _SidebarItem extends StatefulWidget {
   const _SidebarItem({
     required this.route,
     required this.label,
     required this.icon,
-    required this.activeIcon,
     required this.isActive,
     required this.expanded,
-    required this.sc,
   });
 
   final String route;
   final String label;
   final IconData icon;
-  final IconData activeIcon;
   final bool isActive;
   final bool expanded;
-  final _SC sc;
-
-  static const double _iconSlot = 18.0;
 
   @override
   State<_SidebarItem> createState() => _SidebarItemState();
@@ -1450,117 +1260,129 @@ class _SidebarItem extends StatefulWidget {
 
 class _SidebarItemState extends State<_SidebarItem> {
   bool _hover = false;
+  bool _focus = false;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final motion = AppMotion.of(context, AppMotion.quick);
     final active = widget.isActive;
-    final lit = active || _hover;
+    final ink = active || _hover ? s.ink : s.inkSecondary;
+    void go() => context.go(widget.route);
 
-    final iconColor = active
-        ? s.accent
-        : _hover
-        ? s.ink
-        : widget.sc.text;
-    final textColor = lit ? s.ink : widget.sc.text;
-
-    final item = Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: 2,
-      ),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        child: GestureDetector(
-          onTap: () => context.go(widget.route),
-          behavior: HitTestBehavior.opaque,
-          child: AnimatedContainer(
-            duration: motion,
-            height: 38,
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm + 2),
-            decoration: BoxDecoration(
-              color: lit ? s.cardHover : s.cardBase,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              border: Border.all(color: lit ? s.edgeStrong : s.edge),
+    final row = Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Semantics(
+        button: true,
+        selected: active,
+        label: widget.label,
+        excludeSemantics: true,
+        child: FocusableActionDetector(
+          mouseCursor: SystemMouseCursors.click,
+          onShowHoverHighlight: (v) => setState(() => _hover = v),
+          onShowFocusHighlight: (v) => setState(() => _focus = v),
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                go();
+                return null;
+              },
             ),
-            child: Row(
-              children: [
-                // Fixed-width icon slot — never moves regardless of expand state.
-                SizedBox(
-                  width: _SidebarItem._iconSlot,
-                  child: Icon(
-                    active ? widget.activeIcon : widget.icon,
-                    size: _SidebarItem._iconSlot,
-                    color: iconColor,
-                  ),
-                ),
-                if (widget.expanded) ...[
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: AnimatedDefaultTextStyle(
-                      duration: motion,
-                      style: AppTypography.navItem.copyWith(
-                        color: textColor,
-                        fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                      ),
-                      child: Text(
-                        widget.label,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+          },
+          child: GestureDetector(
+            onTap: go,
+            behavior: HitTestBehavior.opaque,
+            child: AnimatedContainer(
+              duration: AppMotion.of(context, AppMotion.instant),
+              height: AppSpacing.navRowHeight,
+              decoration: BoxDecoration(
+                color: active
+                    ? s.thumb
+                    : _hover
+                    ? s.hover
+                    : s.hover.withValues(alpha: 0),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              ),
+              foregroundDecoration: _focus
+                  ? BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                      border: Border.all(color: s.focus, width: 2),
+                    )
+                  : null,
+              child: Stack(
+                alignment: AlignmentDirectional.centerStart,
+                children: [
+                  // "You are here": the one mark of the accent on the chrome.
+                  CurrentMark(active: active),
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: widget.expanded ? AppSpacing.md : 0,
                     ),
-                  ),
-                  // The red rule, same marker the wallet cards use. It grows in
-                  // rather than appearing, so switching pages reads as motion.
-                  AnimatedContainer(
-                    duration: motion,
-                    curve: AppMotion.settle,
-                    width: active ? 18 : 0,
-                    height: 2,
-                    decoration: BoxDecoration(
-                      color: s.accent,
-                      borderRadius: BorderRadius.circular(1),
+                    child: Row(
+                      mainAxisAlignment: widget.expanded
+                          ? MainAxisAlignment.start
+                          : MainAxisAlignment.center,
+                      children: [
+                        // The current destination's glyph wears the accent,
+                        // with the bar on its edge; its label stays ink.
+                        Icon(
+                          widget.icon,
+                          size: AppSpacing.navIcon,
+                          color: active ? s.accentGlyph : ink,
+                        ),
+                        if (widget.expanded) ...[
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Text(
+                              widget.label,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.navItem.copyWith(
+                                color: ink,
+                                fontWeight: active
+                                    ? FontWeight.w500
+                                    : FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
 
-    if (widget.expanded) return item;
-    return _SidebarTooltip(message: widget.label, child: item);
+    if (widget.expanded) return row;
+    return Tooltip(message: widget.label, preferBelow: false, child: row);
   }
 }
 
-// ── Tooltip helper ────────────────────────────────────────────────────────────
+/// A small icon control in the sidebar's chrome: 32 px, quiet until hovered.
+class _ChromeIconButton extends StatelessWidget {
+  const _ChromeIconButton({
+    required this.tooltip,
+    required this.onTap,
+    this.icon,
+    this.child,
+  }) : assert(icon != null || child != null);
 
-class _SidebarTooltip extends StatelessWidget {
-  const _SidebarTooltip({required this.message, required this.child});
-  final String message;
-  final Widget child;
+  final String tooltip;
+  final VoidCallback? onTap;
+  final IconData? icon;
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: message,
-      preferBelow: false,
-      verticalOffset: 0,
-      decoration: BoxDecoration(
-        color: AppColors.surfaceDark2,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: AppColors.borderDark),
-      ),
-      textStyle: const TextStyle(
-        color: Colors.white,
-        fontSize: 12,
-        fontWeight: FontWeight.w500,
-      ),
-      child: child,
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onTap,
+      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+      padding: EdgeInsets.zero,
+      iconSize: AppSpacing.icon,
+      icon: child ?? Icon(icon),
     );
   }
 }
@@ -1606,29 +1428,31 @@ void scheduleAutoSync(BuildContext context, WalletBridge bridge) {
 /// Dot colour and label for a sync state. The footer shows the chain detail
 /// of a partial or failed sync; [compact] is the header's short form.
 (Color, String) syncStatusPresentation(
+  AppScheme s,
   SyncState state,
   String? detail, {
   bool compact = false,
 }) => switch (state) {
-  SyncState.synced => (AppColors.success, 'Synced'),
-  SyncState.syncing => (AppColors.warning, 'Syncing…'),
+  SyncState.synced => (s.success, 'Synced'),
+  SyncState.syncing => (s.inkSecondary, 'Syncing…'),
   SyncState.warning => (
-    AppColors.warning,
+    s.warning,
     compact ? 'Partial' : (detail ?? 'Partial sync'),
   ),
   SyncState.error => (
-    AppColors.danger,
-    compact ? 'Sync error' : (detail ?? 'Sync Error'),
+    s.danger,
+    compact ? 'Sync error' : (detail ?? 'Sync error'),
   ),
-  SyncState.idle => (AppColors.textMuted, 'Idle'),
+  SyncState.idle => (s.inkFaint, 'Idle'),
 };
 
 // ── Footer ────────────────────────────────────────────────────────────────────
 
+/// The foot of the sidebar: the sync state on the left, then sync, theme and
+/// lock as three quiet icon controls.
 class _SidebarFooter extends StatefulWidget {
-  const _SidebarFooter({required this.expanded, required this.sc});
+  const _SidebarFooter({required this.expanded});
   final bool expanded;
-  final _SC sc;
 
   @override
   State<_SidebarFooter> createState() => _SidebarFooterState();
@@ -1669,246 +1493,96 @@ class _SidebarFooterState extends State<_SidebarFooter> {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     return Selector<AppState, (SyncState, String?, ThemeMode)>(
-      selector: (_, s) => (s.syncState, s.syncDetail, s.themeMode),
+      selector: (_, st) => (st.syncState, st.syncDetail, st.themeMode),
       builder: (context, data, _) {
         final (syncState, syncDetail, themeMode) = data;
         final isSyncing = syncState == SyncState.syncing;
         final (dotColor, statusLabel) = syncStatusPresentation(
+          s,
           syncState,
           syncDetail,
         );
-
-        final sc = widget.sc;
-
-        final syncDot = SizedBox(
-          width: 18,
-          height: 18,
-          child: Center(
-            child: isSyncing
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.5,
-                      color: AppColors.warning,
-                    ),
-                  )
-                : Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: dotColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-          ),
-        );
-
         final themeDark = themeMode == ThemeMode.dark;
 
-        // Collapsed: the three controls stack, still as buttons. The old
-        // footer drew a bare 10px dot and a bare icon with no bounds, so
-        // neither looked pressable and the two ran together.
+        final syncButton = _ChromeIconButton(
+          tooltip: isSyncing ? 'Syncing…' : 'Sync now',
+          onTap: isSyncing ? null : _sync,
+          icon: Icons.sync_outlined,
+        );
+        final themeButton = _ChromeIconButton(
+          tooltip: themeDark ? 'Light mode' : 'Dark mode',
+          onTap: context.read<AppState>().toggleTheme,
+          icon: themeDark
+              ? Icons.light_mode_outlined
+              : Icons.dark_mode_outlined,
+        );
+        final lockButton = _ChromeIconButton(
+          tooltip: 'Lock wallet storage',
+          onTap: _lock,
+          icon: Icons.lock_outlined,
+        );
+
         if (!widget.expanded) {
           return Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm,
-              vertical: AppSpacing.sm,
-            ),
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _FooterButton(
-                  tooltip: statusLabel,
-                  onTap: isSyncing ? null : _sync,
-                  sc: sc,
-                  child: syncDot,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                _FooterButton(
-                  tooltip: themeDark ? 'Light mode' : 'Dark mode',
-                  onTap: context.read<AppState>().toggleTheme,
-                  sc: sc,
-                  child: Icon(
-                    themeDark
-                        ? Icons.light_mode_outlined
-                        : Icons.dark_mode_outlined,
-                    size: 17,
-                    color: sc.text,
+                Tooltip(
+                  message: statusLabel,
+                  child: SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: Center(
+                      child: _SyncDot(color: dotColor, syncing: isSyncing),
+                    ),
                   ),
                 ),
+                const SizedBox(height: AppSpacing.xs),
+                syncButton,
+                const SizedBox(height: AppSpacing.xs),
+                themeButton,
                 if (_vaultUnlocked) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  _FooterButton(
-                    tooltip: 'Lock wallet storage',
-                    onTap: _lock,
-                    sc: sc,
-                    child: Icon(Icons.lock_outline, size: 17, color: sc.text),
-                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  lockButton,
                 ],
               ],
             ),
           );
         }
 
-        // Expanded: status on its own line, controls on theirs. Sharing one
-        // row meant the sync state and the buttons competed for 220px and the
-        // buttons lost.
         return Padding(
           padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
             AppSpacing.md,
-            AppSpacing.sm,
             AppSpacing.md,
             AppSpacing.md,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Row(
-                children: [
-                  SizedBox(
-                    width: 10,
-                    height: 10,
-                    child: Center(
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: dotColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      statusLabel,
-                      style: AppTypography.caption.copyWith(color: sc.text),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
+              _SyncDot(color: dotColor, syncing: isSyncing),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  statusLabel,
+                  style: AppTypography.body.copyWith(color: s.inkSecondary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                children: [
-                  Expanded(
-                    child: _FooterButton(
-                      tooltip: isSyncing ? 'Syncing…' : 'Sync now',
-                      onTap: isSyncing ? null : _sync,
-                      sc: sc,
-                      expand: true,
-                      child: isSyncing
-                          ? const SizedBox(
-                              width: 15,
-                              height: 15,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 1.6,
-                                color: AppColors.warning,
-                              ),
-                            )
-                          : Icon(Icons.sync, size: 17, color: sc.text),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: _FooterButton(
-                      tooltip: themeDark ? 'Light mode' : 'Dark mode',
-                      onTap: context.read<AppState>().toggleTheme,
-                      sc: sc,
-                      expand: true,
-                      child: Icon(
-                        themeDark
-                            ? Icons.light_mode_outlined
-                            : Icons.dark_mode_outlined,
-                        size: 17,
-                        color: sc.text,
-                      ),
-                    ),
-                  ),
-                  if (_vaultUnlocked) ...[
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: _FooterButton(
-                        tooltip: 'Lock wallet storage',
-                        onTap: _lock,
-                        sc: sc,
-                        expand: true,
-                        child: Icon(
-                          Icons.lock_outline,
-                          size: 17,
-                          color: sc.text,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+              syncButton,
+              const SizedBox(width: AppSpacing.xs),
+              themeButton,
+              if (_vaultUnlocked) ...[
+                const SizedBox(width: AppSpacing.xs),
+                lockButton,
+              ],
             ],
           ),
         );
       },
-    );
-  }
-}
-
-/// One footer control. A bounded, bordered target — the same surface grammar
-/// as a nav item, so it reads as something you press.
-class _FooterButton extends StatefulWidget {
-  const _FooterButton({
-    required this.tooltip,
-    required this.onTap,
-    required this.child,
-    required this.sc,
-    this.expand = false,
-  });
-
-  final String tooltip;
-  final VoidCallback? onTap;
-  final Widget child;
-  final _SC sc;
-
-  /// Fill the width given by the parent (the expanded footer lays the three
-  /// controls out as equal columns).
-  final bool expand;
-
-  @override
-  State<_FooterButton> createState() => _FooterButtonState();
-}
-
-class _FooterButtonState extends State<_FooterButton> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final enabled = widget.onTap != null;
-    final lit = _hover && enabled;
-    return _SidebarTooltip(
-      message: widget.tooltip,
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        child: GestureDetector(
-          onTap: widget.onTap,
-          behavior: HitTestBehavior.opaque,
-          child: AnimatedContainer(
-            duration: AppMotion.of(context, AppMotion.quick),
-            width: widget.expand ? null : 34,
-            height: 34,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: lit ? s.cardHover : s.cardBase,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              border: Border.all(color: lit ? s.edgeStrong : s.edge),
-            ),
-            child: Opacity(opacity: enabled ? 1 : 0.45, child: widget.child),
-          ),
-        ),
-      ),
     );
   }
 }

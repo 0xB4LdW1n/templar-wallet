@@ -30,7 +30,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../bridge/bridge_provider.dart';
-import '../../shared/widgets/badges.dart';
+import '../../shared/widgets/buttons.dart';
+import '../../shared/widgets/choice_list.dart';
+import '../../shared/widgets/hybrid_kit.dart';
+import '../../shared/widgets/list_rows.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
@@ -253,129 +257,130 @@ class _DeviceListSectionState extends State<DeviceListSection> {
     // USB table does not recognise — so identification stays offered even when
     // detection found nothing, or a brand-new model could never be paired.
     final canIdentify = rows.any((r) => r.usable) || hwiFallbackUsable;
+    final error = _error;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: s.surfaceSolid,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: s.edge),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header strip — title, count, and the one button that talks to the
-          // devices.
-          Container(
+    // One card: a header row with the count and the one action that talks
+    // to the devices, then one row per physical device.
+    return ListCard(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            kListPad,
+            AppSpacing.sm,
+            AppSpacing.sm,
+            AppSpacing.sm,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  rows.isEmpty
+                      ? 'Connected devices'
+                      : 'Connected devices · ${rows.length}',
+                  style: AppTypography.label.copyWith(color: s.inkSecondary),
+                ),
+              ),
+              if (_identifying)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: AppSpacing.md,
+                        height: AppSpacing.md,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        'Identifying',
+                        style: AppTypography.caption.copyWith(
+                          color: s.inkSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                GhostButton(
+                  onPressed: canIdentify ? _identify : _detect,
+                  icon: anyUnidentified
+                      ? Icons.fingerprint_outlined
+                      : Icons.refresh_outlined,
+                  label: anyUnidentified ? 'Identify' : 'Refresh',
+                ),
+            ],
+          ),
+        ),
+        if (rows.isEmpty)
+          Padding(
             padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.cardPadding,
+              horizontal: kListPad,
+              vertical: AppSpacing.lg,
+            ),
+            child: Text(
+              _detectedOnce
+                  ? 'Nothing connected yet. Plug in your device with its '
+                        'cable — this list updates on its own.'
+                  : 'Looking for devices…',
+              style: AppTypography.body.copyWith(color: s.inkSecondary),
+            ),
+          )
+        else
+          for (final row in rows)
+            _DeviceRowTile(
+              row: row,
+              isSelected:
+                  row.fingerprint != null &&
+                  row.fingerprint == widget.selected?.fingerprint,
+              liquidWanted: widget.liquidWanted,
+              busy: _identifying,
+              onTap: () {
+                final device = row.device;
+                if (device != null) {
+                  widget.onSelect(device);
+                } else if (row.usable && !_identifying) {
+                  _identify();
+                }
+              },
+            ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: kListPad,
               vertical: AppSpacing.md,
             ),
-            decoration: BoxDecoration(
-              color: s.surfaceRaised,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppSpacing.radiusMd),
-              ),
-            ),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.usb_rounded, size: 18, color: s.inkSecondary),
+                SizedBox(
+                  height: 20,
+                  child: Icon(
+                    Icons.error_outline,
+                    size: AppSpacing.iconSmall,
+                    color: s.danger,
+                  ),
+                ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
-                    rows.isEmpty
-                        ? 'Connected devices'
-                        : 'Connected devices · ${rows.length}',
-                    style: AppTypography.sectionTitle,
+                    error,
+                    style: AppTypography.caption.copyWith(color: s.danger),
                   ),
                 ),
-                if (_identifying)
-                  const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  TextButton.icon(
-                    onPressed: canIdentify ? _identify : _detect,
-                    icon: Icon(
-                      anyUnidentified
-                          ? Icons.fingerprint
-                          : Icons.refresh_rounded,
-                      size: 16,
-                    ),
-                    label: Text(anyUnidentified ? 'Identify' : 'Rescan'),
-                  ),
               ],
             ),
           ),
-          if (rows.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.cardPadding),
-              child: Row(
-                children: [
-                  Icon(Icons.usb_off_rounded, size: 18, color: s.inkFaint),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Text(
-                      _detectedOnce
-                          ? 'Nothing connected yet. Plug in your device with '
-                                'its cable — this list updates on its own.'
-                          : 'Looking for devices…',
-                      style: AppTypography.bodySmall.copyWith(
-                        color: s.inkSecondary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else
-            for (final row in rows)
-              _DeviceRowTile(
-                row: row,
-                isSelected:
-                    row.fingerprint != null &&
-                    row.fingerprint == widget.selected?.fingerprint,
-                liquidWanted: widget.liquidWanted,
-                busy: _identifying,
-                onTap: () {
-                  final device = row.device;
-                  if (device != null) {
-                    widget.onSelect(device);
-                  } else if (row.usable && !_identifying) {
-                    _identify();
-                  }
-                },
-              ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.cardPadding,
-                0,
-                AppSpacing.cardPadding,
-                AppSpacing.cardPadding,
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.error_outline_rounded, size: 16, color: s.danger),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      _error!,
-                      style: AppTypography.bodySmall.copyWith(color: s.danger),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
+      ],
     );
   }
 }
 
-class _DeviceRowTile extends StatelessWidget {
+/// One device: its radio (or a block mark when it cannot be used here), the
+/// model, what it can hold, its state, and how it is attached.
+class _DeviceRowTile extends StatefulWidget {
   const _DeviceRowTile({
     required this.row,
     required this.isSelected,
@@ -391,109 +396,163 @@ class _DeviceRowTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_DeviceRowTile> createState() => _DeviceRowTileState();
+}
+
+class _DeviceRowTileState extends State<_DeviceRowTile> {
+  bool _hover = false;
+  bool _focus = false;
+
+  @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
+    final row = widget.row;
     final usable = row.usable;
+    final enabled = usable && !widget.busy;
 
-    return InkWell(
-      onTap: usable && !busy ? onTap : null,
-      child: Container(
-        padding: const EdgeInsets.all(AppSpacing.cardPadding),
-        decoration: BoxDecoration(
-          color: isSelected ? s.accentSoft : Colors.transparent,
-          border: Border(top: BorderSide(color: s.edge)),
-        ),
-        child: Row(
-          children: [
-            // Selection affordance: a real radio for the devices that can be
-            // chosen, an icon for the ones that cannot.
-            if (usable)
-              Icon(
-                isSelected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked,
-                size: 20,
-                color: isSelected ? s.accent : s.inkFaint,
-              )
-            else
-              Icon(Icons.block_rounded, size: 20, color: s.inkFaint),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          row.model,
-                          style: AppTypography.sectionTitle.copyWith(
-                            color: usable ? s.ink : s.inkFaint,
-                          ),
-                          overflow: TextOverflow.ellipsis,
+    final (Color dot, String word) = row.isIdentified
+        ? (s.success, 'Ready')
+        : usable
+        ? (s.success, 'Connected')
+        : (s.warning, 'Not usable here');
+
+    final body = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.instant),
+      curve: AppMotion.settle,
+      color: enabled && _hover ? s.hover : Colors.transparent,
+      foregroundDecoration: _focus && enabled
+          ? BoxDecoration(border: Border.all(color: s.focus, width: 2))
+          : null,
+      constraints: const BoxConstraints(minHeight: AppSpacing.rowHeight),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kListPad,
+        vertical: AppSpacing.md,
+      ),
+      child: Row(
+        children: [
+          // Selection affordance: a real radio for the devices that can be
+          // chosen, a block mark for the ones that cannot. Centred in the
+          // list's icon column so the text lines up with the header.
+          SizedBox(
+            width: kListTile,
+            child: Center(
+              child: usable
+                  ? OptionRadio(selected: widget.isSelected)
+                  : Icon(
+                      Icons.block_outlined,
+                      size: AppSpacing.icon,
+                      color: s.inkFaint,
+                    ),
+            ),
+          ),
+          const SizedBox(width: kListGap),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        row.model,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyOf(context).copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: usable ? s.ink : s.inkFaint,
                         ),
                       ),
+                    ),
+                    // What this device can hold, said before it is chosen —
+                    // with a warning dot when the wizard asked for Liquid and
+                    // this device cannot carry it.
+                    if (usable) ...[
                       const SizedBox(width: AppSpacing.sm),
-                      if (row.isIdentified)
-                        const StatusBadge(
-                          label: 'ready',
-                          variant: BadgeVariant.success,
-                          dot: true,
-                        )
-                      else if (usable)
-                        const StatusBadge(
-                          label: 'connected',
-                          variant: BadgeVariant.neutral,
-                          dot: true,
-                        )
-                      else
-                        const StatusBadge(
-                          label: 'not usable here',
-                          variant: BadgeVariant.warning,
-                        ),
-                      const SizedBox(width: AppSpacing.xs),
-                      // What this device can hold, said before it is chosen.
-                      if (usable)
-                        StatusBadge(
-                          label: row.supportsLiquid
-                              ? 'BTC + Liquid'
-                              : 'BTC only',
-                          variant: row.supportsLiquid
-                              ? BadgeVariant.accent
-                              : (liquidWanted
-                                    ? BadgeVariant.warning
-                                    : BadgeVariant.neutral),
-                        ),
+                      QuietTag(
+                        label: row.supportsLiquid ? 'BTC + Liquid' : 'BTC only',
+                        dot: !row.supportsLiquid && widget.liquidWanted
+                            ? s.warning
+                            : null,
+                      ),
                     ],
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    _subtitle(),
-                    style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  _subtitle(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
+                ),
+              ],
             ),
-          ],
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: dot,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(word, style: AppTypography.caption.copyWith(color: s.ink)),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    return Semantics(
+      button: usable,
+      selected: widget.isSelected,
+      enabled: enabled,
+      child: MergeSemantics(
+        child: FocusableActionDetector(
+          enabled: enabled,
+          mouseCursor: enabled
+              ? SystemMouseCursors.click
+              : SystemMouseCursors.basic,
+          onShowHoverHighlight: (v) => setState(() => _hover = v),
+          onShowFocusHighlight: (v) => setState(() => _focus = v),
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                widget.onTap();
+                return null;
+              },
+            ),
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: enabled ? widget.onTap : null,
+            child: body,
+          ),
         ),
       ),
     );
   }
 
   String _subtitle() {
+    final row = widget.row;
     final parts = <String>[];
     if (row.isIdentified) {
       parts.add('fingerprint ${row.fingerprint}');
     } else if (row.usable) {
       // Worth naming the slower route, because it is the one that asks for an
       // install and takes seconds rather than milliseconds.
-      parts.add(row.drivable ? 'tap to identify' : 'tap to identify via HWI');
+      parts.add(
+        row.drivable ? 'select to identify' : 'select to identify via HWI',
+      );
     } else {
       parts.add('needs the HWI helper — $hwiUnavailableHere');
     }
     if (row.usbId != null) parts.add(row.usbId!);
     parts.add(row.transport);
-    return parts.join('  ·  ');
+    return parts.join(' · ');
   }
 }

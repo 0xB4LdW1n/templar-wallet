@@ -58,25 +58,34 @@ class PriceService extends ChangeNotifier {
     await fetch(force: true);
   }
 
-  /// Format a satoshi amount as a fiat value in the selected currency.
-  /// Returns null if the price is not yet loaded.
+  /// Format a satoshi amount as a fiat value in the selected currency
+  /// ([formatFiat]). Returns null if the price is not yet loaded.
   String? fiatDisplay(int sats) {
     if (_btcPrice <= 0) return null;
-    final value = sats / 1e8 * _btcPrice;
-    if (value >= 1000) return '$symbol${(value / 1000).toStringAsFixed(1)}k';
-    if (value >= 1) return '$symbol${value.toStringAsFixed(2)}';
-    return '$symbol${value.toStringAsFixed(4)}';
+    return formatFiat(sats / 1e8 * _btcPrice, symbol);
   }
 
-  /// Format a satoshi total as a fiat value (used for the net-worth headline).
+  /// Format a satoshi total as a fiat value ([formatFiat]); `—` while there
+  /// is no price.
   String totalFiatDisplay(int sats) {
     if (_btcPrice <= 0) return '—';
-    final value = sats / 1e8 * _btcPrice;
-    if (value >= 1000000) {
-      return '$symbol${(value / 1000000).toStringAsFixed(2)}M';
-    }
-    if (value >= 1000) return '$symbol${(value / 1000).toStringAsFixed(2)}k';
-    return '$symbol${value.toStringAsFixed(2)}';
+    return formatFiat(sats / 1e8 * _btcPrice, symbol);
+  }
+
+  /// Every fiat figure in the app: the symbol, the integer part grouped in
+  /// thousands, then two decimals — or four below one unit, where two would
+  /// round a real amount to zero. Never abbreviated: `€1,183.20`, not
+  /// `€1.18k` (design.md, "Type": this is someone's money).
+  static String formatFiat(double value, String symbol) {
+    if (!value.isFinite) return '—';
+    final negative = value < 0;
+    final v = value.abs();
+    var fixed = v.toStringAsFixed(v >= 1 ? 2 : 4);
+    // 0.99996 rounds up to "1.0000": state it as the one unit it now is.
+    if (v < 1 && fixed.startsWith('1')) fixed = v.toStringAsFixed(2);
+    final dot = fixed.indexOf('.');
+    final whole = int.parse(fixed.substring(0, dot));
+    return '${negative ? '-' : ''}$symbol${_group(whole)}${fixed.substring(dot)}';
   }
 
   /// Format a satoshi amount in the user's Bitcoin denomination.

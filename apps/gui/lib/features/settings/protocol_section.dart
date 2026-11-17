@@ -1,10 +1,8 @@
 /// Settings › Templar Protocol — everything the connector does, in one page.
 ///
-/// Before this, the wallet's half of Templar Protocol was invisible: a paste box
-/// buried in Network & Sync, and no way to see which sites hold a watch-only
-/// view or what was signed for them. The cards read top to bottom as the
-/// question a user actually has: am I ready, how do I open a request, who is
-/// connected, what did I sign, which wallet answers, and what is this.
+/// The groups read top to bottom as the question a user actually has: am I
+/// ready, how do I open a request, who is connected, what did I sign, which
+/// wallet answers, and what is this.
 library;
 
 import 'package:flutter/material.dart';
@@ -21,12 +19,10 @@ import '../../services/protocol_store.dart';
 import '../../shared/relative_time.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/cards.dart';
 import '../../shared/widgets/expander.dart';
-import '../../shared/widgets/glass_dialog.dart';
+import '../../shared/widgets/app_dialog.dart';
 import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/list_rows.dart';
-import '../../shared/widgets/page_header.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
@@ -36,6 +32,12 @@ import '../protocol/models/protocol_wallet_fit.dart';
 import '../protocol/protocol_paste_card.dart';
 import '../wallet_picker/models/wallet_summary.dart';
 import 'liquid_network_switch.dart';
+import 'settings_kit.dart';
+
+/// The protocol's network status, worded once (CLAUDE.md rule 5).
+const String kProtocolNetworkStatus =
+    'Today the protocol runs on a test regtest; in beta it will run on a '
+    'server of ours; then Liquid mainnet.';
 
 /// Where the connector is written down, for anyone who wants the protocol.
 const String kProtocolGuideUrl =
@@ -123,7 +125,7 @@ class _ProtocolSectionState extends State<ProtocolSection> {
         context,
         target: target,
         // Regtest keeps the id the engine already knows, else the stock one.
-        // The editable field lives in Network & Sync, one tap away.
+        // The editable field lives in Network, one tap away.
         policyAsset: info.policyAsset.isNotEmpty && info.isRegtest
             ? info.policyAsset
             : info.regtestDefaultPolicyAsset,
@@ -153,16 +155,17 @@ class _ProtocolSectionState extends State<ProtocolSection> {
   Future<void> _forget(ProtocolConnectedSite site) async {
     final ok = await showAppDialog<bool>(
       context,
-      builder: (ctx) => GlassDialog(
+      builder: (ctx) => PromptDialog(
         title: 'Forget ${site.site}?',
-        icon: Icons.link_off,
+        icon: Icons.link_off_outlined,
         actions: [
-          SecondaryButton(
+          GhostButton(
             label: 'Cancel',
             onPressed: () => Navigator.pop(ctx, false),
           ),
-          PrimaryButton(
+          DangerButton(
             label: 'Forget',
+            icon: Icons.link_off_outlined,
             onPressed: () => Navigator.pop(ctx, true),
           ),
         ],
@@ -173,7 +176,9 @@ class _ProtocolSectionState extends State<ProtocolSection> {
           'the watch-only descriptor of "${site.walletName}" — it can still '
           'see that wallet\'s Liquid balance and history — until you remove '
           'the wallet on the site itself. Nothing here can revoke it.',
-          style: AppTypography.body,
+          style: AppTypography.body.copyWith(
+            color: AppScheme.of(ctx).inkSecondary,
+          ),
         ),
       ),
     );
@@ -192,16 +197,17 @@ class _ProtocolSectionState extends State<ProtocolSection> {
   Future<void> _clearHistory() async {
     final ok = await showAppDialog<bool>(
       context,
-      builder: (ctx) => GlassDialog(
+      builder: (ctx) => PromptDialog(
         title: 'Clear signing history?',
         icon: Icons.delete_outline,
         actions: [
-          SecondaryButton(
+          GhostButton(
             label: 'Cancel',
             onPressed: () => Navigator.pop(ctx, false),
           ),
-          PrimaryButton(
+          DangerButton(
             label: 'Clear',
+            icon: Icons.delete_outline,
             onPressed: () => Navigator.pop(ctx, true),
           ),
         ],
@@ -209,7 +215,9 @@ class _ProtocolSectionState extends State<ProtocolSection> {
           'Removes this device\'s list of signing requests. The loans and the '
           'transactions themselves are unaffected — they live on the chain and '
           'on the site.',
-          style: AppTypography.body,
+          style: AppTypography.body.copyWith(
+            color: AppScheme.of(ctx).inkSecondary,
+          ),
         ),
       ),
     );
@@ -227,30 +235,25 @@ class _ProtocolSectionState extends State<ProtocolSection> {
 
   @override
   Widget build(BuildContext context) {
-    final phone = AppLayout.isPhone(context);
     final loansEnabled = context.watch<AppState>().loansEnabled;
     if (_loading) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(AppSpacing.xl),
           child: SizedBox(
-            width: 20,
-            height: 20,
+            width: AppSpacing.lg,
+            height: AppSpacing.lg,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
         ),
       );
     }
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (!phone) const PageHeader(title: 'Templar Protocol'),
-        if (loansEnabled) ...[
-          _loansShortcut(),
-          const SizedBox(height: AppSpacing.lg),
-        ],
+        if (loansEnabled) ...[_loansShortcut(), const SettingsGap()],
         _status(),
-        const SizedBox(height: AppSpacing.lg),
+        const SettingsGap(),
         ProtocolPasteCard(
           title: 'Open a request',
           subtitle:
@@ -259,13 +262,13 @@ class _ProtocolSectionState extends State<ProtocolSection> {
               'scan the QR the loan page shows.',
           onOpen: _openLink,
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SettingsGap(),
         _connectedSites(),
-        const SizedBox(height: AppSpacing.lg),
+        const SettingsGap(),
         _signingHistory(),
-        const SizedBox(height: AppSpacing.lg),
+        const SettingsGap(),
         _preferences(),
-        const SizedBox(height: AppSpacing.lg),
+        const SettingsGap(),
         _howItWorks(),
       ],
     );
@@ -274,7 +277,6 @@ class _ProtocolSectionState extends State<ProtocolSection> {
   /// The way to the loans themselves once Settings › Advanced has enabled
   /// that optional feature. This page remains the connector's bookkeeping.
   Widget _loansShortcut() {
-    final s = AppScheme.of(context);
     final withToken = _sites.where((x) => x.hasPortfolio).length;
     final subtitle = _sites.isEmpty
         ? 'Active loans, payments and pending signatures, once a site is connected'
@@ -287,7 +289,6 @@ class _ProtocolSectionState extends State<ProtocolSection> {
         ListRow(
           key: const Key('protocol-loans-shortcut'),
           icon: Icons.handshake_outlined,
-          tint: s.liquid,
           title: 'Loans',
           subtitle: subtitle,
           chevron: true,
@@ -303,124 +304,140 @@ class _ProtocolSectionState extends State<ProtocolSection> {
     final info = _info;
     final locked = info?.envLocked ?? false;
     final target = _otherNetwork;
-    return FormCard(
-      title: 'Status',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_error != null) ...[
-            DangerBanner(message: _error!),
-            const SizedBox(height: AppSpacing.lg),
-          ],
-          if (info == null)
-            Text(
+    final error = _error;
+    return SettingsGroup(
+      label: 'Status',
+      blocks: true,
+      note: kProtocolNetworkStatus,
+      children: [
+        if (error != null) SettingsBlock(child: DangerBanner(message: error)),
+        if (info == null)
+          SettingsBlock(
+            child: Text(
               'The wallet engine did not answer, so there is nothing to be '
               'ready for yet.',
               style: AppTypography.caption.copyWith(color: s.inkSecondary),
-            )
-          else ...[
-            Row(
+            ),
+          )
+        else ...[
+          SettingsBlock(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.check_circle_outline, size: 18, color: s.liquid),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    'Ready for ${protocolNetworkLabel(info.network)}'
-                    '${info.isRegtest ? ' · policy asset ${protocolShortAsset(info.policyAsset)}' : ''}',
-                    style: AppTypography.body.copyWith(color: s.ink),
-                  ),
+                Row(
+                  children: [
+                    SettingsDot(s.success),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        'Ready for ${protocolNetworkLabel(info.network)}'
+                        '${info.isRegtest ? ' · policy asset ${protocolShortAsset(info.policyAsset)}' : ''}',
+                        style: AppTypography.body.copyWith(color: s.ink),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Requests from a site on another chain are refused, and the '
+                  'screen offers the switch. Chain: ${info.backendDescription}',
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'Requests from a site on another chain are refused, and the '
-              'screen offers the switch. Chain: ${info.backendDescription}.',
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            if (locked)
-              const InfoBanner(
+          ),
+          if (locked)
+            const SettingsBlock(
+              child: InfoBanner(
                 message:
                     'TEMPLAR_LIQUID_NETWORK fixes the network for this run '
                     'of the app. Unset the variable to change it here.',
-              )
-            else if (target != null) ...[
-              SecondaryButton(
-                key: const Key('protocol-change-network'),
-                label: 'Change network',
-                icon: Icons.swap_horiz,
-                isLoading: _busy,
-                isFullWidth: phone,
-                onPressed: _busy ? null : _changeNetwork,
               ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Switches to Liquid $target and closes the open wallet. To pick '
-                'another regtest asset id, use Network & Sync.',
-                style: AppTypography.caption.copyWith(color: s.inkFaint),
+            )
+          else if (target != null)
+            SettingsBlock(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SecondaryButton(
+                    key: const Key('protocol-change-network'),
+                    label: 'Change network',
+                    icon: Icons.swap_horiz_outlined,
+                    isLoading: _busy,
+                    isFullWidth: phone,
+                    onPressed: _busy ? null : _changeNetwork,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Switches to Liquid $target and closes the open wallet. To '
+                    'pick another regtest asset id, use Settings › Network.',
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ],
+            ),
         ],
-      ),
+      ],
     );
   }
 
   Widget _connectedSites() {
     final s = AppScheme.of(context);
-    return FormCard(
-      title: 'Connected sites',
-      subtitle:
-          'Sites holding a watch-only view of one of your wallets. They '
-          'can see that wallet\'s Liquid balance and history and build loan '
+    return SettingsGroup(
+      label: 'Connected sites',
+      note:
+          'Sites holding a watch-only view of one of your wallets. They can '
+          'see that wallet\'s Liquid balance and history and build loan '
           'transactions for it; they cannot spend.',
-      child: _sites.isEmpty
-          ? Text(
-              'No site has been connected from this device.',
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < _sites.length; i++) ...[
-                  if (i > 0) const Divider(height: AppSpacing.lg),
-                  _SiteRow(site: _sites[i], onForget: () => _forget(_sites[i])),
-                ],
-              ],
-            ),
+      blocks: _sites.isEmpty,
+      children: _sites.isEmpty
+          ? [
+              SettingsBlock(
+                child: Text(
+                  'No site has been connected from this device.',
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
+                ),
+              ),
+            ]
+          : [
+              for (final site in _sites)
+                _SiteRow(site: site, onForget: () => _forget(site)),
+            ],
     );
   }
 
   Widget _signingHistory() {
     final s = AppScheme.of(context);
-    return FormCard(
-      title: 'Signing history',
-      subtitle:
+    return SettingsGroup(
+      label: 'Signing history',
+      note:
           'The last ${ProtocolStore.historyLimit} requests answered from '
           'this device. What was signed is not kept here — no transaction, no '
           'amounts — only that it happened and how it ended.',
-      trailing: _history.isEmpty
+      blocks: _history.isEmpty,
+      footer: _history.isEmpty
           ? null
-          : GhostButton(
-              key: const Key('protocol-clear-history'),
-              label: 'Clear history',
-              onPressed: _clearHistory,
+          : Align(
+              alignment: Alignment.centerLeft,
+              child: GhostButton(
+                key: const Key('protocol-clear-history'),
+                label: 'Clear history',
+                icon: Icons.delete_outline,
+                onPressed: _clearHistory,
+              ),
             ),
-      child: _history.isEmpty
-          ? Text(
-              'Nothing signed yet.',
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < _history.length; i++) ...[
-                  if (i > 0) const Divider(height: AppSpacing.lg),
-                  _HistoryRow(record: _history[i]),
-                ],
-              ],
-            ),
+      children: _history.isEmpty
+          ? [
+              SettingsBlock(
+                child: Text(
+                  'Nothing signed yet.',
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
+                ),
+              ),
+            ]
+          : [for (final r in _history) _HistoryRow(record: r)],
     );
   }
 
@@ -429,39 +446,41 @@ class _ProtocolSectionState extends State<ProtocolSection> {
     final usable = _wallets
         .where((w) => protocolWalletFits(w, connect: true))
         .toList();
-    return FormCard(
-      title: 'Preferred wallet for Templar Protocol requests',
-      subtitle:
+    return SettingsGroup(
+      label: 'Preferred wallet',
+      note:
           'The wallet a signing request is answered with, and the one '
           'offered first when a site asks to connect. Every request still asks '
           'for your app password and the confirmation — this only saves the '
           'picking.',
-      child: usable.isEmpty
-          ? Text(
-              'No wallet qualifies yet: Templar Protocol needs a software wallet or '
-              'a Jade with Liquid enabled.',
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _PreferenceRow(
-                  label: 'No preference',
-                  detail: 'Ask every time, or use the open wallet',
-                  selected: _preferredId == null,
-                  onTap: () => _setPreferred(null),
+      blocks: usable.isEmpty,
+      children: usable.isEmpty
+          ? [
+              SettingsBlock(
+                child: Text(
+                  'No wallet qualifies yet: Templar Protocol needs a software '
+                  'wallet or a Jade with Liquid enabled.',
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
                 ),
-                for (final w in usable)
-                  _PreferenceRow(
-                    label: w.name,
-                    detail:
-                        '${w.displayType} · ${w.networksLabel}'
-                        '${w.masterFingerprint != null ? ' · ${w.masterFingerprint}' : ''}',
-                    selected: _preferredId == w.id,
-                    onTap: () => _setPreferred(w.id),
-                  ),
-              ],
-            ),
+              ),
+            ]
+          : [
+              _PreferenceRow(
+                label: 'No preference',
+                detail: 'Ask every time, or use the open wallet',
+                selected: _preferredId == null,
+                onTap: () => _setPreferred(null),
+              ),
+              for (final w in usable)
+                _PreferenceRow(
+                  label: w.name,
+                  detail:
+                      '${w.displayType} · ${w.networksLabel}'
+                      '${w.masterFingerprint != null ? ' · ${w.masterFingerprint}' : ''}',
+                  selected: _preferredId == w.id,
+                  onTap: () => _setPreferred(w.id),
+                ),
+            ],
     );
   }
 
@@ -472,7 +491,7 @@ class _ProtocolSectionState extends State<ProtocolSection> {
       title: 'How it works',
       subtitle:
           'What a connection shares, what a signature does, where the '
-          'loan key lives.',
+          'loan key lives',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -484,7 +503,7 @@ class _ProtocolSectionState extends State<ProtocolSection> {
                 'pick, its loan escrow key and one receive address. No secret '
                 'leaves this device.',
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
           const _Step(
             n: 2,
             title: 'Sign shows both readings',
@@ -495,7 +514,7 @@ class _ProtocolSectionState extends State<ProtocolSection> {
                 'broadcasts once every party has signed. Templar never '
                 'broadcasts a loan transaction and never stores its PSET.',
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
           const _Step(
             n: 3,
             title: 'The escrow key is its own account',
@@ -516,17 +535,21 @@ class _ProtocolSectionState extends State<ProtocolSection> {
                 children: [
                   Icon(
                     Icons.menu_book_outlined,
-                    size: 18,
+                    size: AppSpacing.icon,
                     color: s.inkSecondary,
                   ),
                   const SizedBox(width: AppSpacing.md),
                   Expanded(
                     child: Text(
                       'docs/guides/PROTOCOL_CONNECTOR.md',
-                      style: AppTypography.body.copyWith(color: s.accent),
+                      style: AppTypography.mono.copyWith(color: s.ink),
                     ),
                   ),
-                  const Icon(Icons.open_in_new, size: 16),
+                  Icon(
+                    Icons.open_in_new_outlined,
+                    size: AppSpacing.iconSmall,
+                    color: s.inkFaint,
+                  ),
                 ],
               ),
             ),
@@ -539,6 +562,8 @@ class _ProtocolSectionState extends State<ProtocolSection> {
 
 // ── Rows ──────────────────────────────────────────────────────────────────────
 
+/// A connected site: its name, its origin in mono, what it holds, and the
+/// way to forget it.
 class _SiteRow extends StatelessWidget {
   const _SiteRow({required this.site, required this.onForget});
   final ProtocolConnectedSite site;
@@ -554,57 +579,52 @@ class _SiteRow extends StatelessWidget {
         'escrow key ${site.escrowFingerprint}',
       if (site.receiveAddress.isNotEmpty) 'one receive address',
     ].join(' · ');
-
-    final head = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(site.site, style: AppTypography.body),
-              const SizedBox(height: 2),
-              Text(
-                '${site.origin} · ${protocolNetworkLabel(site.network)}',
-                style: AppTypography.caption.copyWith(color: s.inkSecondary),
-              ),
-            ],
-          ),
-        ),
-        if (!phone)
-          GhostButton(
-            label: 'Forget',
-            icon: Icons.link_off,
-            onPressed: onForget,
-          ),
-      ],
+    final forget = GhostButton(
+      label: 'Forget',
+      icon: Icons.link_off_outlined,
+      onPressed: onForget,
     );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        head,
-        const SizedBox(height: AppSpacing.sm),
-        KvRow(label: 'Wallet', value: site.walletName, labelWidth: 96),
-        KvRow(
-          label: 'Connected',
-          value: relativeTimeShort(site.connectedAt.toLocal()),
-          labelWidth: 96,
-        ),
-        if (shared.isNotEmpty)
-          KvRow(label: 'Shared', value: shared, labelWidth: 96),
-        if (site.receiveAddress.isNotEmpty)
-          KvRow(label: 'Address', value: site.receiveAddress, labelWidth: 96),
-        if (phone) ...[
-          const SizedBox(height: AppSpacing.sm),
-          SecondaryButton(
-            label: 'Forget',
-            icon: Icons.link_off,
-            isFullWidth: true,
-            onPressed: onForget,
+    return Padding(
+      padding: const EdgeInsets.all(kListPad),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const ListIconTile(icon: Icons.language_outlined),
+          const SizedBox(width: kListGap),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  site.site,
+                  style: AppTypography.bodyOf(context).copyWith(color: s.ink),
+                ),
+                Text(
+                  '${site.origin} · ${protocolNetworkLabel(site.network)}',
+                  style: AppTypography.monoSmall.copyWith(
+                    color: s.inkSecondary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                KvRow(label: 'Wallet', value: site.walletName),
+                KvRow(
+                  label: 'Connected',
+                  value: relativeTimeShort(site.connectedAt.toLocal()),
+                ),
+                if (shared.isNotEmpty) KvRow(label: 'Shared', value: shared),
+                if (site.receiveAddress.isNotEmpty)
+                  KvRow(label: 'Address', value: site.receiveAddress),
+                if (phone) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Align(alignment: Alignment.centerLeft, child: forget),
+                ],
+              ],
+            ),
           ),
+          if (!phone) ...[const SizedBox(width: AppSpacing.md), forget],
         ],
-      ],
+      ),
     );
   }
 }
@@ -616,8 +636,10 @@ class _HistoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
+    // A status dot where the outcome is a fact worth seeing at a glance;
+    // the quiet ones (refused, cancelled, expired) carry the word alone.
     final colour = switch (record.outcome) {
-      ProtocolSignOutcome.signed => s.liquid,
+      ProtocolSignOutcome.signed => s.success,
       ProtocolSignOutcome.refused => s.inkFaint,
       ProtocolSignOutcome.cancelled => s.inkFaint,
       ProtocolSignOutcome.expired => s.inkFaint,
@@ -628,30 +650,14 @@ class _HistoryRow extends StatelessWidget {
       if (record.action.isNotEmpty) protocolActionLabel(record.action),
     ].join(' · ');
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title.isEmpty ? 'Signing request' : title,
-                style: AppTypography.body,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '${record.site}'
-                '${record.walletName.isNotEmpty ? ' · ${record.walletName}' : ''}'
-                ' · ${relativeTimeShort(record.at.toLocal())}',
-                style: AppTypography.caption.copyWith(color: s.inkSecondary),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        TagChip(label: record.outcome.label, color: colour),
-      ],
+    return SettingsRow(
+      icon: Icons.draw_outlined,
+      title: title.isEmpty ? 'Signing request' : title,
+      subtitle:
+          '${record.site}'
+          '${record.walletName.isNotEmpty ? ' · ${record.walletName}' : ''}'
+          ' · ${relativeTimeShort(record.at.toLocal())}',
+      trailing: TagChip(label: record.outcome.label, color: colour),
     );
   }
 }
@@ -671,34 +677,20 @@ class _PreferenceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    return HoverRow(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-        child: Row(
-          children: [
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              size: 18,
-              color: selected ? s.accent : s.inkFaint,
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: AppTypography.body),
-                  Text(
-                    detail,
-                    style: AppTypography.caption.copyWith(
-                      color: s.inkSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+    return Semantics(
+      selected: selected,
+      child: SettingsRow(
+        // The radio stands in the glyph column, so names start on one line.
+        leading: Icon(
+          selected
+              ? Icons.radio_button_checked_outlined
+              : Icons.radio_button_unchecked_outlined,
+          size: AppSpacing.icon,
+          color: selected ? s.ink : s.inkFaint,
         ),
+        title: label,
+        subtitle: detail,
+        onTap: onTap,
       ),
     );
   }
@@ -716,29 +708,19 @@ class _Step extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 22,
-          height: 22,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: s.accent.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(11),
-          ),
+        SizedBox(
+          width: AppSpacing.xl,
           child: Text(
-            '$n',
-            style: AppTypography.caption.copyWith(
-              color: s.accent,
-              fontWeight: FontWeight.w700,
-            ),
+            '$n.',
+            style: AppTypography.mono.copyWith(color: s.inkFaint),
           ),
         ),
-        const SizedBox(width: AppSpacing.md),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: AppTypography.body),
-              const SizedBox(height: 2),
+              Text(title, style: AppTypography.body.copyWith(color: s.ink)),
+              const SizedBox(height: AppSpacing.xs),
               Text(
                 body,
                 style: AppTypography.caption.copyWith(color: s.inkSecondary),

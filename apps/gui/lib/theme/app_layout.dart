@@ -19,7 +19,15 @@ abstract final class AppLayout {
   static const double minTouchTarget = 48;
 
   /// Android or iOS: the mobile shell, touch input, no hover.
-  static final bool isMobilePlatform = Platform.isAndroid || Platform.isIOS;
+  static bool get isMobilePlatform => debugMobileOverride ?? _nativeMobile;
+  static final bool _nativeMobile = Platform.isAndroid || Platform.isIOS;
+
+  /// Test seam: a host (macOS, Linux CI) is never a mobile platform, so the
+  /// phone tree could not be laid out under `flutter test`. Setting this to
+  /// true makes every [isPhone] branch and the mobile shell reachable there.
+  /// Null everywhere else — shipped builds never write it.
+  @visibleForTesting
+  static bool? debugMobileOverride;
 
   /// A phone-sized window on a mobile platform. Also true on a tablet held
   /// narrow enough; false on every desktop window by construction.

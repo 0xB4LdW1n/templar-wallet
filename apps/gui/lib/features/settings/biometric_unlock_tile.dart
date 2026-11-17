@@ -12,13 +12,10 @@ import 'package:flutter/material.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
 import '../../services/biometric_unlock_service.dart';
-import '../../shared/widgets/cards.dart';
 import '../../shared/widgets/list_rows.dart';
-import '../../theme/app_colors.dart';
-import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
-import '../../theme/app_typography.dart';
 import '../vault/lock_action.dart';
+import 'settings_kit.dart';
 
 /// Android and macOS: a fingerprint (Touch ID on a Mac) standing in for the
 /// vault passphrase at launch (see [BiometricUnlockService]). Hidden on
@@ -76,14 +73,12 @@ class _BiometricUnlockTileState extends State<BiometricUnlockTile> {
     );
   }
 
-  void _snack(String text, {bool danger = false}) {
+  /// The themed snack bar draws every message the same way, failures too
+  /// (no tinted fills, design.md).
+  void _snack(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(text),
-        backgroundColor: danger ? AppColors.danger : null,
-        duration: const Duration(seconds: 3),
-      ),
+      SnackBar(content: Text(text), duration: const Duration(seconds: 3)),
     );
   }
 
@@ -102,12 +97,12 @@ class _BiometricUnlockTileState extends State<BiometricUnlockTile> {
     try {
       status = await walletBridge.vaultStatus();
     } catch (e) {
-      _snack('Could not read the vault status: $e', danger: true);
+      _snack('Could not read the vault status: $e');
       return;
     }
     if (!mounted) return;
     if (!status.initialized) {
-      _snack('Set a vault passphrase first.', danger: true);
+      _snack('Set a vault passphrase first.');
       return;
     }
     if (!status.unlocked) {
@@ -159,7 +154,7 @@ class _BiometricUnlockTileState extends State<BiometricUnlockTile> {
             : 'Could not enable biometric unlock. Check that a screen lock '
                   'and a fingerprint are set on this device.';
       }
-      _snack(msg, danger: true);
+      _snack(msg);
     }
     if (!mounted) return;
     setState(() => _busy = false);
@@ -189,8 +184,7 @@ class _BiometricUnlockTileState extends State<BiometricUnlockTile> {
             : 'No fingerprint enrolled on this device';
       }
       return ListRow(
-        icon: Icons.fingerprint_rounded,
-        tint: AppScheme.of(context).success,
+        icon: Icons.fingerprint_outlined,
         title: Platform.isMacOS ? 'Touch ID unlock' : 'Biometric unlock',
         subtitle: subtitle,
         trailing: ListSwitch(
@@ -208,55 +202,57 @@ class _BiometricUnlockTileState extends State<BiometricUnlockTile> {
     // The Mac gets a second switch under the first: the sensor at the
     // confirmation gates. Only shown while the unlock is on — without the
     // sealed key there is nothing for a confirmation to prove.
-    final confirmRow = Platform.isMacOS && _enabled;
+    final mac = Platform.isMacOS;
+    final confirmRow = mac && _enabled;
+    final String unlockNote = usable
+        ? mac
+              ? 'Touch ID opens the vault at launch and after "Lock now".'
+              : '${BiometricUnlockService.sensorName} opens the vault. The '
+                    'passphrase is still asked to reveal the seed and to sign.'
+        : mac
+        ? 'No fingerprint is enrolled in Touch ID. Add one in System '
+              'Settings › Touch ID & Password first.'
+        : 'No fingerprint is enrolled on this device. Add one in the system '
+              'settings first.';
+    final note = confirmRow
+        ? '$unlockNote With confirmations on, signing, sharing wallet data '
+              'and revealing the seed take Touch ID in place of the app '
+              'password. The password always works too.'
+        : unlockNote;
+    // Brings its own top gap so the Security page leaves none behind on a
+    // device without a sensor.
     return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.lg),
-      child: SectionCard(
-        title: Platform.isMacOS ? 'Touch ID unlock' : 'Biometric unlock',
-        child: Column(
-          children: [
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                Platform.isMacOS
-                    ? 'Unlock with Touch ID'
-                    : 'Unlock with fingerprint',
-              ),
-              subtitle: Text(
-                usable
-                    ? Platform.isMacOS
-                          ? 'Touch ID opens the vault at launch and after '
-                                '“Lock now”.'
-                          : '${BiometricUnlockService.sensorName} opens the '
-                                'vault. The passphrase is still asked to reveal '
-                                'the seed and to sign.'
-                    : Platform.isMacOS
-                    ? 'No fingerprint is enrolled in Touch ID. Add one in '
-                          'System Settings › Touch ID & Password first.'
-                    : 'No fingerprint is enrolled on this device. Add one '
-                          'in the system settings first.',
-                style: AppTypography.caption,
-              ),
+      padding: const EdgeInsets.only(top: AppSpacing.xl),
+      child: SettingsGroup(
+        label: mac ? 'Touch ID' : 'Biometric unlock',
+        note: note,
+        children: [
+          SettingsRow(
+            icon: Icons.fingerprint_outlined,
+            title: mac ? 'Unlock with Touch ID' : 'Unlock with fingerprint',
+            subtitle: usable
+                ? 'In place of the passphrase at launch'
+                : 'No fingerprint enrolled',
+            trailing: ListSwitch(
               value: _enabled,
               onChanged: usable && !_busy ? _toggle : null,
-              activeThumbColor: AppColors.accent,
+              semanticLabel: mac
+                  ? 'Unlock with Touch ID'
+                  : 'Unlock with fingerprint',
             ),
-            if (confirmRow)
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Also confirm with Touch ID'),
-                subtitle: Text(
-                  'Signing, sharing wallet data and revealing the seed take '
-                  'Touch ID in place of the app password. The password '
-                  'always works too.',
-                  style: AppTypography.caption,
-                ),
+          ),
+          if (confirmRow)
+            SettingsRow(
+              icon: Icons.verified_user_outlined,
+              title: 'Also confirm with Touch ID',
+              subtitle: 'Signing, sharing and reveals',
+              trailing: ListSwitch(
                 value: _confirm,
                 onChanged: _busy ? null : _toggleConfirm,
-                activeThumbColor: AppColors.accent,
+                semanticLabel: 'Also confirm with Touch ID',
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

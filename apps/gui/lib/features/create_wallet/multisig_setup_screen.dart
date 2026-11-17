@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -13,14 +14,13 @@ import '../../bridge/wallet_bridge.dart';
 import '../../features/wallet_picker/models/wallet_summary.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/choice_list.dart';
 import '../../shared/widgets/hex_text.dart';
+import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/list_rows.dart';
 import '../../shared/widgets/scan_button.dart';
 import '../../shared/widgets/step_flow_scaffold.dart';
 import '../../shared/widgets/step_header.dart';
 import '../../shared/widgets/wallet_created_view.dart';
-import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
@@ -843,7 +843,6 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return StepFlowScaffold(
       currentStep: widget.baseStep + _stageIndex + 1,
       totalSteps: widget.baseStep + _stages.length,
@@ -873,7 +872,7 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
           _importSubtitle(false),
         ),
       ],
-      body: _stageBody(isDark),
+      body: _stageBody(),
       actions: _stageActions,
     );
   }
@@ -886,7 +885,7 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
     _Stage.backup => 'Back up your key',
     _Stage.verify => 'Verify your backup',
     _Stage.importKeys => 'Import the keys',
-    _Stage.review => 'Review & create',
+    _Stage.review => 'Review and create',
     _Stage.success => 'Multisig wallet created',
   };
 
@@ -914,16 +913,16 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
       ? 'Provide all $_n keys — an xpub, a USB device, or a private key held here'
       : 'Provide the other ${_n - 1} keys — an xpub, a USB device, or another private key of yours';
 
-  Widget _stageBody(bool isDark) {
+  Widget _stageBody() {
     if (_generatingKey) return const _Spinner(label: 'Generating secure key…');
     if (_creating) return const _Spinner(label: 'Creating wallet…');
     return switch (_stage) {
-      _Stage.threshold => _thresholdBody(isDark),
+      _Stage.threshold => _thresholdBody(),
       _Stage.seedLength => _seedLengthBody(),
       _Stage.backup => _backupBody(),
       _Stage.verify => _verifyBody(),
-      _Stage.importKeys => _importBody(isDark),
-      _Stage.review => _summaryBody(isDark),
+      _Stage.importKeys => _importBody(),
+      _Stage.review => _summaryBody(),
       _Stage.success => _successBody(),
     };
   }
@@ -931,14 +930,9 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
   Widget get _stageActions {
     if (_generatingKey || _creating) return const SizedBox.shrink();
     if (_stage == _Stage.success) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          PrimaryButton(
-            label: 'Open Wallet',
-            onPressed: () => context.go(AppRoutes.dashboard),
-          ),
-        ],
+      return _StepActions(
+        label: 'Open wallet',
+        onPressed: () => context.go(AppRoutes.dashboard),
       );
     }
     final (label, enabled, onNext) = switch (_stage) {
@@ -956,112 +950,110 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
         () async => _goTo(_Stage.review),
       ),
       _Stage.review => (
-        _creating ? 'Creating…' : 'Create Wallet',
+        _creating ? 'Creating…' : 'Create wallet',
         !_creating,
         _create,
       ),
       _Stage.success => ('', false, () async {}),
     };
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        // Always in the row, so nothing beside it moves between steps.
-        GhostButton(
-          label: 'Back',
-          onPressed: _stageIndex > 0 ? _back : _exitToWizard,
-        ),
-        const SizedBox(width: AppSpacing.md),
-        PrimaryButton(label: label, onPressed: enabled ? () => onNext() : null),
-      ],
+    return _StepActions(
+      label: label,
+      onPressed: enabled ? () => onNext() : null,
+      // Always in the row, so nothing beside it moves between steps.
+      onBack: _stageIndex > 0 ? _back : _exitToWizard,
+      reason: enabled ? null : _blockedReason,
     );
+  }
+
+  /// Why Continue is off, said beside it — a dimmed button alone leaves the
+  /// user hunting for what the step still wants.
+  String? get _blockedReason => switch (_stage) {
+    _Stage.threshold => 'Name the wallet to continue',
+    _Stage.importKeys => _importBlockedReason,
+    _ => null,
+  };
+
+  /// The first thing [_importsComplete] is still waiting for, in its order.
+  String? get _importBlockedReason {
+    if (_busy) return null;
+    final all = _allXpubs;
+    if (all.any((x) => x.isEmpty)) return 'Import every key to continue';
+    if (_importSlots.any((s) => !s.isReady)) {
+      return 'Confirm the new key is written down to continue';
+    }
+    if (all.toSet().length != all.length) {
+      return 'The same key is in two slots';
+    }
+    if (_liquidPossible && !_liquidReady) {
+      return 'Add every Liquid key to continue';
+    }
+    return null;
   }
 
   // ── Threshold — name + M-of-N ─────────────────────────────────────────────
 
-  Widget _thresholdBody(bool isDark) {
-    final phone = AppLayout.isPhone(context);
+  Widget _thresholdBody() {
+    final s = AppScheme.of(context);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // The label sits above the field rather than floating inside it: a
+        // floating label rides up over the field's top edge, and at the top
+        // of the step's scroll view that edge is where it was clipped.
+        const _FieldLabel('Wallet name'),
         TextField(
           controller: _nameController,
-          decoration: const InputDecoration(labelText: 'Wallet name'),
           onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: AppSpacing.xl),
-        // Two pickers side by side need ~180 dp each; stacked on a phone.
-        //
-        // Neither arm uses a flexed child in an unbounded axis. The step's
-        // body is a scroll view, so on a phone — where the pickers stack —
-        // the vertical axis has no bound to divide: a `Flexible` there threw
-        // "non-zero flex but incoming height constraints are unbounded" and
-        // took the whole step down with it, the phone twin of the desktop
-        // `stretch` crash fixed in alpha.8. Plain children stacked, plain
-        // Expanded across a bounded width.
-        if (phone) ...[
-          _NumberPicker(
-            label: 'Signatures required (M)',
-            value: _m,
-            min: 1,
-            max: _n,
-            onChanged: (v) => setState(() => _m = v),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          _NumberPicker(
-            label: 'Total keys (N)',
-            value: _n,
-            min: 2,
-            max: 9,
-            onChanged: (v) => setState(() {
-              _n = v;
-              if (_m > _n) _m = _n;
-            }),
-          ),
-        ] else
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _NumberPicker(
-                  label: 'Signatures required (M)',
-                  value: _m,
-                  min: 1,
-                  max: _n,
-                  onChanged: (v) => setState(() => _m = v),
-                ),
+        // One card, two rows, each a stepper. Stacked rather than side by
+        // side, so a phone and a desktop read it the same way and nothing
+        // here needs a flexed child in the scroll view's unbounded axis.
+        _ThresholdCard(
+          m: _m,
+          n: _n,
+          onM: (v) => setState(() => _m = v),
+          onN: (v) => setState(() {
+            _n = v;
+            if (_m > _n) _m = _n;
+          }),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _PolicyPreview(m: _m, n: _n),
+        const SizedBox(height: AppSpacing.sm),
+        // Neutral information, so it is drawn as such: a quiet line, not a
+        // bordered box that reads as an alert.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 20,
+              child: Icon(
+                Icons.info_outlined,
+                size: AppSpacing.iconSmall,
+                color: s.inkSecondary,
               ),
-              const SizedBox(width: AppSpacing.lg),
-              Expanded(
-                child: _NumberPicker(
-                  label: 'Total keys (N)',
-                  value: _n,
-                  min: 2,
-                  max: 9,
-                  onChanged: (v) => setState(() {
-                    _n = v;
-                    if (_m > _n) _m = _n;
-                  }),
-                ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                'This will be a $_m-of-$_n wallet: $_n keys exist in total, '
+                'and any $_m of them must sign before bitcoin can move',
+                style: AppTypography.caption.copyWith(color: s.inkSecondary),
               ),
-            ],
-          ),
+            ),
+          ],
+        ),
         const SizedBox(height: AppSpacing.xl),
         // Where the keys come from is chosen key by key on the import step.
         // The one thing worth settling first is whether this wallet holds one
         // of them itself, because that key is created and backed up before
         // the others are collected.
-        _RoleCard(
+        _RoleRow(
           n: _n,
-          isDark: isDark,
           watchOnly: _isWatchOnly,
           holdsKey: _holdsKey,
           onHoldsKeyChanged: (v) => setState(() => _holdsKey = v),
-        ),
-        const SizedBox(height: AppSpacing.xl),
-        InfoBanner(
-          message:
-              'This will be a $_m-of-$_n wallet: $_n keys exist in total, '
-              'and any $_m of them must sign before bitcoin can leave the wallet.',
         ),
       ],
     );
@@ -1071,23 +1063,23 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
 
   Widget _seedLengthBody() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SelectableOptionCard(
           title: '12 words',
           description:
               '128 bits of entropy. Standard for most wallets. Easier to back up.',
           isSelected: _seedLength == 12,
-          icon: Icons.lock_outline,
+          icon: Icons.lock_outlined,
           onTap: () => setState(() => _seedLength = 12),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         SelectableOptionCard(
           title: '24 words',
           description:
               '256 bits of entropy. Maximum security. Recommended for large holdings.',
           isSelected: _seedLength == 24,
-          icon: Icons.security,
-          badge: 'Recommended',
+          icon: Icons.security_outlined,
           onTap: () => setState(() => _seedLength = 24),
         ),
         const SizedBox(height: AppSpacing.xl),
@@ -1098,7 +1090,7 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
         ),
         if (_error != null) ...[
           const SizedBox(height: AppSpacing.lg),
-          WarningBanner(title: 'Key generation failed', message: _error!),
+          DangerBanner(title: 'Key generation failed', message: _error!),
         ],
       ],
     );
@@ -1109,7 +1101,7 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
   Widget _backupBody() {
     final mnemonic = _creatorMnemonic ?? [];
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const WarningBanner(
           title: 'Write these words down on paper',
@@ -1117,19 +1109,7 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
               'Never type or photograph your seed phrase. Anyone who sees it can steal your funds. This is shown only once.',
         ),
         const SizedBox(height: AppSpacing.xl),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            mainAxisExtent: 44,
-            crossAxisSpacing: AppSpacing.sm,
-            mainAxisSpacing: AppSpacing.sm,
-          ),
-          itemCount: mnemonic.length,
-          itemBuilder: (context, i) =>
-              _WordTile(index: i + 1, word: mnemonic[i]),
-        ),
+        _WordGrid(words: mnemonic),
       ],
     );
   }
@@ -1138,26 +1118,33 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
 
   Widget _verifyBody() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const InfoBanner(
           message:
               'Enter the words at the requested positions to confirm you have them saved.',
         ),
         const SizedBox(height: AppSpacing.xl),
-        ..._challengeIndexes.map(
-          (i) => Padding(
+        for (final i in _challengeIndexes)
+          Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-            child: TextField(
-              decoration: InputDecoration(labelText: 'Word #${i + 1}'),
-              autocorrect: false,
-              enableSuggestions: false,
-              keyboardType: TextInputType.visiblePassword,
-              textInputAction: TextInputAction.next,
-              onChanged: (v) => setState(() => _challengeAnswers[i] = v),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _FieldLabel('Word ${i + 1}'),
+                TextField(
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  keyboardType: TextInputType.visiblePassword,
+                  textInputAction: TextInputAction.next,
+                  style: AppTypography.mono.copyWith(
+                    color: AppScheme.of(context).ink,
+                  ),
+                  onChanged: (v) => setState(() => _challengeAnswers[i] = v),
+                ),
+              ],
             ),
           ),
-        ),
       ],
     );
   }
@@ -1238,71 +1225,140 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
     setState(() => _expandedSlot = i);
   }
 
-  Widget _importBody(bool isDark) {
+  /// What a slot's right-hand state says.
+  _KeyStatus _statusOf(_ImportSlot slot) {
+    if (slot.checking) return _KeyStatus.checking;
+    if (slot.hasKeyProblem) return _KeyStatus.refused;
+    if (slot.source == _ImportSource.newKey &&
+        slot.mnemonic != null &&
+        !slot.backedUp) {
+      return _KeyStatus.backup;
+    }
+    if (!_slotFilled(slot)) return _KeyStatus.empty;
+    return slot.source == _ImportSource.newKey
+        ? _KeyStatus.created
+        : _KeyStatus.imported;
+  }
+
+  /// The fingerprint a slot's key is known by, when there is one to show.
+  static String? _fingerprintOf(_ImportSlot slot) =>
+      slot.keyInfo?.fingerprint ?? _KeyOrigin.of(slot.resolvedXpub).fingerprint;
+
+  Widget _importBody() {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
     // Co-signer role: Key 1 is the generated key, imports start at Key 2.
     final firstKeyNumber = _isCoordinator ? 1 : 2;
     final filled = _importSlots.where(_slotFilled).length;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
+        Text(
+          '$filled of ${_importSlots.length} keys imported',
+          style: AppTypography.label.copyWith(color: s.inkSecondary),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        // One card, one row per key. The row being worked on opens in place;
+        // the others stay one line saying whether they are filled, so the
+        // list still answers "how far am I" at a glance.
+        ListCard(
           children: [
-            Text(
-              'KEYS TO COLLECT',
-              style: AppTypography.label.copyWith(letterSpacing: 1.2),
-            ),
-            const Spacer(),
-            Text(
-              '$filled of ${_importSlots.length} provided',
-              style: AppTypography.caption,
-            ),
+            // Key 1 belongs to this device and never appears as an import
+            // slot, so it would otherwise be the one key that could not be
+            // named.
+            if (!_isCoordinator) _creatorRow(),
+            for (var i = 0; i < _importSlots.length; i++)
+              _slotRow(i, firstKeyNumber + i, phone),
           ],
         ),
-        const SizedBox(height: AppSpacing.md),
-        // Key 1 belongs to this device and never appears as an import slot,
-        // so it would be the one key in the wallet that could not be named.
-        if (!_isCoordinator) ...[
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.cardPadding),
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.surfaceDark : AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              border: Border.all(
-                color: isDark ? AppColors.borderDark : AppColors.borderLight,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text('Key 1', style: AppTypography.sectionTitle),
-                    const SizedBox(width: AppSpacing.sm),
-                    Text(
-                      'your key, on this device',
-                      style: AppTypography.caption,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                _CosignerNameField(
-                  label: _creatorLabel,
-                  keyNumber: 1,
-                  subtitle: 'Generated here, in this wallet',
-                  onChanged: (l) => setState(() => _creatorLabel = l),
-                ),
-              ],
-            ),
-          ),
+        const SizedBox(height: AppSpacing.lg),
+        InfoBanner(
+          message: _isWatchOnly
+              ? 'Ask each co-signer for their xpub — paste or scan it, read it '
+                    'from a USB device, or reuse a software wallet already in '
+                    'this app. No key is stored here.'
+              : _isCoordinator
+              ? 'Every key is chosen on its own: read over USB, pasted or '
+                    'scanned from an air-gapped signer, borrowed from another '
+                    'wallet in this app, or created here as "New key" / '
+                    '"Seed phrase" — a slot set to either of those is a '
+                    'private key this wallet signs with.'
+              : 'Key 1 is the one you just created on this device. Any slot set '
+                    'to "New key", "Seed phrase", or an app wallet marked "signs '
+                    'from this app" is another private key of this wallet — one '
+                    'sign action signs with all of them.',
+        ),
+        if (_liquidWanted) ...[
           const SizedBox(height: AppSpacing.md),
+          if (_liquidBlockedReason != null)
+            WarningBanner(
+              title: 'Liquid is not available for this wallet',
+              message: _liquidBlockedReason!,
+            )
+          else
+            const InfoBanner(
+              title: 'Bitcoin + Liquid',
+              message:
+                  'Each co-signer contributes two keys: a Bitcoin one '
+                  "(m/48'/1'/0'/2') and a Liquid one (m/87'/1'/0'). Keys "
+                  'whose seed is in this app, and keys read from a Jade, '
+                  'provide both without extra work — only a key pasted from '
+                  'someone else has to be sent twice.',
+            ),
         ],
-        for (var i = 0; i < _importSlots.length; i++) ...[
-          if (i == _expandedSlot)
-            _ImportSlotCard(
-              keyNumber: firstKeyNumber + i,
-              slot: _importSlots[i],
+        if (_error != null) ...[
+          const SizedBox(height: AppSpacing.lg),
+          DangerBanner(message: _error!),
+        ],
+      ],
+    );
+  }
+
+  /// Key 1 in the co-signer role: generated here, so there is nothing to
+  /// import — only a name to give it.
+  Widget _creatorRow() {
+    final open = _expandedSlot == -1;
+    final key = _creatorXpub ?? '';
+    return _SlotRow(
+      keyNumber: 1,
+      label: _creatorLabel,
+      subtitle: 'Your key, created here',
+      localKey: true,
+      state: _KeyState(
+        status: key.isEmpty ? _KeyStatus.empty : _KeyStatus.created,
+        fingerprint: _KeyOrigin.of(key).fingerprint,
+      ),
+      onTap: open ? null : () => setState(() => _expandedSlot = -1),
+      child: open
+          ? _CosignerNameField(
+              label: _creatorLabel,
+              keyNumber: 1,
+              subtitle: 'Generated here, in this wallet',
+              onChanged: (l) => setState(() => _creatorLabel = l),
+            )
+          : null,
+    );
+  }
+
+  Widget _slotRow(int i, int keyNumber, bool phone) {
+    final slot = _importSlots[i];
+    final open = i == _expandedSlot;
+    return _SlotRow(
+      keyNumber: keyNumber,
+      label: slot.label,
+      subtitle: _slotSummary(slot, phone: phone),
+      localKey: slot.isLocalKey,
+      state: _KeyState(
+        status: _statusOf(slot),
+        fingerprint: _fingerprintOf(slot),
+      ),
+      onTap: open ? null : () => setState(() => _expandedSlot = i),
+      child: !open
+          ? null
+          : _ImportSlotBody(
+              keyNumber: keyNumber,
+              slot: slot,
               appWallets: _appWallets,
-              isDark: isDark,
               allowLocalSigning: !_isWatchOnly,
               liquidWanted: _liquidWanted,
               busy: _busy,
@@ -1364,122 +1420,45 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
               // Any edit invalidates the verdict shown next to it: a tick
               // beside a key that has since been retyped is worse than none.
               onChanged: () => setState(() => _importSlots[i].clearKeyChecks()),
-            )
-          else
-            _CollapsedSlotRow(
-              keyNumber: firstKeyNumber + i,
-              filled: _slotFilled(_importSlots[i]),
-              summary: _slotSummary(_importSlots[i]),
-              label: _importSlots[i].label,
-              isDark: isDark,
-              onTap: () => setState(() => _expandedSlot = i),
             ),
-          const SizedBox(height: AppSpacing.md),
-        ],
-        InfoBanner(
-          message: _isWatchOnly
-              ? 'Ask each co-signer for their xpub — paste or scan it, read it '
-                    'from a USB device, or reuse a software wallet already in '
-                    'this app. No key is stored here.'
-              : _isCoordinator
-              ? 'Every key is chosen on its own: read over USB, pasted or '
-                    'scanned from an air-gapped signer, borrowed from another '
-                    'wallet in this app, or created here as "New key" / '
-                    '"Seed phrase" — a slot set to either of those is a '
-                    'private key this wallet signs with.'
-              : 'Key 1 is the one you just created on this device. Any slot set '
-                    'to "New key", "Seed phrase", or an app wallet marked "signs '
-                    'from this app" is another private key of this wallet — one '
-                    'sign action signs with all of them.',
-        ),
-        if (_liquidWanted) ...[
-          const SizedBox(height: AppSpacing.md),
-          if (_liquidBlockedReason != null)
-            WarningBanner(
-              title: 'Liquid is not available for this wallet',
-              message: _liquidBlockedReason!,
-            )
-          else
-            const InfoBanner(
-              title: 'Bitcoin + Liquid',
-              message:
-                  'Each co-signer contributes two keys: a Bitcoin one '
-                  "(m/48'/1'/0'/2') and a Liquid one (m/87'/1'/0'). Keys "
-                  'whose seed is in this app, and keys read from a Jade, '
-                  'provide both without extra work — only a key pasted from '
-                  'someone else has to be sent twice.',
-            ),
-        ],
-        if (_error != null) ...[
-          const SizedBox(height: AppSpacing.lg),
-          WarningBanner(title: 'Error', message: _error!),
-        ],
-      ],
     );
   }
 
   // ── Summary ──────────────────────────────────────────────────────────────
 
-  Widget _summaryBody(bool isDark) {
+  Widget _summaryBody() {
+    final s = AppScheme.of(context);
     final xpubs = _allXpubs;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(AppSpacing.cardPadding),
-          decoration: BoxDecoration(
-            color: AppColors.accent.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            border: Border.all(color: AppColors.accent.withValues(alpha: 0.4)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$_m-of-$_n Multisig',
-                style: AppTypography.pageTitle.copyWith(
-                  color: AppColors.accent,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                '$_m keys required to spend · ${_nameController.text.trim()}'
-                '${_localKeyCount > 0 ? ' · $_localKeyCount local signing key${_localKeyCount == 1 ? '' : 's'}' : ''}',
-                style: AppTypography.body,
-              ),
-            ],
-          ),
+        _FactsCard(
+          facts: [
+            ('Wallet name', _nameController.text.trim()),
+            ('Policy', '$_m of $_n signatures'),
+            (
+              'Keys held here',
+              _localKeyCount == 0
+                  ? 'None'
+                  : '$_localKeyCount signing key${_localKeyCount == 1 ? '' : 's'}',
+            ),
+          ],
         ),
         const SizedBox(height: AppSpacing.xl),
-        Text('KEYS', style: AppTypography.label.copyWith(letterSpacing: 1.2)),
-        const SizedBox(height: AppSpacing.md),
-        for (var i = 0; i < xpubs.length; i++) ...[
-          Row(
-            children: [
-              Icon(
-                _signsLocally(i)
-                    ? Icons.phonelink_lock_rounded
-                    : Icons.key_outlined,
-                size: 16,
-                color: _signsLocally(i)
-                    ? AppColors.accent
-                    : (isDark ? AppColors.textMutedDark : AppColors.textMuted),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  'Key ${i + 1} — ${_originLabel(i)}',
-                  style: AppTypography.bodySmall,
-                ),
-              ),
-              HexText(xpubs[i], truncate: true),
-            ],
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          child: Text(
+            'Keys',
+            style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
           ),
-          const SizedBox(height: AppSpacing.sm),
-        ],
+        ),
+        ListCard(
+          children: [
+            for (var i = 0; i < xpubs.length; i++) _reviewRow(i, xpubs[i]),
+          ],
+        ),
         if (_liquidReady) ...[
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
           InfoBanner(
             title: 'Bitcoin + Liquid',
             message:
@@ -1489,7 +1468,7 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
                 '${_hasPastedKey ? ' Pasted keys cannot be checked from here — only software wallets and a Blockstream Jade can sign on Liquid, so confirm with those co-signers that they can.' : ''}',
           ),
         ] else if (_liquidWanted) ...[
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
           WarningBanner(
             title: 'Bitcoin only',
             message:
@@ -1499,7 +1478,7 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
           ),
         ],
         if (!_isWatchOnly && _localKeyCount == 0) ...[
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
           const InfoBanner(
             title: 'Coordinator — no key on this device',
             message:
@@ -1508,7 +1487,7 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
                 'your devices — via USB or air-gap QR — in the co-sign flow.',
           ),
         ] else if (_isWatchOnly) ...[
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
           const WarningBanner(
             title: 'Watch-only',
             message:
@@ -1518,15 +1497,44 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
         ],
         if (_error != null) ...[
           const SizedBox(height: AppSpacing.lg),
-          WarningBanner(title: 'Creation failed', message: _error!),
+          DangerBanner(title: 'Creation failed', message: _error!),
         ],
       ],
     );
   }
 
-  /// One line describing a collapsed slot: where its key came from, and the
-  /// tail of the key itself once there is one to show.
-  String _slotSummary(_ImportSlot slot) {
+  /// One key of the policy: its name, where it came from and the account it
+  /// sits at, and the fingerprint a signing device knows it by.
+  Widget _reviewRow(int i, String xpub) {
+    final s = AppScheme.of(context);
+    final creator = !_isCoordinator && i == 0;
+    final slot = creator ? null : _importSlots[_isCoordinator ? i : i - 1];
+    final label = slot?.label ?? _creatorLabel;
+    final origin = _KeyOrigin.of(xpub);
+    final fingerprint = slot?.keyInfo?.fingerprint ?? origin.fingerprint;
+    final path = slot?.keyInfo != null
+        ? 'm/${slot!.keyInfo!.path}'
+        : origin.path;
+    return ListRow(
+      icon: label.icon,
+      title: label.displayName(i),
+      subtitle: path == null ? _originLabel(i) : '${_originLabel(i)} · $path',
+      trailing: fingerprint != null
+          ? Text(
+              fingerprint,
+              style: AppTypography.mono.copyWith(color: s.inkSecondary),
+            )
+          : ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 160),
+              child: HexText(xpub, truncate: true),
+            ),
+    );
+  }
+
+  /// One line describing a slot: where its key came from, and the account
+  /// it sits at once there is one to show. The fingerprint sits in the row's
+  /// state on a desktop; a phone has no room for it there, so it rides here.
+  String _slotSummary(_ImportSlot slot, {required bool phone}) {
     final source = switch (slot.source) {
       _ImportSource.paste => 'Pasted or scanned',
       _ImportSource.appWallet => 'App wallet',
@@ -1535,14 +1543,24 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
       _ImportSource.seedPhrase => 'Seed phrase',
     };
     final key = slot.resolvedXpub;
-    if (key.isEmpty) return '$source · not provided yet';
+    if (key.isEmpty) return source;
     if (slot.source == _ImportSource.newKey && !slot.backedUp) {
       return '$source · write the words down to continue';
     }
     // A checked key is named by what identifies it to a signing device — the
     // fingerprint and the account — not by the tail of its base58.
     final info = slot.keyInfo;
-    if (info != null) return '$source · ${info.fingerprint} · m/${info.path}';
+    if (info != null) {
+      return phone
+          ? '$source · ${info.fingerprint} · m/${info.path}'
+          : '$source · m/${info.path}';
+    }
+    final origin = _KeyOrigin.of(key);
+    if (origin.path != null) {
+      return phone && origin.fingerprint != null
+          ? '$source · ${origin.fingerprint} · ${origin.path}'
+          : '$source · ${origin.path}';
+    }
     final tail = key.length > 12 ? key.substring(key.length - 12) : key;
     return '$source · …$tail';
   }
@@ -1552,25 +1570,18 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
   bool get _hasPastedKey =>
       _importSlots.any((s) => s.source == _ImportSource.paste);
 
-  /// True when key [i] is one this app signs with (the generated Key 1, a key
-  /// whose seed lives here, or an opted-in app wallet).
-  bool _signsLocally(int i) {
-    if (!_isCoordinator && i == 0) return true;
-    return _importSlots[_isCoordinator ? i : i - 1].isLocalKey;
-  }
-
   String _originLabel(int i) {
-    if (!_isCoordinator && i == 0) return 'your key (this device)';
+    if (!_isCoordinator && i == 0) return 'Your key, on this device';
     final slot = _importSlots[_isCoordinator ? i : i - 1];
     return switch (slot.source) {
-      _ImportSource.paste => 'imported key',
+      _ImportSource.paste => 'Imported key',
       _ImportSource.appWallet =>
         slot.signsLocally
-            ? 'app wallet — signs from this app'
-            : 'app wallet (xpub only)',
+            ? 'App wallet, signs from this app'
+            : 'App wallet, xpub only',
       _ImportSource.hardware => 'USB device (${slot.hwModel ?? 'hardware'})',
-      _ImportSource.newKey => 'new private key (this device)',
-      _ImportSource.seedPhrase => 'imported seed (this device)',
+      _ImportSource.newKey => 'New private key, on this device',
+      _ImportSource.seedPhrase => 'Imported seed, on this device',
     };
   }
 
@@ -1580,8 +1591,8 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
     return WalletCreatedView(
       walletName: _nameController.text.trim(),
       subtitle: _localKeyCount == 0
-          ? '$_m-of-$_n multisig — no key here; sign with your devices via USB or air-gap QR.'
-          : '$_m-of-$_n multisig — $_m keys required to spend.',
+          ? '$_m-of-$_n multisig — no key here; sign with your devices via USB or air-gap QR'
+          : '$_m-of-$_n multisig — $_m keys required to spend',
       details: [
         WalletCreatedDetail('Type', '$_m-of-$_n multisig'),
         WalletCreatedDetail(
@@ -1599,23 +1610,368 @@ class _MultisigSetupScreenState extends State<MultisigSetupScreen> {
   }
 }
 
-// ── Role card — one key of this wallet, held here ────────────────────────────
+// ── Shared pieces of the step ────────────────────────────────────────────────
 
-/// Where each key comes from is chosen key by key on the import step. The one
-/// thing worth settling before that is whether this wallet holds one of them
-/// itself: that key is generated and backed up here, in guided steps, before
-/// the others are collected.
-class _RoleCard extends StatelessWidget {
-  const _RoleCard({
+/// The step's action row (design.md, "Steps"): Back as a ghost with its
+/// arrow, the step's one primary on the right. A disabled primary says why
+/// beside it. On a phone the primary takes the width and the reason sits
+/// above the row.
+class _StepActions extends StatelessWidget {
+  const _StepActions({
+    required this.label,
+    required this.onPressed,
+    this.onBack,
+    this.reason,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final VoidCallback? onBack;
+  final String? reason;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final why = reason;
+    final back = onBack;
+    final reasonStyle = AppTypography.caption.copyWith(color: s.inkFaint);
+    if (AppLayout.isPhone(context)) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (why != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Text(why, textAlign: TextAlign.center, style: reasonStyle),
+            ),
+          Row(
+            children: [
+              if (back != null) ...[
+                GhostButton(
+                  label: 'Back',
+                  icon: Icons.arrow_back_outlined,
+                  onPressed: back,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+              ],
+              Expanded(
+                child: PrimaryButton(
+                  label: label,
+                  onPressed: onPressed,
+                  isFullWidth: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(
+          child: why == null
+              ? const SizedBox.shrink()
+              : Text(why, textAlign: TextAlign.end, style: reasonStyle),
+        ),
+        const SizedBox(width: AppSpacing.lg),
+        if (back != null) ...[
+          GhostButton(
+            label: 'Back',
+            icon: Icons.arrow_back_outlined,
+            onPressed: back,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+        ],
+        PrimaryButton(label: label, onPressed: onPressed),
+      ],
+    );
+  }
+}
+
+/// A field's label: an `eyebrow` 8 above the field, never floating inside it.
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Text(
+        text,
+        style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+      ),
+    );
+  }
+}
+
+/// The fingerprint and account a key carries in its origin,
+/// `[f0b68896/48'/1'/0'/2']tpub…`. Read for display only — the engine's own
+/// check ([CosignerKeyInfo]) is what decides whether a key is usable.
+class _KeyOrigin {
+  const _KeyOrigin(this.fingerprint, this.path);
+
+  final String? fingerprint;
+
+  /// `m/48'/1'/0'/2'`, or null when the key carries no origin.
+  final String? path;
+
+  static final _pattern = RegExp(r'^\[([0-9a-fA-F]{8})(/[^\]]*)?\]');
+
+  static _KeyOrigin of(String key) {
+    final match = _pattern.firstMatch(key.trim());
+    if (match == null) return const _KeyOrigin(null, null);
+    final rest = match.group(2);
+    return _KeyOrigin(
+      match.group(1)!.toLowerCase(),
+      rest == null || rest.length < 2 ? null : 'm$rest',
+    );
+  }
+}
+
+// ── Threshold pieces ─────────────────────────────────────────────────────────
+
+/// "Signatures required" and "Total keys" as two rows of one card, each a
+/// stepper.
+class _ThresholdCard extends StatelessWidget {
+  const _ThresholdCard({
+    required this.m,
     required this.n,
-    required this.isDark,
+    required this.onM,
+    required this.onN,
+  });
+
+  final int m;
+  final int n;
+  final ValueChanged<int> onM;
+  final ValueChanged<int> onN;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: s.panel,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(color: s.edge),
+        boxShadow: s.panelShadow,
+      ),
+      child: Column(
+        children: [
+          _StepperRow(
+            label: 'Signatures required',
+            value: m,
+            min: 1,
+            max: n,
+            onChanged: onM,
+          ),
+          Divider(height: 1, thickness: 1, color: s.edge, indent: kListPad),
+          _StepperRow(
+            label: 'Total keys',
+            value: n,
+            min: 2,
+            max: 9,
+            onChanged: onN,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepperRow extends StatelessWidget {
+  const _StepperRow({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final String label;
+  final int value;
+  final int min;
+  final int max;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Semantics(
+      label: label,
+      value: '$value',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: kListPad,
+          vertical: AppSpacing.md,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: AppTypography.bodyOf(context).copyWith(color: s.ink),
+              ),
+            ),
+            _StepButton(
+              icon: Icons.remove_outlined,
+              tooltip: 'Fewer',
+              onPressed: value > min ? () => onChanged(value - 1) : null,
+            ),
+            SizedBox(
+              width: AppSpacing.xxxl,
+              child: Text(
+                '$value',
+                textAlign: TextAlign.center,
+                style: AppTypography.balanceMediumOf(
+                  context,
+                ).copyWith(color: s.ink),
+              ),
+            ),
+            _StepButton(
+              icon: Icons.add_outlined,
+              tooltip: 'More',
+              onPressed: value < max ? () => onChanged(value + 1) : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A 32 px outlined icon button (48 dp on a phone) — the `−` and `+` of a
+/// stepper. Built like the kit's buttons: hover is a state layer, keyboard
+/// focus a ring.
+class _StepButton extends StatefulWidget {
+  const _StepButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  State<_StepButton> createState() => _StepButtonState();
+}
+
+class _StepButtonState extends State<_StepButton> {
+  bool _hover = false;
+  bool _focus = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    final enabled = widget.onPressed != null;
+    final side = phone ? AppLayout.minTouchTarget : AppSpacing.xxl;
+    final radius = phone ? AppSpacing.radiusPhoneControl : AppSpacing.radiusMd;
+    final body = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.instant),
+      curve: AppMotion.settle,
+      width: side,
+      height: side,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: enabled && _hover ? s.hover : Colors.transparent,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: enabled ? s.edgeStrong : s.edge),
+      ),
+      foregroundDecoration: _focus && enabled
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(color: s.focus, width: 2),
+            )
+          : null,
+      child: Icon(
+        widget.icon,
+        size: phone ? 20 : AppSpacing.iconSmall,
+        color: !enabled ? s.inkFaint : (_hover ? s.ink : s.inkSecondary),
+      ),
+    );
+    final button = Semantics(
+      button: true,
+      enabled: enabled,
+      label: widget.tooltip,
+      excludeSemantics: true,
+      child: FocusableActionDetector(
+        enabled: enabled,
+        mouseCursor: enabled
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
+        onShowHoverHighlight: (v) => setState(() => _hover = v),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onPressed?.call();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onPressed,
+          child: body,
+        ),
+      ),
+    );
+    return phone ? button : Tooltip(message: widget.tooltip, child: button);
+  }
+}
+
+/// The policy at a glance: n key glyphs, the first m in the primary ink —
+/// keys, not seals, because nothing has been signed.
+class _PolicyPreview extends StatelessWidget {
+  const _PolicyPreview({required this.m, required this.n});
+
+  final int m;
+  final int n;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Semantics(
+      label: '$m of $n keys must sign',
+      excludeSemantics: true,
+      child: Row(
+        children: [
+          for (var i = 0; i < n; i++)
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.xs),
+              child: Icon(
+                Icons.key_outlined,
+                size: AppSpacing.icon,
+                color: i < m ? s.ink : s.inkFaint,
+              ),
+            ),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            '$m of $n',
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Whether one of the keys is held here — or, for a watch-only coordinator,
+/// the fact that none is.
+class _RoleRow extends StatelessWidget {
+  const _RoleRow({
+    required this.n,
     required this.watchOnly,
     required this.holdsKey,
     required this.onHoldsKeyChanged,
   });
 
   final int n;
-  final bool isDark;
 
   /// A watch-only wallet has no choice to make: it holds nothing.
   final bool watchOnly;
@@ -1625,6 +1981,7 @@ class _RoleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     final (icon, title, description) = watchOnly
         ? (
             Icons.visibility_outlined,
@@ -1634,42 +1991,44 @@ class _RoleCard extends StatelessWidget {
           )
         : holdsKey
         ? (
-            Icons.phonelink_lock_rounded,
+            Icons.phonelink_lock_outlined,
             'I hold one of these keys here',
             'Key 1 is generated on this device in the next step and backed '
                 'up before you collect the other ${n - 1}.',
           )
         : (
-            Icons.group_rounded,
+            Icons.group_outlined,
             'I hold one of these keys here',
             'Off: all $n keys are imported. You can still keep a key here '
                 '— set any slot to "New key" or "Seed phrase" while '
                 'importing, or read one from a USB device.',
           );
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.cardPadding),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kListPad,
+        vertical: AppSpacing.md,
+      ),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceDark : AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: AppColors.accent.withValues(alpha: 0.5)),
+        color: s.panel,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(color: s.edge),
+        boxShadow: s.panelShadow,
       ),
       child: Row(
         children: [
-          Icon(icon, color: AppColors.accent, size: 22),
-          const SizedBox(width: AppSpacing.md),
+          ListIconTile(icon: icon),
+          const SizedBox(width: kListGap),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: AppTypography.sectionTitle),
-                const SizedBox(height: 2),
+                Text(
+                  title,
+                  style: AppTypography.bodyOf(context).copyWith(color: s.ink),
+                ),
                 Text(
                   description,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: isDark
-                        ? AppColors.textSecondaryDark
-                        : AppColors.textSecondary,
-                  ),
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
                 ),
               ],
             ),
@@ -1688,26 +2047,116 @@ class _RoleCard extends StatelessWidget {
   }
 }
 
-class _Spinner extends StatelessWidget {
-  const _Spinner({required this.label});
-  final String label;
+/// Key/value facts on one card: the key in the secondary ink, the value in
+/// the primary.
+class _FactsCard extends StatelessWidget {
+  const _FactsCard({required this.facts});
+
+  final List<(String, String)> facts;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    final s = AppScheme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: s.panel,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(color: s.edge),
+        boxShadow: s.panelShadow,
+      ),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: AppSpacing.lg),
-          Text(label, style: AppTypography.body),
+          for (var i = 0; i < facts.length; i++) ...[
+            if (i > 0)
+              Divider(height: 1, thickness: 1, color: s.edge, indent: kListPad),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: kListPad,
+                vertical: AppSpacing.md,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 140,
+                    child: Text(
+                      facts[i].$1,
+                      style: AppTypography.label.copyWith(
+                        color: s.inkSecondary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      facts[i].$2,
+                      style: AppTypography.bodyOf(
+                        context,
+                      ).copyWith(color: s.ink),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-// ── Word tile (seed back-up grid) ─────────────────────────────────────────────
+class _Spinner extends StatelessWidget {
+  const _Spinner({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxxl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: AppSpacing.xl,
+              height: AppSpacing.xl,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              label,
+              style: AppTypography.body.copyWith(color: s.inkSecondary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Word grid (seed back-up) ─────────────────────────────────────────────────
+
+class _WordGrid extends StatelessWidget {
+  const _WordGrid({required this.words});
+  final List<String> words;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisExtent: 40,
+        crossAxisSpacing: AppSpacing.sm,
+        mainAxisSpacing: AppSpacing.sm,
+      ),
+      itemCount: words.length,
+      itemBuilder: (context, i) => _WordTile(index: i + 1, word: words[i]),
+    );
+  }
+}
 
 class _WordTile extends StatelessWidget {
   const _WordTile({required this.index, required this.word});
@@ -1716,29 +2165,28 @@ class _WordTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final s = AppScheme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceDark2 : AppColors.tableHeader,
+        color: s.panelInset,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(
-          color: isDark ? AppColors.borderDark : AppColors.codeBoxBorder,
-        ),
+        border: Border.all(color: s.edge),
       ),
       child: Row(
         children: [
           SizedBox(
-            width: 20,
+            width: AppSpacing.xl,
             child: Text(
-              '$index.',
-              style: AppTypography.caption.copyWith(color: AppColors.textMuted),
+              '$index',
+              style: AppTypography.numericSmall.copyWith(color: s.inkFaint),
             ),
           ),
           Expanded(
             child: Text(
               word,
-              style: AppTypography.mono.copyWith(fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.mono.copyWith(color: s.ink),
             ),
           ),
         ],
@@ -1747,178 +2195,271 @@ class _WordTile extends StatelessWidget {
   }
 }
 
-// ── Number picker — simple stepper ────────────────────────────────────────────
+// ── One key of the import list ───────────────────────────────────────────────
 
-class _NumberPicker extends StatelessWidget {
-  const _NumberPicker({
-    required this.label,
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.onChanged,
-  });
+enum _KeyStatus { empty, checking, imported, created, refused, backup }
 
-  final String label;
-  final int value;
-  final int min;
-  final int max;
-  final void Function(int) onChanged;
+/// The right-hand state of a key row: what this slot holds, in a word.
+class _KeyState extends StatelessWidget {
+  const _KeyState({required this.status, this.fingerprint});
+
+  final _KeyStatus status;
+  final String? fingerprint;
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.cardPadding),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceDark : AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(
-          color: isDark ? AppColors.borderDark : AppColors.borderLight,
-        ),
-      ),
-      child: Column(
-        children: [
-          Text(label, style: AppTypography.label),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButton(
-                onPressed: value > min ? () => onChanged(value - 1) : null,
-                icon: const Icon(Icons.remove_circle_outline),
-              ),
-              SizedBox(
-                width: 48,
-                child: Text(
-                  '$value',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.pageTitle,
-                ),
-              ),
-              IconButton(
-                onPressed: value < max ? () => onChanged(value + 1) : null,
-                icon: const Icon(Icons.add_circle_outline),
-              ),
-            ],
-          ),
-        ],
-      ),
+    final s = AppScheme.of(context);
+    final caption = AppTypography.caption;
+    final fp = fingerprint;
+    // A phone carries the fingerprint in the row's subtitle instead.
+    final showFp = fp != null && !AppLayout.isPhone(context);
+    Widget word(Color dot, String text) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _Dot(dot),
+        const SizedBox(width: AppSpacing.sm),
+        Text(text, style: caption.copyWith(color: s.ink)),
+      ],
     );
+    switch (status) {
+      case _KeyStatus.empty:
+        return Text('Not imported', style: caption.copyWith(color: s.inkFaint));
+      case _KeyStatus.checking:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: AppSpacing.md,
+              height: AppSpacing.md,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text('Checking', style: caption.copyWith(color: s.inkSecondary)),
+          ],
+        );
+      case _KeyStatus.refused:
+        return Text('Not accepted', style: caption.copyWith(color: s.danger));
+      case _KeyStatus.backup:
+        return word(s.warning, 'Back up the words');
+      case _KeyStatus.imported:
+      case _KeyStatus.created:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showFp) ...[
+              Text(
+                fp,
+                style: AppTypography.mono.copyWith(color: s.inkSecondary),
+              ),
+              const SizedBox(width: AppSpacing.md),
+            ],
+            word(
+              s.success,
+              status == _KeyStatus.created ? 'Created' : 'Imported',
+            ),
+          ],
+        );
+    }
   }
 }
 
-// ── Collapsed import slot — one line per key not being worked on ─────────────
+/// 6 px status dot.
+class _Dot extends StatelessWidget {
+  const _Dot(this.color);
+  final Color color;
 
-class _CollapsedSlotRow extends StatefulWidget {
-  const _CollapsedSlotRow({
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 6,
+    height: 6,
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(999),
+    ),
+  );
+}
+
+/// One key of the import list: a one-line row, and — for the key being worked
+/// on — its controls opened in place under it.
+class _SlotRow extends StatefulWidget {
+  const _SlotRow({
     required this.keyNumber,
-    required this.filled,
-    required this.summary,
-    required this.isDark,
-    required this.onTap,
     required this.label,
+    required this.subtitle,
+    required this.localKey,
+    required this.state,
+    this.onTap,
+    this.child,
   });
 
   final int keyNumber;
-  final bool filled;
-  final String summary;
-  final bool isDark;
-  final VoidCallback onTap;
 
-  /// What this key has been called, if anything. A named key is listed by its
-  /// name — "Key 3" is only what an unnamed one falls back to.
+  /// What this key has been called, if anything. A named key is listed by
+  /// its name — "Key 3" is only what an unnamed one falls back to.
   final CosignerLabel label;
+  final String subtitle;
+
+  /// The app holds this key's seed and signs with it.
+  final bool localKey;
+  final Widget state;
+
+  /// Opens the row; null while it is the open one.
+  final VoidCallback? onTap;
+
+  /// The open row's controls.
+  final Widget? child;
 
   @override
-  State<_CollapsedSlotRow> createState() => _CollapsedSlotRowState();
+  State<_SlotRow> createState() => _SlotRowState();
 }
 
-class _CollapsedSlotRowState extends State<_CollapsedSlotRow> {
+class _SlotRowState extends State<_SlotRow> {
   bool _hover = false;
+  bool _focus = false;
 
   @override
   Widget build(BuildContext context) {
-    final isDark = widget.isDark;
-    final label = widget.label;
-    final phone = AppLayout.isPhone(context);
     final s = AppScheme.of(context);
-    final color = widget.filled ? AppColors.success : AppColors.textMuted;
-    // The desktop pointer gets the tile's hover — surface up, hairline firm.
-    // It used to be an InkWell, whose highlight painted on the Material
-    // underneath this opaque card and so never showed at all.
-    final active = !phone && _hover;
-    final row = AnimatedContainer(
-      duration: AppMotion.of(context, AppMotion.quick),
+    final phone = AppLayout.isPhone(context);
+    final label = widget.label;
+    final named = label.name?.trim().isNotEmpty ?? false;
+    final onTap = widget.onTap;
+    final child = widget.child;
+
+    final header = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.instant),
       curve: AppMotion.settle,
+      color: onTap != null && _hover ? s.hover : Colors.transparent,
+      foregroundDecoration: _focus && onTap != null
+          ? BoxDecoration(border: Border.all(color: s.focus, width: 2))
+          : null,
+      constraints: const BoxConstraints(minHeight: AppSpacing.rowHeight),
       padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.md,
-      ),
-      decoration: BoxDecoration(
-        color: active
-            ? (isDark ? AppColors.surfaceDark2 : AppColors.surfaceLight)
-            : (isDark ? AppColors.surfaceDark : AppColors.surfaceLight),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(
-          color: active
-              ? s.edgeStrong
-              : (isDark ? AppColors.borderDark : AppColors.borderLight),
-        ),
+        horizontal: kListPad,
+        vertical: AppSpacing.sm,
       ),
       child: Row(
         children: [
-          Icon(
-            widget.filled ? Icons.check_circle : Icons.radio_button_unchecked,
-            size: 18,
-            color: color,
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Icon(label.icon, size: 16, color: label.color ?? s.inkSecondary),
-          const SizedBox(width: AppSpacing.sm),
-          Text(
-            label.displayName(widget.keyNumber - 1),
-            style: AppTypography.sectionTitle,
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Text(
-              widget.summary,
-              style: AppTypography.caption,
-              overflow: TextOverflow.ellipsis,
+          // The key's own glyph — and its colour, when the user gave it one:
+          // that colour is how they tell their keys apart on every screen.
+          Container(
+            width: kListTile,
+            height: kListTile,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: s.panelInset,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            ),
+            child: Icon(
+              label.icon,
+              size: AppSpacing.icon,
+              color: label.color ?? s.inkSecondary,
             ),
           ),
-          Icon(
-            Icons.expand_more,
-            size: 18,
-            color: active ? s.accent : s.inkSecondary,
+          const SizedBox(width: kListGap),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        label.displayName(widget.keyNumber - 1),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyOf(
+                          context,
+                        ).copyWith(color: s.ink),
+                      ),
+                    ),
+                    if (named) ...[
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        'key ${widget.keyNumber}',
+                        style: AppTypography.caption.copyWith(
+                          color: s.inkFaint,
+                        ),
+                      ),
+                    ],
+                    if (widget.localKey && !phone) ...[
+                      const SizedBox(width: AppSpacing.sm),
+                      const QuietTag(label: 'Signs here'),
+                    ],
+                  ],
+                ),
+                Text(
+                  widget.subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
+                ),
+              ],
+            ),
           ),
+          const SizedBox(width: AppSpacing.md),
+          widget.state,
+          if (onTap != null) ...[
+            const SizedBox(width: AppSpacing.xs),
+            Icon(
+              Icons.expand_more_outlined,
+              size: AppSpacing.icon,
+              color: s.inkFaint,
+            ),
+          ],
         ],
       ),
     );
-    if (phone) {
-      return Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-          child: row,
+
+    final tappable = onTap == null
+        ? header
+        : Semantics(
+            button: true,
+            child: MergeSemantics(
+              child: FocusableActionDetector(
+                mouseCursor: SystemMouseCursors.click,
+                onShowHoverHighlight: (v) => setState(() => _hover = v),
+                onShowFocusHighlight: (v) => setState(() => _focus = v),
+                actions: <Type, Action<Intent>>{
+                  ActivateIntent: CallbackAction<ActivateIntent>(
+                    onInvoke: (_) {
+                      onTap();
+                      return null;
+                    },
+                  ),
+                },
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onTap,
+                  child: header,
+                ),
+              ),
+            ),
+          );
+
+    if (child == null) return tappable;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        tappable,
+        Padding(
+          // Under the row's text on a desktop; the full card width on a
+          // phone, where a 60 dp indent would cost a fifth of the column.
+          padding: EdgeInsets.fromLTRB(
+            phone ? kListPad : kListTextInset,
+            AppSpacing.xs,
+            kListPad,
+            AppSpacing.lg,
+          ),
+          child: child,
         ),
-      );
-    }
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        behavior: HitTestBehavior.opaque,
-        child: row,
-      ),
+      ],
     );
   }
 }
 
-// ── Import slot card — paste/scan xpub, app wallet, or USB device ─────────────
+// ── Import slot controls — paste/scan xpub, app wallet, USB device, … ────────
 
 /// What the engine made of the key in the field above it.
 ///
@@ -1940,62 +2481,82 @@ class _KeyVerdict extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     if (checking) {
       return Padding(
         padding: const EdgeInsets.only(top: AppSpacing.sm),
         child: Row(
           children: [
             const SizedBox(
-              width: 12,
-              height: 12,
+              width: AppSpacing.md,
+              height: AppSpacing.md,
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
             const SizedBox(width: AppSpacing.sm),
-            Text('Checking the key…', style: AppTypography.caption),
+            Text(
+              'Checking the key…',
+              style: AppTypography.caption.copyWith(color: s.inkSecondary),
+            ),
           ],
         ),
       );
     }
     if (error != null) {
-      return _line(Icons.error_outline_rounded, AppColors.danger, error!);
+      return _line(
+        context,
+        Icon(Icons.error_outline, size: AppSpacing.iconSmall, color: s.danger),
+        error!,
+        s.danger,
+      );
     }
     final info = this.info;
     if (info == null) return const SizedBox.shrink();
     if (info.warning != null) {
       return _line(
-        Icons.warning_amber_rounded,
-        AppColors.warning,
+        context,
+        Icon(
+          Icons.warning_amber_outlined,
+          size: AppSpacing.iconSmall,
+          color: s.warning,
+        ),
         '${info.fingerprint} · ${info.warning}',
+        s.ink,
       );
     }
     return _line(
-      Icons.check_circle_outline_rounded,
-      AppColors.success,
+      context,
+      _Dot(s.success),
       'Key ${info.fingerprint} at m/${info.path}',
+      s.inkSecondary,
     );
   }
 
-  Widget _line(IconData icon, Color color, String text) => Padding(
-    padding: const EdgeInsets.only(top: AppSpacing.sm),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 14, color: color),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Text(
-            text,
-            style: AppTypography.caption.copyWith(color: color),
-          ),
+  Widget _line(BuildContext context, Widget mark, String text, Color ink) =>
+      Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.sm),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: AppSpacing.iconSmall,
+              height: 20,
+              child: Center(child: mark),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                text,
+                style: AppTypography.caption.copyWith(color: ink),
+              ),
+            ),
+          ],
         ),
-      ],
-    ),
-  );
+      );
 }
 
-/// Name and glyph for one co-signer, inline in its card.
+/// Name and glyph for one co-signer, inline in its row.
 ///
-/// The field is the whole control: typing names the key, and the disc beside
+/// The field is the whole control: typing names the key, and the tile beside
 /// it opens the icon and colour picker. Optional everywhere — an unnamed key
 /// stays "Key N", which is what it was before any of this existed.
 class _CosignerNameField extends StatefulWidget {
@@ -2037,36 +2598,51 @@ class _CosignerNameFieldState extends State<_CosignerNameField> {
     }
   }
 
+  Future<void> _editLook() async {
+    final edited = await showCosignerLabelEditor(
+      context,
+      label: widget.label,
+      index: widget.keyNumber - 1,
+      subtitle: widget.subtitle,
+    );
+    if (edited == null) return;
+    _ctrl.text = edited.name ?? '';
+    widget.onChanged(edited);
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final color = widget.label.color ?? s.accent;
+    final phone = AppLayout.isPhone(context);
+    final side = phone ? AppSpacing.phoneFieldHeight : AppSpacing.controlHeight;
     return Row(
       children: [
         Tooltip(
           message: 'Icon and colour',
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: () async {
-              final edited = await showCosignerLabelEditor(
-                context,
-                label: widget.label,
-                index: widget.keyNumber - 1,
-                subtitle: widget.subtitle,
-              );
-              if (edited == null) return;
-              _ctrl.text = edited.name ?? '';
-              widget.onChanged(edited);
-            },
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.14),
-                shape: BoxShape.circle,
-                border: Border.all(color: color.withValues(alpha: 0.7)),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              onTap: _editLook,
+              borderRadius: BorderRadius.circular(
+                phone ? AppSpacing.radiusPhoneControl : AppSpacing.radiusMd,
               ),
-              child: Icon(widget.label.icon, size: 19, color: color),
+              child: Container(
+                width: side,
+                height: side,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: s.panelInset,
+                  borderRadius: BorderRadius.circular(
+                    phone ? AppSpacing.radiusPhoneControl : AppSpacing.radiusMd,
+                  ),
+                  border: Border.all(color: s.edge),
+                ),
+                child: Icon(
+                  widget.label.icon,
+                  size: AppSpacing.icon,
+                  color: widget.label.color ?? s.inkSecondary,
+                ),
+              ),
             ),
           ),
         ),
@@ -2075,9 +2651,8 @@ class _CosignerNameFieldState extends State<_CosignerNameField> {
           child: TextField(
             controller: _ctrl,
             maxLength: 40,
-            decoration: InputDecoration(
-              labelText: 'Name this key (optional)',
-              hintText: 'Key ${widget.keyNumber}',
+            decoration: const InputDecoration(
+              hintText: 'Name this key (optional)',
               counterText: '',
             ),
             onChanged: (v) => widget.onChanged(
@@ -2090,12 +2665,37 @@ class _CosignerNameFieldState extends State<_CosignerNameField> {
   }
 }
 
-class _ImportSlotCard extends StatelessWidget {
-  const _ImportSlotCard({
+/// Paste the clipboard into a key field — the same as ⌘V / Ctrl+V, offered
+/// as a control because the scan button beside it is absent where no camera
+/// exists.
+class _PasteButton extends StatelessWidget {
+  const _PasteButton({required this.controller, required this.onPasted});
+
+  final TextEditingController controller;
+  final VoidCallback onPasted;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: 'Paste',
+      iconSize: AppLayout.isPhone(context) ? 22 : AppSpacing.icon,
+      icon: const Icon(Icons.content_paste_outlined),
+      onPressed: () async {
+        final data = await Clipboard.getData('text/plain');
+        final text = data?.text?.trim();
+        if (text == null || text.isEmpty) return;
+        controller.text = text;
+        onPasted();
+      },
+    );
+  }
+}
+
+class _ImportSlotBody extends StatelessWidget {
+  const _ImportSlotBody({
     required this.keyNumber,
     required this.slot,
     required this.appWallets,
-    required this.isDark,
     required this.allowLocalSigning,
     required this.liquidWanted,
     required this.busy,
@@ -2113,14 +2713,13 @@ class _ImportSlotCard extends StatelessWidget {
   final int keyNumber;
   final _ImportSlot slot;
   final List<WalletSummary> appWallets;
-  final bool isDark;
 
   /// Whether this wallet may hold private keys at all (false = watch-only
   /// coordinator: only public keys can be imported).
   final bool allowLocalSigning;
 
   /// The wizard's coins answer. When true each key needs a Liquid (BIP87)
-  /// counterpart, so the card asks for one — or explains why it cannot.
+  /// counterpart, so the row asks for one — or explains why it cannot.
   final bool liquidWanted;
   final bool busy;
   final void Function(_ImportSource) onSourceChanged;
@@ -2154,357 +2753,297 @@ class _ImportSlotCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.cardPadding),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceDark : AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(
-          color: isDark ? AppColors.borderDark : AppColors.borderLight,
+    final s = AppScheme.of(context);
+    Widget chip(_ImportSource source, String label) => ChoiceTile(
+      label: label,
+      selected: slot.source == source,
+      onSelected: () => onSourceChanged(source),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Naming the key comes first: it is the only part of a co-signer a
+        // person can hold in their head, and by the time the xpub is pasted
+        // nobody wants to go back for it.
+        _CosignerNameField(
+          label: slot.label,
+          keyNumber: keyNumber,
+          subtitle: _labelSubtitle(),
+          onChanged: onLabelChanged,
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                slot.label.displayName(keyNumber - 1),
-                style: AppTypography.sectionTitle,
-              ),
-              if (slot.label.name?.trim().isNotEmpty ?? false) ...[
-                const SizedBox(width: AppSpacing.sm),
-                Text('key $keyNumber', style: AppTypography.caption),
-              ],
-              if (slot.isLocalKey) ...[
-                const SizedBox(width: AppSpacing.sm),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.accent.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    'PRIVATE KEY · SIGNS HERE',
-                    style: AppTypography.caption.copyWith(
-                      color: AppColors.accent,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                    ),
-                  ),
-                ),
-              ],
+        const SizedBox(height: AppSpacing.lg),
+        // Public sources first, then the private ones (a key this wallet
+        // holds and signs with) — which a watch-only coordinator never sees.
+        const _FieldLabel('Source'),
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: [
+            chip(_ImportSource.paste, 'Paste or scan'),
+            // Kept in place when no wallet can lend a key, with the reason on
+            // it, so the row is the same shape every time.
+            ChoiceTile(
+              label: 'App wallet',
+              selected: slot.source == _ImportSource.appWallet,
+              onSelected: appWallets.isEmpty
+                  ? null
+                  : () => onSourceChanged(_ImportSource.appWallet),
+              tooltip: appWallets.isEmpty
+                  ? 'No software wallet in this app to lend a key'
+                  : null,
+            ),
+            // USB only where a USB stack exists (not Android).
+            if (!Platform.isAndroid) chip(_ImportSource.hardware, 'USB device'),
+            if (allowLocalSigning) ...[
+              chip(_ImportSource.newKey, 'New key'),
+              chip(_ImportSource.seedPhrase, 'Seed phrase'),
             ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          // Naming the key comes first: it is the only part of a co-signer a
-          // person can hold in their head, and by the time the xpub is pasted
-          // nobody wants to go back for it.
-          _CosignerNameField(
-            label: slot.label,
-            keyNumber: keyNumber,
-            subtitle: _labelSubtitle(),
-            onChanged: onLabelChanged,
-          ),
-          const SizedBox(height: AppSpacing.md),
-          // Public sources first, then the private ones (a key this wallet
-          // holds and signs with) — which a watch-only coordinator never sees.
-          // A list, not a row of chips: five of them wrapped onto two ragged
-          // lines, and the one that was greyed out could not say why.
-          Text(
-            'WHERE THIS KEY COMES FROM',
-            style: AppTypography.label.copyWith(letterSpacing: 1.2),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          ChoiceList<_ImportSource>(
-            options: [
-              // "Air-gap / QR" described one of the three things this does.
-              // Most keys arriving here come from another wallet the user
-              // already has — their own phone, a co-signer's export — and
-              // nobody looking for that reads "air-gap".
-              const ChoiceListOption(
-                value: _ImportSource.paste,
-                label: 'Paste or scan a key',
-                icon: Icons.content_paste_rounded,
-              ),
-              ChoiceListOption(
-                value: _ImportSource.appWallet,
-                label: 'App wallet',
-                icon: Icons.account_balance_wallet_outlined,
-                enabled: appWallets.isNotEmpty,
-                disabledReason: appWallets.isEmpty
-                    ? 'No software wallet in this app to lend a key'
-                    : null,
-              ),
-              // USB only where a USB stack exists (not Android).
-              if (!Platform.isAndroid)
-                const ChoiceListOption(
-                  value: _ImportSource.hardware,
-                  label: 'USB device',
-                  icon: Icons.usb_rounded,
-                ),
-              if (allowLocalSigning) ...[
-                const ChoiceListOption(
-                  value: _ImportSource.newKey,
-                  label: 'New key',
-                  icon: Icons.add_moderator_rounded,
-                  note: 'signs here',
-                ),
-                const ChoiceListOption(
-                  value: _ImportSource.seedPhrase,
-                  label: 'Seed phrase',
-                  icon: Icons.vpn_key_rounded,
-                  note: 'signs here',
-                ),
-              ],
-            ],
-            selected: slot.source,
-            onChanged: onSourceChanged,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          switch (slot.source) {
-            _ImportSource.paste => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: slot.pasteCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Cosigner xpub',
-                          hintText: "[fingerprint/48'/1'/0'/2']tpub…",
-                        ),
-                        style: AppTypography.monoSmall,
-                        onChanged: (_) => onChanged(),
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    ScanIconButton(
-                      controller: slot.pasteCtrl,
-                      expectsKey: true,
-                      title:
-                          'Scan a cosigner xpub or an air-gapped '
-                          'device\'s QR',
-                      // A scanned key checks itself, the way a key read over
-                      // USB does — nobody scans a QR and then wonders
-                      // whether to press anything.
-                      onScanned: (_) => onConfirm(),
-                    ),
-                  ],
-                ),
-                _KeyVerdict(
-                  info: slot.keyInfo,
-                  error: slot.keyError,
-                  checking: slot.checking,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  'Wherever the key already is: another Templar wallet '
-                  '(this computer or your phone — Wallet info → "Use this '
-                  'wallet as a cosigner"), a key a co-signer sent you, or an '
-                  'air-gapped device\'s QR (SeedSigner, or a Jade in QR '
-                  'mode — unlock it first, a locked Jade only shows its '
-                  'PIN-unlock QR).',
-                  style: AppTypography.caption,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                SecondaryButton(
-                  label: slot.checking ? 'Checking…' : 'Done with this key',
-                  icon: Icons.check_rounded,
-                  isLoading: slot.checking,
-                  isFullWidth: true,
-                  onPressed: slot.checking || slot.pasteCtrl.text.trim().isEmpty
-                      ? null
-                      : onConfirm,
-                ),
-              ],
-            ),
-            _ImportSource.appWallet => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                DropdownButtonFormField<String>(
-                  initialValue: slot.walletId,
-                  items: appWallets
-                      .map(
-                        (w) =>
-                            DropdownMenuItem(value: w.id, child: Text(w.name)),
-                      )
-                      .toList(),
-                  onChanged: (id) {
-                    if (id != null) onAppWalletPicked(id);
-                  },
-                  decoration: const InputDecoration(
-                    hintText: 'Choose a software wallet',
-                  ),
-                ),
-                if (allowLocalSigning && slot.walletId != null)
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    value: slot.signsLocally,
-                    onChanged: (v) {
-                      slot.signsLocally = v ?? false;
-                      onChanged();
-                    },
-                    title: Text(
-                      'Sign with this key from this app',
-                      style: AppTypography.bodySmall,
-                    ),
-                    subtitle: Text(
-                      'One sign action will sign with every local key.',
-                      style: AppTypography.caption,
-                    ),
-                  ),
-              ],
-            ),
-            _ImportSource.hardware => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (slot.xpub == null)
-                  SecondaryButton(
-                    label: busy ? 'Reading…' : 'Read xpub from device',
-                    icon: Icons.usb_rounded,
-                    isLoading: busy,
-                    isFullWidth: true,
-                    onPressed: busy ? null : onFetchHw,
-                  )
-                else
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.usb_rounded,
-                        size: 16,
-                        color: AppColors.success,
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          slot.hwModel ?? 'Device',
-                          style: AppTypography.bodySmall,
-                        ),
-                      ),
-                      HexText(slot.xpub!, truncate: true),
-                      IconButton(
-                        tooltip: 'Read again',
-                        icon: const Icon(Icons.refresh, size: 16),
-                        onPressed: busy ? null : onFetchHw,
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-
-            // ── New private key: generated here, written down here ──────────
-            _ImportSource.newKey => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (slot.mnemonic == null)
-                  SecondaryButton(
-                    label: busy ? 'Generating…' : 'Generate a new 24-word key',
-                    icon: Icons.add_moderator_rounded,
-                    isLoading: busy,
-                    isFullWidth: true,
-                    onPressed: busy ? null : onGenerateKey,
-                  )
-                else ...[
-                  const WarningBanner(
-                    title: 'Write these words down on paper',
-                    message:
-                        'This is a second private key of this wallet. Anyone who '
-                        'sees it can sign with it. Shown only once.',
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          mainAxisExtent: 40,
-                          crossAxisSpacing: AppSpacing.sm,
-                          mainAxisSpacing: AppSpacing.sm,
-                        ),
-                    itemCount: slot.mnemonic!.length,
-                    itemBuilder: (context, i) =>
-                        _WordTile(index: i + 1, word: slot.mnemonic![i]),
-                  ),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    value: slot.backedUp,
-                    onChanged: (v) {
-                      slot.backedUp = v ?? false;
-                      onChanged();
-                    },
-                    title: Text(
-                      'I wrote these words down',
-                      style: AppTypography.bodySmall,
-                    ),
-                  ),
-                  HexText(slot.xpub!, truncate: true),
-                ],
-              ],
-            ),
-
-            // ── Existing seed adopted as another private key ────────────────
-            _ImportSource.seedPhrase => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: slot.seedCtrl,
-                  maxLines: 3,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: const InputDecoration(
-                    labelText: 'Seed phrase (12 or 24 words)',
-                    hintText: 'abandon abandon … about',
-                    alignLabelWithHint: true,
-                  ),
-                  style: AppTypography.monoSmall,
-                  onChanged: (_) => onChanged(),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Row(
-                  children: [
-                    SecondaryButton(
-                      label: slot.xpub == null ? 'Use this seed' : 'Re-check',
-                      icon: Icons.check_rounded,
-                      isLoading: busy,
-                      onPressed: busy ? null : onUseSeed,
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    if (slot.xpub != null)
-                      Expanded(child: HexText(slot.xpub!, truncate: true)),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  'The seed is stored in this wallet and signs alongside your '
-                  'other keys. Keep the paper backup safe.',
-                  style: AppTypography.caption,
-                ),
-              ],
-            ),
-          },
-          if (liquidWanted) ...[
-            const SizedBox(height: AppSpacing.md),
-            Divider(
-              height: 1,
-              color: isDark ? AppColors.borderDark : AppColors.borderLight,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _liquidKeySection(),
           ],
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        switch (slot.source) {
+          _ImportSource.paste => _pasteSource(context),
+          _ImportSource.appWallet => _appWalletSource(context),
+          _ImportSource.hardware => _hardwareSource(context),
+          _ImportSource.newKey => _newKeySource(context),
+          _ImportSource.seedPhrase => _seedSource(context),
+        },
+        if (liquidWanted) ...[
+          const SizedBox(height: AppSpacing.lg),
+          Divider(height: 1, thickness: 1, color: s.edge),
+          const SizedBox(height: AppSpacing.lg),
+          _liquidKeySection(context),
         ],
-      ),
+      ],
+    );
+  }
+
+  Widget _pasteSource(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: slot.pasteCtrl,
+                decoration: const InputDecoration(hintText: 'Cosigner xpub'),
+                style: AppTypography.mono.copyWith(color: s.ink),
+                onChanged: (_) => onChanged(),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            _PasteButton(controller: slot.pasteCtrl, onPasted: onChanged),
+            ScanIconButton(
+              controller: slot.pasteCtrl,
+              expectsKey: true,
+              title: "Scan a cosigner xpub or an air-gapped device's QR",
+              // A scanned key checks itself, the way a key read over USB
+              // does — nobody scans a QR and then wonders whether to press
+              // anything.
+              onScanned: (_) => onConfirm(),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          "[fingerprint/48'/1'/0'/2']tpub…",
+          style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
+        ),
+        _KeyVerdict(
+          info: slot.keyInfo,
+          error: slot.keyError,
+          checking: slot.checking,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Wherever the key already is: another Templar wallet '
+          '(this computer or your phone — Wallet info → "Use this '
+          'wallet as a cosigner"), a key a co-signer sent you, or an '
+          "air-gapped device's QR (SeedSigner, or a Jade in QR "
+          'mode — unlock it first, a locked Jade only shows its '
+          'PIN-unlock QR).',
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SecondaryButton(
+            label: slot.checking ? 'Checking…' : 'Done with this key',
+            icon: Icons.check_outlined,
+            isLoading: slot.checking,
+            onPressed: slot.checking || slot.pasteCtrl.text.trim().isEmpty
+                ? null
+                : onConfirm,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _appWalletSource(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DropdownButtonFormField<String>(
+          initialValue: slot.walletId,
+          items: appWallets
+              .map((w) => DropdownMenuItem(value: w.id, child: Text(w.name)))
+              .toList(),
+          onChanged: (id) {
+            if (id != null) onAppWalletPicked(id);
+          },
+          decoration: const InputDecoration(
+            hintText: 'Choose a software wallet',
+          ),
+        ),
+        if (allowLocalSigning && slot.walletId != null)
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            controlAffinity: ListTileControlAffinity.leading,
+            value: slot.signsLocally,
+            onChanged: (v) {
+              slot.signsLocally = v ?? false;
+              onChanged();
+            },
+            title: Text(
+              'Sign with this key from this app',
+              style: AppTypography.body.copyWith(color: s.ink),
+            ),
+            subtitle: Text(
+              'One sign action will sign with every local key',
+              style: AppTypography.caption.copyWith(color: s.inkSecondary),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _hardwareSource(BuildContext context) {
+    final s = AppScheme.of(context);
+    final xpub = slot.xpub;
+    if (xpub == null) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: SecondaryButton(
+          label: busy ? 'Reading…' : 'Read xpub from device',
+          icon: Icons.usb_outlined,
+          isLoading: busy,
+          onPressed: busy ? null : onFetchHw,
+        ),
+      );
+    }
+    return Row(
+      children: [
+        Icon(Icons.usb_outlined, size: AppSpacing.icon, color: s.inkSecondary),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            slot.hwModel ?? 'Device',
+            style: AppTypography.body.copyWith(color: s.ink),
+          ),
+        ),
+        HexText(xpub, truncate: true),
+        IconButton(
+          tooltip: 'Read again',
+          iconSize: AppSpacing.icon,
+          icon: const Icon(Icons.refresh_outlined),
+          onPressed: busy ? null : onFetchHw,
+        ),
+      ],
+    );
+  }
+
+  // ── New private key: generated here, written down here ──────────────────
+  Widget _newKeySource(BuildContext context) {
+    final s = AppScheme.of(context);
+    final words = slot.mnemonic;
+    if (words == null) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: SecondaryButton(
+          label: busy ? 'Generating…' : 'Generate a new 24-word key',
+          icon: Icons.add_moderator_outlined,
+          isLoading: busy,
+          onPressed: busy ? null : onGenerateKey,
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const WarningBanner(
+          title: 'Write these words down on paper',
+          message:
+              'This is a second private key of this wallet. Anyone who '
+              'sees it can sign with it. Shown only once.',
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _WordGrid(words: words),
+        CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          controlAffinity: ListTileControlAffinity.leading,
+          value: slot.backedUp,
+          onChanged: (v) {
+            slot.backedUp = v ?? false;
+            onChanged();
+          },
+          title: Text(
+            'I wrote these words down',
+            style: AppTypography.body.copyWith(color: s.ink),
+          ),
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: HexText(slot.xpub!, truncate: true),
+        ),
+      ],
+    );
+  }
+
+  // ── Existing seed adopted as another private key ────────────────────────
+  Widget _seedSource(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const _FieldLabel('Seed phrase (12 or 24 words)'),
+        TextField(
+          controller: slot.seedCtrl,
+          maxLines: 3,
+          autocorrect: false,
+          enableSuggestions: false,
+          decoration: const InputDecoration(
+            hintText: 'abandon abandon … about',
+          ),
+          style: AppTypography.mono.copyWith(color: s.ink),
+          onChanged: (_) => onChanged(),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          children: [
+            SecondaryButton(
+              label: slot.xpub == null ? 'Use this seed' : 'Check again',
+              icon: Icons.check_outlined,
+              isLoading: busy,
+              onPressed: busy ? null : onUseSeed,
+            ),
+            const SizedBox(width: AppSpacing.md),
+            if (slot.xpub != null)
+              Expanded(child: HexText(slot.xpub!, truncate: true)),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'The seed is stored in this wallet and signs alongside your '
+          'other keys. Keep the paper backup safe.',
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+        ),
+      ],
     );
   }
 
@@ -2513,44 +3052,56 @@ class _ImportSlotCard extends StatelessWidget {
   /// Derived without asking whenever the seed is reachable from here, read
   /// from a Jade over USB, and typed in only for a remote co-signer — the one
   /// case where the app has neither the seed nor the device.
-  Widget _liquidKeySection() {
-    if (slot.isBitcoinOnlyDevice) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.block_rounded, size: 16, color: AppColors.warning),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              '${slot.hwModel ?? 'This device'} is Bitcoin-only — it cannot '
-              'sign Liquid transactions. Including this key makes the whole '
-              'wallet Bitcoin-only.',
-              style: AppTypography.caption,
-            ),
+  Widget _liquidKeySection(BuildContext context) {
+    final s = AppScheme.of(context);
+    Widget note(Widget mark, String text) => Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: 20, child: Center(child: mark)),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            text,
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
           ),
-        ],
+        ),
+      ],
+    );
+
+    if (slot.isBitcoinOnlyDevice) {
+      return note(
+        Icon(
+          Icons.block_outlined,
+          size: AppSpacing.iconSmall,
+          color: s.warning,
+        ),
+        '${slot.hwModel ?? 'This device'} is Bitcoin-only — it cannot '
+        'sign Liquid transactions. Including this key makes the whole '
+        'wallet Bitcoin-only.',
       );
     }
 
     if (slot.source == _ImportSource.paste) {
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: TextField(
                   controller: slot.liquidPasteCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Cosigner Liquid key (BIP87)',
-                    hintText: "[fingerprint/87'/1'/0']tpub…",
+                    hintText: 'Cosigner Liquid key (BIP87)',
                   ),
-                  style: AppTypography.monoSmall,
+                  style: AppTypography.mono.copyWith(color: s.ink),
                   onChanged: (_) => onChanged(),
                 ),
               ),
-              const SizedBox(width: AppSpacing.sm),
+              const SizedBox(width: AppSpacing.xs),
+              _PasteButton(
+                controller: slot.liquidPasteCtrl,
+                onPasted: onChanged,
+              ),
               ScanIconButton(
                 controller: slot.liquidPasteCtrl,
                 expectsKey: true,
@@ -2559,17 +3110,22 @@ class _ImportSlotCard extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            "[fingerprint/87'/1'/0']tpub…",
+            style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
+          ),
           _KeyVerdict(
             info: slot.liquidKeyInfo,
             error: slot.liquidKeyError,
             checking: slot.checking,
           ),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             'A second key from the same co-signer: Liquid uses account '
             "m/87'/1'/0', Bitcoin uses m/48'/1'/0'/2'. Neither can be "
             'computed from the other, so ask for both.',
-            style: AppTypography.caption,
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
           ),
         ],
       );
@@ -2577,36 +3133,22 @@ class _ImportSlotCard extends StatelessWidget {
 
     final key = slot.liquidXpub;
     if (key == null) {
-      return Row(
-        children: [
-          const Icon(
-            Icons.hourglass_empty_rounded,
-            size: 16,
-            color: AppColors.textMuted,
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              slot.source == _ImportSource.hardware
-                  ? 'Liquid key is read from the Jade together with the '
-                        'Bitcoin one.'
-                  : 'Liquid key is derived from this seed automatically.',
-              style: AppTypography.caption,
-            ),
-          ),
-        ],
+      return note(
+        _Dot(s.inkFaint),
+        slot.source == _ImportSource.hardware
+            ? 'Liquid key is read from the Jade together with the Bitcoin one'
+            : 'Liquid key is derived from this seed automatically',
       );
     }
     return Row(
       children: [
-        const Icon(
-          Icons.water_drop_outlined,
-          size: 16,
-          color: AppColors.liquid,
-        ),
+        _Dot(s.liquid),
         const SizedBox(width: AppSpacing.sm),
         Expanded(
-          child: Text('Liquid key ready', style: AppTypography.bodySmall),
+          child: Text(
+            'Liquid key ready',
+            style: AppTypography.body.copyWith(color: s.ink),
+          ),
         ),
         HexText(key, truncate: true),
       ],

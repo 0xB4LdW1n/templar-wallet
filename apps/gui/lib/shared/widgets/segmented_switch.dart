@@ -11,19 +11,14 @@ class SegOption<T> {
     required this.value,
     required this.label,
     this.icon,
-    this.color,
     this.tooltip,
     this.enabled = true,
+    this.dot,
   });
 
   final T value;
   final String label;
   final IconData? icon;
-
-  /// Colour this segment adopts when selected. Defaults to the app accent;
-  /// pass the chain colour where the choice *is* the chain, so BTC and Liquid
-  /// are told apart by hue and not only by position.
-  final Color? color;
 
   final String? tooltip;
 
@@ -32,21 +27,23 @@ class SegOption<T> {
   /// the segment in place (rather than dropping it) leaves the control the
   /// same shape on every screen.
   final bool enabled;
+
+  /// A 6 px dot before the label, in a chain hue. The one place colour may
+  /// appear in the control, and only to identify a chain.
+  final Color? dot;
 }
 
-/// A labelled switch built from the app's tile material.
+/// The segmented control (design.md, "Controls").
 ///
-/// Replaces the two places where a choice was drawn as bare icons or as
-/// Material `ChoiceChip`s: an icon-only segment makes the user hover to learn
-/// what it does, and chips next to a page title read as filters rather than as
-/// the mode the whole screen is in. Here the options sit in one bordered
-/// track, always carry their name, and the selected one is filled in its own
-/// colour.
+/// A recessed `well` track with a hairline; the chosen segment is the raised
+/// surface with the primary ink, the others are quiet text. No option owns a
+/// colour: which one is chosen is told by the surface step alone.
 ///
-/// On a phone every segment is a 48 dp touch row, the track shrinks (labels
-/// ellipsised) instead of overflowing when the row is tighter than it, taps
-/// ripple, and a disabled segment explains itself with a snack bar since there
-/// is no hover to surface the tooltip. Desktop metrics are untouched.
+/// Each segment is a focus stop, so Tab walks the options and Space/Enter
+/// picks one. On a phone every segment is a 40 dp row inside a 44 dp track,
+/// the track shrinks (labels ellipsised) instead of overflowing, and a
+/// disabled segment explains itself with a snack bar since there is no hover
+/// to surface the tooltip.
 class SegmentedSwitch<T> extends StatelessWidget {
   const SegmentedSwitch({
     super.key,
@@ -62,7 +59,8 @@ class SegmentedSwitch<T> extends StatelessWidget {
   final T selected;
   final ValueChanged<T> onChanged;
 
-  /// Tighter padding, for track placement inside a dense header row.
+  /// Tighter side padding, for a track inside a dense header row. The height
+  /// is the same either way.
   final bool dense;
 
   /// Fill the available width, every segment the same share. Needs a bounded
@@ -79,34 +77,34 @@ class SegmentedSwitch<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
+    // Radii nest: the track's corner minus its 2 px padding is the segment's.
+    final radius = phone ? AppSpacing.radiusLg : AppSpacing.radiusMd;
     return Container(
-      // The phone's track is the field's grammar: filled grey, no border,
-      // radius 14 — and 14 − 4 dp of padding leaves the pill concentric.
-      padding: EdgeInsets.all(phone ? 4 : 3),
+      padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
-        color: phone ? s.panelInset : s.cardBase,
-        borderRadius: BorderRadius.circular(
-          phone ? AppSpacing.radiusLg : AppSpacing.radiusMd,
-        ),
-        border: phone ? null : Border.all(color: s.edge),
+        color: s.well,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: s.edge),
       ),
-      child: Row(
-        mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
-        children: [
-          for (final o in options)
-            _wrap(
-              phone,
-              _Segment<T>(
-                option: o,
-                selected: o.value == selected,
-                dense: dense,
-                phone: phone,
-                expand: expand,
-                iconOnly: iconOnly && o.icon != null,
-                onTap: () => onChanged(o.value),
+      child: FocusTraversalGroup(
+        child: Row(
+          mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+          children: [
+            for (final o in options)
+              _wrap(
+                phone,
+                _Segment<T>(
+                  option: o,
+                  selected: o.value == selected,
+                  dense: dense,
+                  phone: phone,
+                  expand: expand,
+                  iconOnly: iconOnly && o.icon != null,
+                  onTap: () => onChanged(o.value),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -147,6 +145,7 @@ class _Segment<T> extends StatefulWidget {
 
 class _SegmentState<T> extends State<_Segment<T>> {
   bool _hover = false;
+  bool _focus = false;
 
   /// Phone stand-in for the hover tooltip on a dimmed segment.
   void _explainDisabled() {
@@ -157,25 +156,21 @@ class _SegmentState<T> extends State<_Segment<T>> {
       ..showSnackBar(SnackBar(content: Text(tip)));
   }
 
+  void _activate() {
+    if (widget.option.enabled) widget.onTap();
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final color = widget.option.color ?? s.accent;
     final selected = widget.selected;
     final enabled = widget.option.enabled;
     final phone = widget.phone;
-    final ink = !enabled
-        ? s.inkSecondary.withValues(alpha: 0.45)
-        : selected
-        ? color
-        : _hover
-        ? s.ink
-        : s.inkSecondary;
+    final baseInk = selected || (_hover && enabled) ? s.ink : s.inkSecondary;
+    final ink = enabled ? baseInk : baseInk.withValues(alpha: 0.5);
 
-    final labelStyle = AppTypography.bodySmall.copyWith(
-      color: ink,
-      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-    );
+    final labelStyle = (selected ? AppTypography.label : AppTypography.caption)
+        .copyWith(color: ink);
     final label = phone || widget.expand
         // Capped segments (phone Flexible / expand) ellipsise the label
         // instead of painting past the track.
@@ -190,102 +185,108 @@ class _SegmentState<T> extends State<_Segment<T>> {
           )
         : Text(widget.option.label, style: labelStyle);
 
+    final dot = widget.option.dot;
     final content = Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        if (dot != null) ...[
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: enabled ? dot : dot.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+        ],
         if (widget.option.icon != null) ...[
-          Icon(widget.option.icon, size: phone ? 17 : 15, color: ink),
-          if (!widget.iconOnly) const SizedBox(width: AppSpacing.sm - 2),
+          Icon(widget.option.icon, size: AppSpacing.iconSmall, color: ink),
+          if (!widget.iconOnly) const SizedBox(width: AppSpacing.sm),
         ],
         if (!widget.iconOnly) label,
       ],
     );
 
-    final padding = EdgeInsets.symmetric(
-      horizontal: phone
-          ? (widget.dense || widget.iconOnly
-                ? AppSpacing.sm + 2
-                : AppSpacing.md)
-          : (widget.dense ? AppSpacing.md : AppSpacing.lg),
-      vertical: phone
-          ? AppSpacing.md
-          : (widget.dense ? AppSpacing.sm - 1 : AppSpacing.sm + 1),
-    );
-
-    final decoration = BoxDecoration(
-      color: selected
-          // One step brighter on a phone: the outline that used to carry the
-          // selection is gone, and the track under it is lighter.
-          ? color.withValues(
-              alpha: phone
-                  ? (s.isDark ? 0.24 : 0.16)
-                  : (s.isDark ? 0.18 : 0.12),
-            )
-          : _hover && enabled
-          ? s.cardHover
-          : Colors.transparent,
-      borderRadius: BorderRadius.circular(
-        phone ? AppSpacing.radiusMd : AppSpacing.radiusSm,
+    // Nested inside the track's 2 px padding: 12 − 2 on a phone.
+    final radius = phone
+        ? AppSpacing.radiusPhoneControl - 2
+        : AppSpacing.radiusSm;
+    final body = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.quick),
+      curve: AppMotion.settle,
+      height: phone ? 40 : AppSpacing.controlHeightSmall,
+      padding: EdgeInsets.symmetric(
+        horizontal: widget.dense || widget.iconOnly
+            ? AppSpacing.sm
+            : AppSpacing.md,
       ),
-      border: phone
-          ? null
-          : Border.all(
-              color:
-                  selected ? color.withValues(alpha: 0.65) : Colors.transparent,
-            ),
-    );
-
-    final Widget body;
-    if (phone) {
-      // 42 dp inside the track's 3 dp padding makes a 48 dp touch row. The
-      // ink sits inside the decorated box so the ripple shows over the fill.
-      body = AnimatedContainer(
-        duration: AppMotion.of(context, AppMotion.quick),
-        curve: AppMotion.settle,
-        constraints: BoxConstraints(
-          // 54 dp when the track owns its row, so it lines up with the
-          // buttons stacked with it; 48 when it shares a header row.
-          minHeight: (widget.expand
-                  ? AppSpacing.phoneControlHeight
-                  : AppLayout.minTouchTarget) -
-              8,
-        ),
-        decoration: decoration,
-        child: Material(
-          type: MaterialType.transparency,
-          child: InkWell(
-            onTap: enabled ? widget.onTap : _explainDisabled,
-            // Follows the pill above, or the ripple squares off its corners.
-            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            child: Padding(
-              padding: padding,
-              child: Center(child: content),
+      // The thumb sits in a well: on light that means white on grey, and the
+      // card's whisper of a shadow is what gives it an edge there.
+      decoration: BoxDecoration(
+        color: selected ? s.thumb : Colors.transparent,
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: selected ? s.panelShadow : null,
+      ),
+      foregroundDecoration: _focus && enabled
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(color: s.focus, width: 2),
+            )
+          : null,
+      // The chosen segment carries the accent's mark at its foot: a short
+      // bar, the tab's "you are here", inside the thumb.
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Center(widthFactor: 1, child: content),
+          Positioned(
+            bottom: 2,
+            child: AnimatedOpacity(
+              opacity: selected ? 1 : 0,
+              duration: AppMotion.of(context, AppMotion.quick),
+              curve: AppMotion.settle,
+              child: Container(
+                width: AppSpacing.md,
+                height: 2,
+                decoration: BoxDecoration(
+                  color: s.accent,
+                  borderRadius: BorderRadius.circular(1),
+                ),
+              ),
             ),
           ),
-        ),
-      );
-    } else {
-      body = AnimatedContainer(
-        duration: AppMotion.of(context, AppMotion.quick),
-        curve: AppMotion.settle,
-        padding: padding,
-        decoration: decoration,
-        child: content,
-      );
-    }
+        ],
+      ),
+    );
 
-    final tappable = MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: phone
-          ? body
-          : GestureDetector(
-              onTap: enabled ? widget.onTap : null,
-              behavior: HitTestBehavior.opaque,
-              child: body,
-            ),
+    final tappable = Semantics(
+      button: true,
+      selected: selected,
+      enabled: enabled,
+      label: widget.iconOnly ? widget.option.label : null,
+      child: FocusableActionDetector(
+        enabled: enabled,
+        mouseCursor: enabled
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
+        onShowHoverHighlight: (v) => setState(() => _hover = v),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              _activate();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled ? widget.onTap : (phone ? _explainDisabled : null),
+          child: body,
+        ),
+      ),
     );
 
     final tip =

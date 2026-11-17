@@ -37,7 +37,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Optional wallet features'), findsOneWidget);
+    expect(find.text('Features'), findsOneWidget);
     expect(find.byType(Switch), findsNWidgets(3));
 
     for (var index = 0; index < 3; index++) {

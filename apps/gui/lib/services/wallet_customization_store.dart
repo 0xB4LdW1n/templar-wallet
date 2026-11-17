@@ -9,17 +9,24 @@ class WalletCustomization {
   final int? accentColor; // ARGB int
   final String? passwordHash; // SHA-256 hex of user password; null = no lock
 
+  /// When this wallet was last opened on this device, in milliseconds since
+  /// the epoch; null until it has been. The wallet list starts on the one
+  /// opened last.
+  final int? lastOpenedAt;
+
   const WalletCustomization({
     required this.walletId,
     this.nameOverride,
     this.accentColor,
     this.passwordHash,
+    this.lastOpenedAt,
   });
 
   WalletCustomization copyWith({
     String? nameOverride,
     int? accentColor,
     Object? passwordHash = _sentinel,
+    int? lastOpenedAt,
   }) =>
       WalletCustomization(
         walletId: walletId,
@@ -28,6 +35,7 @@ class WalletCustomization {
         passwordHash: passwordHash == _sentinel
             ? this.passwordHash
             : passwordHash as String?,
+        lastOpenedAt: lastOpenedAt ?? this.lastOpenedAt,
       );
 
   static const _sentinel = Object();
@@ -49,6 +57,7 @@ class WalletCustomizationStore {
       nameOverride: m['name'] as String?,
       accentColor: m['color'] as int?,
       passwordHash: m['password_hash'] as String?,
+      lastOpenedAt: m['opened_at'] as int?,
     );
   }
 
@@ -58,7 +67,17 @@ class WalletCustomizationStore {
     if (c.nameOverride != null) m['name'] = c.nameOverride;
     if (c.accentColor != null) m['color'] = c.accentColor;
     if (c.passwordHash != null) m['password_hash'] = c.passwordHash;
+    if (c.lastOpenedAt != null) m['opened_at'] = c.lastOpenedAt;
     await prefs.setString('$_prefix${c.walletId}', jsonEncode(m));
+  }
+
+  /// Stamps [walletId] as opened now. Reads the record first, so a name or
+  /// a colour saved since the list was drawn is not written over.
+  Future<void> markOpened(String walletId) async {
+    final current = await load(walletId);
+    await save(
+      current.copyWith(lastOpenedAt: DateTime.now().millisecondsSinceEpoch),
+    );
   }
 
   Future<void> delete(String walletId) async {

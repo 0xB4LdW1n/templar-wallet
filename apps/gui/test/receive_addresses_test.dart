@@ -7,11 +7,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/bridge/wallet_bridge.dart';
 import 'package:templar_wallet/features/receive/models/address_info.dart';
 import 'package:templar_wallet/features/receive/receive_addresses_screen.dart';
 import 'package:templar_wallet/features/receive/receive_screen.dart';
+import 'package:templar_wallet/services/address_label_store.dart';
 
 class _StubBridge implements WalletBridge {
   _StubBridge({this.previousCount = 12});
@@ -67,6 +70,10 @@ void _desktopWindow(WidgetTester t) {
 
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    AddressLabelStore.instance.debugReset();
+  });
 
   testWidgets('Receive shows the newest eight and offers the rest', (t) async {
     _desktopWindow(t);
@@ -79,7 +86,7 @@ void main() {
     expect(find.text('#4'), findsOneWidget);
     expect(find.text('#3'), findsNothing);
     expect(find.text('#0'), findsNothing);
-    expect(find.text('Show all (4 more)'), findsOneWidget);
+    expect(find.text('Show all'), findsOneWidget);
   });
 
   testWidgets('a short list has no hidden count', (t) async {
@@ -103,16 +110,63 @@ void main() {
     await t.pumpAndSettle();
 
     expect(find.text('All addresses'), findsOneWidget);
-    expect(find.text('13 addresses'), findsOneWidget);
+    expect(find.textContaining('13 addresses'), findsOneWidget);
     // The current unused address leads, marked as such.
-    expect(find.text('#12 · current'), findsOneWidget);
+    expect(find.text('#12'), findsOneWidget);
+    expect(find.text('Current'), findsOneWidget);
     // Every previous one, oldest included, with its label where it has one.
     expect(find.text('#0'), findsOneWidget);
-    expect(find.text('#3 · Faucet'), findsOneWidget);
+    expect(find.text('#3'), findsOneWidget);
+    expect(find.text('Faucet'), findsOneWidget);
     // Amounts, in the unit the app is set to (coins by default): #0
     // received 1,000 sats, #2 3,000 — each figure drawn once.
     expect(find.text('0.00001000'), findsOneWidget);
     expect(find.text('0.00003000'), findsOneWidget);
     expect(find.text('Back to Receive'), findsOneWidget);
+  });
+
+  testWidgets('an address takes a label from its row and keeps it', (t) async {
+    _desktopWindow(t);
+    await t.pumpWidget(
+      _host(ReceiveAddressesScreen(asset: 'BTC', bridge: _StubBridge())),
+    );
+    await t.pumpAndSettle();
+
+    // Every row carries the three controls: label, QR, copy.
+    expect(find.byTooltip('Show QR'), findsNWidgets(13));
+    expect(find.byTooltip('Copy address'), findsNWidgets(13));
+
+    // The newest previous address (#11) is the second row.
+    await t.tap(find.byIcon(Icons.label_outlined).at(1));
+    await t.pumpAndSettle();
+    expect(find.text('Label address'), findsOneWidget);
+    await t.enterText(find.byType(TextField), 'Rent');
+    await t.tap(find.text('Save'));
+    await t.pumpAndSettle();
+
+    // On the row at once, and on disk for the next launch.
+    expect(find.text('Rent'), findsOneWidget);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('address_labels_v1'), contains('Rent'));
+
+    // The user's label replaces nothing it does not own: the engine's
+    // label on #3 is still there.
+    expect(find.text('Faucet'), findsOneWidget);
+  });
+
+  testWidgets('the QR control opens the address with its code', (t) async {
+    _desktopWindow(t);
+    await t.pumpWidget(
+      _host(ReceiveAddressesScreen(asset: 'BTC', bridge: _StubBridge())),
+    );
+    await t.pumpAndSettle();
+    expect(find.byType(QrImageView), findsNothing);
+
+    await t.tap(find.byTooltip('Show QR').at(1));
+    await t.pumpAndSettle();
+    expect(find.byType(QrImageView), findsOneWidget);
+    expect(find.text('Address #11'), findsOneWidget);
+    expect(find.text('Used'), findsWidgets);
+    expect(find.text('Copy address'), findsOneWidget);
   });
 }

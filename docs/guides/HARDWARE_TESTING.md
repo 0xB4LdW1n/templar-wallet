@@ -180,7 +180,7 @@ Faucet → the verified address → sync. First sync of a fresh descriptor does 
 deep scan (gap limit 200) and is slow.
 
 ### A4 · Send + on-device signing
-Send wizard → BTC → review → **Send**.
+Send → Bitcoin → **Review** → **Sign on device**.
 1. **Connect gate** polls until a device matching *this wallet's fingerprint* appears.
 2. **Pre-sign address verification**: the device displays an address and you confirm it — proof the connected device controls this wallet before anything is built.
 3. `sign_transaction_hw` builds and signs; `broadcast_signed_psbt` publishes.

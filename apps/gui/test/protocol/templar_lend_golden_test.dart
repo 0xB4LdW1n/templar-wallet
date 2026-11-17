@@ -5,8 +5,14 @@
 @Tags(['golden'])
 library;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/features/loans/loan_detail_screen.dart';
 import 'package:templar_wallet/features/loans/loan_overview_card.dart';
 import 'package:templar_wallet/features/protocol/models/protocol_link.dart';
@@ -16,7 +22,6 @@ import 'package:templar_wallet/features/protocol/protocol_confirm_gate.dart';
 import 'package:templar_wallet/features/protocol/protocol_copy.dart';
 import 'package:templar_wallet/features/protocol/protocol_transaction_review.dart';
 import 'package:templar_wallet/features/psbt/models/pset_inspection.dart';
-import 'package:templar_wallet/shared/widgets/buttons.dart';
 import 'package:templar_wallet/shared/widgets/hybrid_kit.dart';
 import 'package:templar_wallet/shared/widgets/list_rows.dart';
 import 'package:templar_wallet/theme/app_scheme.dart';
@@ -160,47 +165,79 @@ ProtocolPortfolio _portfolio(ProtocolLoan loan) => ProtocolPortfolio(
   offers: const [],
 );
 
-Widget _page({required Widget child, required bool light, String? title}) =>
-    MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: light ? AppTheme.light() : AppTheme.dark(),
-      home: Builder(
-        builder: (context) => Scaffold(
-          body: PageBackground.flat(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AppSpacing.xxl),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 920),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (title != null) ...[
-                        Text(
-                          title,
-                          style: AppTypography.pageTitleOf(
-                            context,
-                          ).copyWith(color: AppScheme.of(context).ink),
-                        ),
-                        const SizedBox(height: AppSpacing.xl),
-                      ],
-                      child,
+Widget _page({
+  required Widget child,
+  required bool light,
+  String? title,
+  Widget? bottom,
+}) => _app(
+  MaterialApp(
+    debugShowCheckedModeBanner: false,
+    theme: light ? AppTheme.light() : AppTheme.dark(),
+    home: Builder(
+      builder: (context) => Scaffold(
+        body: PageBackground.flat(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 920),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (title != null) ...[
+                      Text(
+                        title,
+                        style: AppTypography.pageTitleOf(
+                          context,
+                        ).copyWith(color: AppScheme.of(context).ink),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
                     ],
-                  ),
+                    child,
+                  ],
                 ),
               ),
             ),
           ),
         ),
+        bottomNavigationBar: bottom,
       ),
-    );
+    ),
+  ),
+);
+
+/// Loan figures sit behind the privacy mask, which reads [AppState].
+Widget _app(Widget app) =>
+    ChangeNotifierProvider(create: (_) => AppState(), child: app);
+
+/// The Material icon font, so the documentation images show real glyphs
+/// rather than the test harness's boxes. Absent outside a Flutter checkout:
+/// the images then fall back to boxes, as before.
+Future<void> _loadIcons() async {
+  final root = Platform.environment['FLUTTER_ROOT'];
+  if (root == null) return;
+  final file = File(
+    '$root/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+  );
+  if (!file.existsSync()) return;
+  final bytes = file.readAsBytesSync();
+  final loader = FontLoader('MaterialIcons')
+    ..addFont(Future.value(ByteData.sublistView(bytes)));
+  await loader.load();
+}
 
 Future<void> _golden(
   WidgetTester tester, {
   required Size size,
   required Widget child,
   required String file,
+  bool phone = false,
 }) async {
+  // The phone layouts only exist on a mobile platform; the seam lets the
+  // host lay them out.
+  AppLayout.debugMobileOverride = phone ? true : null;
+  addTearDown(() => AppLayout.debugMobileOverride = null);
   await warmUpWalletFonts(tester);
   tester.view
     ..physicalSize = size
@@ -322,38 +359,79 @@ Widget _signReview(String action, {bool light = false}) {
   final request = _request(action);
   final inspection = _inspection(action);
   final agreement = ProtocolReviewAgreement.compare(request, inspection);
+  // The request screen's own pieces, in its order: the heading, the review,
+  // and the consent step — pinned under the page on a phone.
+  final phone = action == 'installment';
+  final gate = ProtocolConfirmGate(
+    statement:
+        'I reviewed the amounts computed by this wallet, the covenant effect and the fee',
+    buttonLabel: 'Sign ${ProtocolCopy.english.action(action).toLowerCase()}',
+    onConfirm: () {},
+    cancelLabel: 'Cancel request',
+    onCancel: () {},
+    disabledReason: 'Signing is blocked: the site and the wallet do not agree',
+  );
   return _page(
     light: light,
-    title: '${ProtocolCopy.english.action(action)} · SQ-42',
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ProtocolTransactionReview(
-          request: request,
-          inspection: inspection,
-          agreement: agreement,
+    bottom: phone ? _Pinned(child: gate) : null,
+    child: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: AppSpacing.formMaxWidth),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ProtocolRequestHeading(
+              title: '${ProtocolCopy.english.action(action)} · SQ-42',
+              site: request.site,
+              network: request.network,
+              origin: 'http://127.0.0.1:8080',
+              walletName: 'Demo wallet',
+            ),
+            ProtocolTransactionReview(
+              request: request,
+              inspection: inspection,
+              agreement: agreement,
+            ),
+            if (!phone) ...[const SizedBox(height: AppSpacing.xl), gate],
+          ],
         ),
-        ProtocolConfirmGate(
-          statement:
-              'I reviewed the wallet-verified amounts and covenant effect.',
-          buttonLabel:
-              'Sign ${ProtocolCopy.english.action(action).toLowerCase()}',
-          onConfirm: () {},
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        SecondaryButton(
-          label: 'Cancel signing request',
-          icon: Icons.close_rounded,
-          onPressed: () {},
-          isFullWidth: true,
-        ),
-      ],
+      ),
     ),
   );
 }
 
+/// The phone's pinned consent bar, as the request screen draws it.
+class _Pinned extends StatelessWidget {
+  const _Pinned({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: s.panel,
+        border: Border(top: BorderSide(color: s.edge)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.sm,
+          AppSpacing.lg,
+          AppSpacing.lg,
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
 void main() {
-  setUpAll(loadTestFonts);
+  setUpAll(() async {
+    await loadTestFonts();
+    await _loadIcons();
+  });
+  setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('golden overview dark desktop', (tester) async {
     final due = _loan(id: 42);
@@ -364,26 +442,29 @@ void main() {
       file: 'overview-dark-desktop.png',
       child: _page(
         light: false,
-        title: 'Templar Lend',
+        title: 'Loans',
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const ListSectionLabel(label: 'Action required · 2'),
-            LoanOverviewCard(
-              loan: due,
-              updatedAt: DateTime.utc(2026, 11, 6, 12),
-              now: DateTime.utc(2026, 11, 6, 12, 2),
-              primaryEmphasis: true,
-              onPrimary: () {},
-              onOpen: () {},
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            LoanOverviewCard(
-              loan: renewal,
-              updatedAt: DateTime.utc(2026, 11, 6, 12),
-              now: DateTime.utc(2026, 11, 6, 12, 2),
-              onPrimary: () {},
-              onOpen: () {},
+            LoanList(
+              children: [
+                LoanOverviewCard(
+                  loan: due,
+                  updatedAt: DateTime.utc(2026, 11, 6, 12),
+                  now: DateTime.utc(2026, 11, 6, 12, 2),
+                  primaryEmphasis: true,
+                  onPrimary: () {},
+                  onOpen: () {},
+                ),
+                LoanOverviewCard(
+                  loan: renewal,
+                  updatedAt: DateTime.utc(2026, 11, 6, 12),
+                  now: DateTime.utc(2026, 11, 6, 12, 2),
+                  onPrimary: () {},
+                  onOpen: () {},
+                ),
+              ],
             ),
           ],
         ),
@@ -397,16 +478,21 @@ void main() {
       tester,
       size: const Size(390, 844),
       file: 'borrower-due-light-mobile.png',
+      phone: true,
       child: _page(
         light: true,
         title: 'Installment due',
-        child: LoanOverviewCard(
-          loan: loan,
-          updatedAt: DateTime.utc(2026, 11, 6, 12),
-          now: DateTime.utc(2026, 11, 6, 12, 2),
-          primaryEmphasis: true,
-          onPrimary: () {},
-          onOpen: () {},
+        child: LoanList(
+          children: [
+            LoanOverviewCard(
+              loan: loan,
+              updatedAt: DateTime.utc(2026, 11, 6, 12),
+              now: DateTime.utc(2026, 11, 6, 12, 2),
+              primaryEmphasis: true,
+              onPrimary: () {},
+              onOpen: () {},
+            ),
+          ],
         ),
       ),
     );
@@ -421,13 +507,17 @@ void main() {
       child: _page(
         light: false,
         title: 'Renewal after missed installment',
-        child: LoanOverviewCard(
-          loan: loan,
-          updatedAt: DateTime.utc(2026, 11, 6, 12),
-          now: DateTime.utc(2026, 11, 6, 12, 2),
-          primaryEmphasis: true,
-          onPrimary: () {},
-          onOpen: () {},
+        child: LoanList(
+          children: [
+            LoanOverviewCard(
+              loan: loan,
+              updatedAt: DateTime.utc(2026, 11, 6, 12),
+              now: DateTime.utc(2026, 11, 6, 12, 2),
+              primaryEmphasis: true,
+              onPrimary: () {},
+              onOpen: () {},
+            ),
+          ],
         ),
       ),
     );
@@ -439,15 +529,17 @@ void main() {
       tester,
       size: const Size(1100, 1900),
       file: 'partial-repayment-detail.png',
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.dark(),
-        home: LoanDetailScreen(
-          siteKey: 'demo',
-          loanId: loan.id,
-          loan: loan,
-          portfolio: _portfolio(loan),
-          now: DateTime.utc(2026, 11, 6, 12, 2),
+      child: _app(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.dark(),
+          home: LoanDetailScreen(
+            siteKey: 'demo',
+            loanId: loan.id,
+            loan: loan,
+            portfolio: _portfolio(loan),
+            now: DateTime.utc(2026, 11, 6, 12, 2),
+          ),
         ),
       ),
     );
@@ -466,15 +558,17 @@ void main() {
       tester,
       size: const Size(1100, 1900),
       file: 'default-penalty-detail.png',
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(),
-        home: LoanDetailScreen(
-          siteKey: 'demo',
-          loanId: loan.id,
-          loan: loan,
-          portfolio: _portfolio(loan),
-          now: DateTime.utc(2026, 11, 6, 12, 2),
+      child: _app(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light(),
+          home: LoanDetailScreen(
+            siteKey: 'demo',
+            loanId: loan.id,
+            loan: loan,
+            portfolio: _portfolio(loan),
+            now: DateTime.utc(2026, 11, 6, 12, 2),
+          ),
         ),
       ),
     );
@@ -494,12 +588,16 @@ void main() {
       child: _page(
         light: false,
         title: 'Completed',
-        child: LoanOverviewCard(
-          loan: loan,
-          updatedAt: DateTime.utc(2026, 11, 6, 12),
-          now: DateTime.utc(2026, 11, 6, 12, 2),
-          onPrimary: () {},
-          onOpen: () {},
+        child: LoanList(
+          children: [
+            LoanOverviewCard(
+              loan: loan,
+              updatedAt: DateTime.utc(2026, 11, 6, 12),
+              now: DateTime.utc(2026, 11, 6, 12, 2),
+              onPrimary: () {},
+              onOpen: () {},
+            ),
+          ],
         ),
       ),
     );
@@ -514,6 +612,7 @@ void main() {
             : const Size(900, 1050),
         file:
             'sign-$action-${action == 'installment' ? 'mobile' : 'desktop'}.png',
+        phone: action == 'installment',
         child: _signReview(action, light: action == 'origination'),
       );
     });

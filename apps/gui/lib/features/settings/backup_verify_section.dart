@@ -15,13 +15,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/cards.dart';
-import '../../shared/widgets/glass_dialog.dart';
-import '../../shared/widgets/list_rows.dart';
+import '../../shared/widgets/app_dialog.dart';
 import '../../shared/widgets/segmented_switch.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import 'settings_kit.dart';
 
 /// When each wallet's paper backup last checked out.
 ///
@@ -100,6 +99,7 @@ class _BackupVerifyCardState extends State<BackupVerifyCard> {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
     final last = _lastVerified;
     // Six months: long enough not to nag, short enough that a backup lost in a
     // move is found before it is needed.
@@ -107,122 +107,61 @@ class _BackupVerifyCardState extends State<BackupVerifyCard> {
         last != null &&
         DateTime.now().difference(last) > const Duration(days: 182);
 
-    // The three states, once: both skins draw the same glyph and the same
-    // tint for the same fact.
+    // The three states, once: the glyph says which, the dot says whether it
+    // is good news. "Never verified" is no status yet, so it has no dot.
     final icon = last == null
-        ? Icons.help_outline_rounded
+        ? Icons.help_outline
         : stale
-        ? Icons.schedule_rounded
+        ? Icons.schedule_outlined
         : Icons.verified_user_outlined;
-    final tint = last == null
-        ? s.inkFaint
+    final dot = last == null
+        ? null
         : stale
         ? s.warning
         : s.success;
-
-    if (AppLayout.isPhone(context)) {
-      // A state and one way into it — which is exactly a list row, and is how
-      // the settings root next door draws the same kind of thing. The
-      // paragraph moves under the group: a row subtitle is one line, and on a
-      // 347 dp column that is about thirty characters.
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const ListSectionLabel(label: 'Backup check'),
-          ListCard(
-            children: [
-              ListRow(
-                icon: icon,
-                tint: tint,
-                title: 'Recovery phrase backup',
-                subtitle: last == null
-                    ? 'Never verified'
-                    : stale
-                    ? 'Verified ${_ago(last)} — check again'
-                    : 'Verified ${_ago(last)}',
-                subtitleColor: tint,
-                chevron: true,
-                onTap: _verify,
-              ),
-            ],
-          ),
-          const _SectionNote(
-            text:
-                'Type your written phrase back in and Templar checks that it '
-                'really restores this wallet. Nothing is revealed — the words '
-                'you type are turned into public keys and compared with this '
-                "wallet's own, so a wrong or out-of-order word simply fails.",
-          ),
-        ],
-      );
+    final String state;
+    if (phone) {
+      // About thirty characters fit a phone row's subtitle.
+      state = last == null
+          ? 'Never verified'
+          : stale
+          ? 'Verified ${_ago(last)} — check again'
+          : 'Verified ${_ago(last)}';
+    } else {
+      state = last == null
+          // "computer" is wrong on a phone, and the codebase already knows
+          // the difference elsewhere.
+          ? 'Never verified on this '
+                '${Platform.isAndroid ? 'device' : 'computer'}'
+          : stale
+          ? 'Last verified ${_ago(last)} — worth checking again'
+          : 'Backup verified ${_ago(last)}';
     }
 
-    return SectionCard(
-      title: 'Recovery phrase backup',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Type your written phrase back in and Templar checks that it '
-            'really restores this wallet. Nothing is revealed — the words you '
-            'type are turned into public keys and compared with this wallet\'s '
-            'own, so a wrong or out-of-order word simply fails.',
-            style: AppTypography.caption,
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Icon(icon, size: 16, color: tint),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  last == null
-                      // "computer" is wrong on a phone, and the codebase
-                      // already knows the difference elsewhere.
-                      ? 'Never verified on this '
-                            '${Platform.isAndroid ? 'device' : 'computer'}.'
-                      : stale
-                      ? 'Last verified ${_ago(last)} — worth checking again.'
-                      : 'Backup verified ${_ago(last)}.',
-                  style: AppTypography.bodySmall.copyWith(
-                    color: last == null ? s.inkSecondary : tint,
-                  ),
+    return SettingsGroup(
+      label: 'Backup check',
+      note:
+          'Type your written phrase back in and Templar checks that it really '
+          'restores this wallet. Nothing is revealed — the words you type are '
+          'turned into public keys and compared with this wallet\'s own, so a '
+          'wrong or out-of-order word simply fails.',
+      children: [
+        SettingsRow(
+          icon: icon,
+          title: 'Recovery phrase backup',
+          subtitle: state,
+          dot: dot,
+          chevron: phone,
+          onTap: phone ? _verify : null,
+          trailing: phone
+              ? null
+              : SecondaryButton(
+                  label: 'Verify backup',
+                  icon: Icons.fact_check_outlined,
+                  onPressed: _verify,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          SecondaryButton(
-            label: 'Verify backup',
-            icon: Icons.fact_check_outlined,
-            onPressed: _verify,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The footnote under a phone list group — the paragraph a one-line [ListRow]
-/// subtitle cannot hold. A copy of the one in settings_screen.dart: it belongs
-/// in list_rows.dart, which is owned elsewhere this pass.
-class _SectionNote extends StatelessWidget {
-  const _SectionNote({required this.text});
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, AppSpacing.sm, 2, 0),
-      child: Text(
-        text,
-        style: AppTypography.caption.copyWith(
-          fontSize: 12.5,
-          color: s.inkSecondary,
-          height: 1.35,
         ),
-      ),
+      ],
     );
   }
 }
@@ -357,24 +296,25 @@ class _ReEntryDialogState extends State<_ReEntryDialog> {
   /// The number lives outside the field, not as `prefixText`: Flutter hides a
   /// prefix until the field has focus or content, so an empty grid showed no
   /// positions at all — the one thing the user is checking against paper.
+  /// It sits right-aligned in a fixed column so `1.` and `24.` line up.
   Widget _wordCell(int i, AppScheme s, bool phone) => Row(
     children: [
       SizedBox(
-        width: 22,
+        width: AppSpacing.xl,
         child: Text(
           '${i + 1}.',
           textAlign: TextAlign.right,
-          style: AppTypography.caption.copyWith(color: s.inkFaint),
+          style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
         ),
       ),
-      const SizedBox(width: AppSpacing.xs),
+      const SizedBox(width: AppSpacing.sm),
       Expanded(
         child: TextField(
           controller: _ctrls[i],
           autofocus: i == 0,
           autocorrect: false,
           enableSuggestions: false,
-          style: AppTypography.mono,
+          style: AppTypography.mono.copyWith(color: s.ink),
           // isDense shrinks the box below the phone field's own height —
           // and 24 of them are the whole task on this screen.
           decoration: phone
@@ -396,133 +336,90 @@ class _ReEntryDialogState extends State<_ReEntryDialog> {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
     final r = _result;
+    final columns = phone ? 2 : 3;
 
-    return GlassDialog(
+    return PromptDialog(
       title: 'Verify your backup',
       icon: Icons.fact_check_outlined,
+      width: phone ? 380 : 560,
       // In a sheet the actions land in an end-aligned Wrap: full width, they
-      // stack as bars instead of two right-hugging chips. PrimaryButton draws
-      // this same 16 px spinner when isLoading, so the branch collapses.
-      actions: phone
-          ? [
-              GhostButton(
-                label: r?.matched == true ? 'Done' : 'Cancel',
-                onPressed: () => Navigator.of(context).pop(r?.matched == true),
-                isFullWidth: true,
-              ),
-              if (r?.matched != true)
-                PrimaryButton(
-                  label: 'Check backup',
-                  isLoading: _checking,
-                  onPressed: _complete && !_checking ? _check : null,
-                  isFullWidth: true,
-                ),
-            ]
-          : [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(r?.matched == true),
-                child: Text(r?.matched == true ? 'Done' : 'Cancel'),
-              ),
-              if (r?.matched != true)
-                FilledButton(
-                  onPressed: _complete && !_checking ? _check : null,
-                  child: _checking
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Check backup'),
-                ),
-            ],
+      // stack as bars instead of two right-hugging chips.
+      actions: [
+        GhostButton(
+          label: r?.matched == true ? 'Done' : 'Cancel',
+          onPressed: () => Navigator.of(context).pop(r?.matched == true),
+          isFullWidth: phone,
+        ),
+        if (r?.matched != true)
+          PrimaryButton(
+            label: 'Check backup',
+            isLoading: _checking,
+            onPressed: _complete && !_checking ? _check : null,
+            isFullWidth: phone,
+          ),
+      ],
       child: SizedBox(
-        width: AppLayout.isPhone(context) ? double.infinity : 520,
+        width: phone ? double.infinity : 520,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Type the phrase exactly as you wrote it down, in order.',
-              style: AppTypography.caption.copyWith(
-                color: phone ? s.inkSecondary : null,
-              ),
+              'Type the phrase exactly as you wrote it down, in order',
+              style: AppTypography.caption.copyWith(color: s.inkSecondary),
             ),
-            const SizedBox(height: AppSpacing.md),
-            // Phone: the same track the Liquid network card uses two pages
-            // away, rather than Material's own chip fill and radius, which
-            // match nothing else here.
-            if (phone) ...[
-              const ListSectionLabel(label: 'Words'),
-              SegmentedSwitch<int>(
-                expand: true,
-                options: const [
-                  SegOption(value: 12, label: '12'),
-                  SegOption(value: 24, label: '24'),
-                ],
-                selected: _wordCount,
-                onChanged: _setWordCount,
-              ),
-            ] else
-              Row(
-                children: [
-                  Text('Words:', style: AppTypography.caption),
-                  const SizedBox(width: AppSpacing.sm),
-                  for (final n in const [12, 24]) ...[
-                    ChoiceChip(
-                      label: Text('$n'),
-                      selected: _wordCount == n,
-                      onSelected: (_) => _setWordCount(n),
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              'Words',
+              style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            SegmentedSwitch<int>(
+              expand: phone,
+              options: const [
+                SegOption(value: 12, label: '12'),
+                SegOption(value: 24, label: '24'),
+              ],
+              selected: _wordCount,
+              onChanged: _setWordCount,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            // Phone: no inner scroller. The sheet this dialog becomes already
+            // scrolls (AppSheet caps itself at 90% of the screen), and two
+            // scrollables inside one another fight for the same drag. The
+            // desktop keeps a 320 px window so 24 words do not push the
+            // actions off a laptop screen.
+            LayoutBuilder(
+              builder: (context, c) {
+                // Floored: the cells plus the gaps must never round up past
+                // the line, or the grid loses a column.
+                final cell =
+                    ((c.maxWidth - AppSpacing.sm * (columns - 1)) / columns)
+                        .floorToDouble();
+                final grid = Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    for (var i = 0; i < _wordCount; i++)
+                      SizedBox(width: cell, child: _wordCell(i, s, phone)),
                   ],
-                ],
-              ),
-            const SizedBox(height: AppSpacing.md),
-            // Phone: no inner scroller and no 320 dp window. The sheet this
-            // dialog becomes already scrolls (AppSheet caps itself at 90% of
-            // the screen), and two scrollables inside one another fight for
-            // the same drag. The cells divide the width instead of taking a
-            // fixed 155, so the two columns align with the sheet's edges.
-            if (phone)
-              LayoutBuilder(
-                builder: (context, c) {
-                  // Floored: two cells plus the gap must never round up past
-                  // the line, or the grid collapses to one column.
-                  final cell = ((c.maxWidth - AppSpacing.sm) / 2)
-                      .floorToDouble();
-                  return Wrap(
-                    spacing: AppSpacing.sm,
-                    runSpacing: AppSpacing.sm,
-                    children: [
-                      for (var i = 0; i < _wordCount; i++)
-                        SizedBox(width: cell, child: _wordCell(i, s, phone)),
-                    ],
-                  );
-                },
-              )
-            else
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 320),
-                child: SingleChildScrollView(
-                  child: Wrap(
-                    spacing: AppSpacing.sm,
-                    runSpacing: AppSpacing.sm,
-                    children: [
-                      for (var i = 0; i < _wordCount; i++)
-                        SizedBox(width: 155, child: _wordCell(i, s, phone)),
-                    ],
-                  ),
-                ),
-              ),
+                );
+                if (phone) return grid;
+                return ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 320),
+                  child: SingleChildScrollView(child: grid),
+                );
+              },
+            ),
             if (_error != null) ...[
               const SizedBox(height: AppSpacing.md),
               Text(
                 _error!,
-                style: AppTypography.bodySmall.copyWith(color: s.danger),
+                style: AppTypography.caption.copyWith(color: s.danger),
               ),
             ],
             if (r != null) ...[
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.lg),
               _ResultBanner(result: r),
             ],
           ],
@@ -532,6 +429,9 @@ class _ReEntryDialogState extends State<_ReEntryDialog> {
   }
 }
 
+/// The engine's verdict on the whole phrase. The check is all-or-nothing —
+/// the words become keys and the keys are compared — so there is no per-word
+/// verdict to draw; this says which way it went and what to do next.
 class _ResultBanner extends StatelessWidget {
   const _ResultBanner({required this.result});
   final BackupVerification result;
@@ -575,17 +475,19 @@ class _ResultBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        color: s.panelInset,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            ok ? Icons.verified_rounded : Icons.error_outline_rounded,
-            size: 18,
-            color: color,
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              ok ? Icons.check_circle_outline : Icons.error_outline,
+              size: AppSpacing.iconSmall,
+              color: color,
+            ),
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
@@ -594,12 +496,9 @@ class _ResultBanner extends StatelessWidget {
               children: [
                 Text(
                   headline,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: AppTypography.label.copyWith(color: s.ink),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: AppSpacing.xs),
                 Text(
                   detail,
                   style: AppTypography.caption.copyWith(color: s.inkSecondary),

@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../bridge/bridge_provider.dart';
 import '../../services/hwi_installer.dart';
-import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../theme/app_colors.dart';
+import '../../shared/widgets/hybrid_kit.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 
@@ -95,73 +95,118 @@ class _HwiInstallCardState extends State<HwiInstallCard> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final s = AppScheme.of(context);
     final release = _release;
+    final error = _error;
 
+    // A quiet card with one action: the status icon says what kind of notice
+    // this is, the surface stays the card's.
     return Container(
       padding: const EdgeInsets.all(AppSpacing.cardPadding),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceDark : AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: AppColors.warning, width: 1.5),
+        color: s.panel,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(color: s.edge),
+        boxShadow: s.panelShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.download_for_offline_outlined,
-                color: AppColors.warning,
-                size: 22,
+              Icon(
+                Icons.download_outlined,
+                color: s.warning,
+                size: AppSpacing.icon,
               ),
-              const SizedBox(width: AppSpacing.md),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
                   'HWI toolkit required',
-                  style: AppTypography.sectionTitle,
+                  style: AppTypography.sectionTitle.copyWith(color: s.ink),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             'USB hardware wallets are driven by HWI (Hardware Wallet '
             'Interface, a Bitcoin Core project). It is not installed yet. '
             'Templar can download the official signed build and set it up '
             'automatically.',
-            style: AppTypography.bodySmall.copyWith(
-              color: isDark
-                  ? AppColors.textSecondaryDark
-                  : AppColors.textSecondary,
-            ),
+            style: AppTypography.body.copyWith(color: s.inkSecondary),
           ),
           const SizedBox(height: AppSpacing.lg),
           if (_installing) ...[
-            LinearProgressIndicator(
-              value: _phase == HwiInstallPhase.downloading ? _progress : null,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
+              child: LinearProgressIndicator(
+                minHeight: AppSpacing.xs,
+                value: _phase == HwiInstallPhase.downloading ? _progress : null,
+              ),
             ),
             const SizedBox(height: AppSpacing.sm),
-            Text(_phaseLabel, style: AppTypography.caption),
-          ] else ...[
-            Row(
-              children: [
-                PrimaryButton(
-                  label: release == null
-                      ? 'Install HWI'
-                      : 'Install HWI ${release.version} (${release.sizeDisplay})',
-                  icon: Icons.download_rounded,
-                  onPressed: _install,
-                ),
-              ],
+            Text(
+              _phaseLabel,
+              style: AppTypography.caption.copyWith(color: s.inkSecondary),
             ),
-          ],
-          if (_error != null) ...[
+          ] else
+            SecondaryButton(
+              label: release == null
+                  ? 'Install HWI'
+                  : 'Install HWI ${release.version} (${release.sizeDisplay})',
+              icon: Icons.download_outlined,
+              onPressed: _install,
+            ),
+          if (error != null) ...[
             const SizedBox(height: AppSpacing.md),
-            WarningBanner(title: 'Install failed', message: _error!),
+            Text(
+              'Install failed',
+              style: AppTypography.caption.copyWith(color: s.danger),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            _TechnicalDetail(detail: error),
           ],
         ],
       ),
+    );
+  }
+}
+
+/// The raw words behind a failure, folded away until asked for: selectable
+/// `mono` in a well, because it is what goes into a bug report.
+class _TechnicalDetail extends StatefulWidget {
+  const _TechnicalDetail({required this.detail});
+  final String detail;
+
+  @override
+  State<_TechnicalDetail> createState() => _TechnicalDetailState();
+}
+
+class _TechnicalDetailState extends State<_TechnicalDetail> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GhostButton(
+          label: _open ? 'Hide details' : 'Show details',
+          icon: _open ? Icons.expand_less_outlined : Icons.expand_more_outlined,
+          onPressed: () => setState(() => _open = !_open),
+        ),
+        if (_open) ...[
+          const SizedBox(height: AppSpacing.xs),
+          DataWell(
+            child: SelectableText(
+              widget.detail,
+              style: AppTypography.mono.copyWith(color: s.ink),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

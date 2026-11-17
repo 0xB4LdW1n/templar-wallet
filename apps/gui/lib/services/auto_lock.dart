@@ -3,7 +3,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../shared/widgets/list_rows.dart';
 import '../theme/app_layout.dart';
-import '../theme/app_scheme.dart';
 
 /// When the unlocked vault locks itself again.
 ///
@@ -106,11 +105,9 @@ class _AutoLockRowState extends State<AutoLockRow> {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
     final seconds = _seconds;
     return ListRow(
       icon: Icons.timer_outlined,
-      tint: s.success,
       title: 'Auto-lock',
       subtitle: seconds == null
           ? ' '

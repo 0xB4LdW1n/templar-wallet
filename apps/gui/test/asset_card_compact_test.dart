@@ -46,7 +46,8 @@ void main() {
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
     expect(find.textContaining('PEGx USDt'), findsOneWidget);
-    expect(find.text('1,234,567,890.12345678 USDT'), findsOneWidget);
+    // The figure and its unit are drawn apart: the unit is quiet.
+    expect(find.text('1,234,567,890.12345678'), findsOneWidget);
     // One row, not the grid tile's stacked card.
     final h = t.getSize(find.byType(GroupedAssetCard)).height;
     expect(h, lessThan(90), reason: 'compact row should be ~60 dp, was $h');

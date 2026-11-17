@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import '../wallet_picker/models/wallet_summary.dart';
@@ -63,7 +63,7 @@ class _JadeLiquidDialogState extends State<_JadeLiquidDialog> {
   Future<void> _create() async {
     final name = _name.text.trim();
     if (name.isEmpty) {
-      setState(() => _error = 'Give the wallet a name.');
+      setState(() => _error = 'Give the wallet a name');
       return;
     }
     setState(() {
@@ -85,8 +85,10 @@ class _JadeLiquidDialogState extends State<_JadeLiquidDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     final ports = _ports;
     final found = ports != null && ports.isNotEmpty;
+    final error = _error;
 
     return AlertDialog(
       title: const Text('Liquid wallet on your Jade'),
@@ -94,41 +96,55 @@ class _JadeLiquidDialogState extends State<_JadeLiquidDialog> {
         width: 480,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               'The wallet\'s confidential descriptor is read from the Jade '
               'itself, so the device can spend from it. Connect the Jade over '
               'USB, unlock it with your PIN, and close Blockstream Green — '
               'only one app can hold the serial port at a time.',
-              style: AppTypography.bodySmall,
+              style: AppTypography.body.copyWith(color: s.inkSecondary),
             ),
             const SizedBox(height: AppSpacing.lg),
             if (ports == null)
               Row(
                 children: [
                   const SizedBox(
-                    width: 14,
-                    height: 14,
+                    width: AppSpacing.md,
+                    height: AppSpacing.md,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                   const SizedBox(width: AppSpacing.sm),
-                  Text('Looking for a Jade…', style: AppTypography.caption),
+                  Text(
+                    'Looking for a Jade…',
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
                 ],
               )
             else if (found)
               Row(
                 children: [
-                  const Icon(
-                    Icons.check_circle_outline,
-                    size: 16,
-                    color: AppColors.success,
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: s.success,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                   ),
                   const SizedBox(width: AppSpacing.sm),
+                  Text(
+                    'Found on ',
+                    style: AppTypography.caption.copyWith(color: s.ink),
+                  ),
                   Expanded(
                     child: Text(
-                      'Found on ${ports.first}',
-                      style: AppTypography.monoSmall,
+                      ports.first,
+                      style: AppTypography.monoSmall.copyWith(
+                        color: s.inkSecondary,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -141,48 +157,58 @@ class _JadeLiquidDialogState extends State<_JadeLiquidDialog> {
                     child: Text(
                       'No Jade detected on a serial port yet — you can still '
                       'continue; it will be checked again when you create.',
-                      style: AppTypography.caption,
+                      style: AppTypography.caption.copyWith(
+                        color: s.inkSecondary,
+                      ),
                     ),
                   ),
-                  TextButton(
+                  const SizedBox(width: AppSpacing.sm),
+                  GhostButton(
+                    label: 'Refresh',
+                    icon: Icons.refresh_outlined,
                     onPressed: () {
                       setState(() => _ports = null);
                       _probe();
                     },
-                    child: const Text('Rescan'),
                   ),
                 ],
               ),
             const SizedBox(height: AppSpacing.lg),
-            TextField(
-              controller: _name,
-              enabled: !_busy,
-              decoration: const InputDecoration(labelText: 'Wallet name'),
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Text(
+                'Wallet name',
+                style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+              ),
             ),
+            TextField(controller: _name, enabled: !_busy),
             if (_busy) ...[
               const SizedBox(height: AppSpacing.lg),
-              const LinearProgressIndicator(),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
+                child: const LinearProgressIndicator(minHeight: AppSpacing.xs),
+              ),
               const SizedBox(height: AppSpacing.sm),
               Text(
                 'Unlock the Jade and confirm on its screen…',
-                style: AppTypography.caption,
+                style: AppTypography.caption.copyWith(color: s.inkSecondary),
               ),
             ],
-            if (_error != null) ...[
+            if (error != null) ...[
               const SizedBox(height: AppSpacing.lg),
-              WarningBanner(title: 'Could not set up', message: _error!),
+              DangerBanner(title: 'Could not set up', message: error),
             ],
           ],
         ),
       ),
       actions: [
-        TextButton(
+        GhostButton(
+          label: 'Cancel',
           onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
         ),
         PrimaryButton(
           label: _busy ? 'Connecting…' : 'Connect Jade',
-          icon: Icons.usb_rounded,
+          icon: Icons.usb_outlined,
           onPressed: _busy ? null : _create,
         ),
       ],

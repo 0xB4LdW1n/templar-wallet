@@ -33,12 +33,12 @@ class ChoiceListOption<T> {
 
 /// A grouped list of options with one selected: the wizard's "pick one of
 /// these" once there are more than two or three of them and a row of chips
-/// would wrap.
+/// would wrap (design.md, "Option card").
 ///
-/// One inset panel, one row per option, hairlines between them, a radio disc
-/// on the right — the same disc a [SelectableOptionCard] carries, so a chosen
-/// row and a chosen card read the same. Desktop rows tint under the pointer
-/// the way every row in the app does; phone rows ripple.
+/// One card, one row per option, hairlines between them inset to the text,
+/// an [OptionRadio] on the right — the same radio a `SelectableOptionCard`
+/// carries, so a chosen row and a chosen card read the same. The chosen row
+/// is told by its radio alone; the row itself is never tinted.
 class ChoiceList<T> extends StatelessWidget {
   const ChoiceList({
     super.key,
@@ -57,19 +57,28 @@ class ChoiceList<T> extends StatelessWidget {
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: s.panelInset,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        color: s.panel,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         border: Border.all(color: s.edge),
+        boxShadow: s.panelShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var i = 0; i < options.length; i++) ...[
-            if (i > 0) Divider(height: 1, color: s.edge, indent: kChoiceTextInset),
+            if (i > 0)
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: s.edge,
+                indent: kChoiceTextInset,
+              ),
             ChoiceListRow<T>(
               option: options[i],
               selected: options[i].value == selected,
-              onTap: options[i].enabled ? () => onChanged(options[i].value) : null,
+              onTap: options[i].enabled
+                  ? () => onChanged(options[i].value)
+                  : null,
             ),
           ],
         ],
@@ -80,7 +89,7 @@ class ChoiceList<T> extends StatelessWidget {
 
 /// Where a row's text starts — the hairlines between rows start there too,
 /// so the icon column reads as one column and not as five gaps.
-const double kChoiceTextInset = AppSpacing.lg + 18 + AppSpacing.md;
+const double kChoiceTextInset = AppSpacing.lg + AppSpacing.icon + AppSpacing.md;
 
 /// One row of a [ChoiceList].
 class ChoiceListRow<T> extends StatefulWidget {
@@ -103,6 +112,10 @@ class ChoiceListRow<T> extends StatefulWidget {
 
 class _ChoiceListRowState<T> extends State<ChoiceListRow<T>> {
   bool _hover = false;
+  bool _down = false;
+  bool _focus = false;
+
+  void _activate() => widget.onTap?.call();
 
   @override
   Widget build(BuildContext context) {
@@ -111,36 +124,31 @@ class _ChoiceListRowState<T> extends State<ChoiceListRow<T>> {
     final o = widget.option;
     final enabled = widget.onTap != null;
     final selected = widget.selected;
-    final active = enabled && _hover && !phone;
 
-    final ink = !enabled
-        ? s.inkFaint
-        : selected
-            ? s.accent
-            : active
-                ? s.ink
-                : s.inkSecondary;
-    final fill = selected
-        ? s.accentSoft
-        : active
-            ? s.hover
-            : Colors.transparent;
+    final fill = !enabled
+        ? Colors.transparent
+        : _down
+        ? s.pressed
+        : _hover
+        ? s.hover
+        : Colors.transparent;
     final reason = o.disabledReason;
 
-    final body = AnimatedContainer(
-      duration: AppMotion.of(context, AppMotion.quick),
+    final row = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.instant),
       curve: AppMotion.settle,
       color: fill,
-      constraints: BoxConstraints(
-        minHeight: phone ? AppLayout.minTouchTarget : 44,
-      ),
+      foregroundDecoration: _focus && enabled
+          ? BoxDecoration(border: Border.all(color: s.focus, width: 2))
+          : null,
+      constraints: const BoxConstraints(minHeight: AppSpacing.rowHeight),
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.lg,
-        vertical: AppSpacing.sm + 2,
+        vertical: AppSpacing.sm,
       ),
       child: Row(
         children: [
-          Icon(o.icon, size: 18, color: ink),
+          Icon(o.icon, size: AppSpacing.icon, color: s.inkSecondary),
           const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Column(
@@ -150,17 +158,16 @@ class _ChoiceListRowState<T> extends State<ChoiceListRow<T>> {
                 Text.rich(
                   TextSpan(
                     text: o.label,
-                    style: AppTypography.bodySmall.copyWith(
-                      color: ink,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    ),
+                    style: (phone
+                            ? AppTypography.bodyOf(context)
+                            : AppTypography.body)
+                        .copyWith(color: s.ink, fontWeight: FontWeight.w500),
                     children: [
                       if (o.note != null)
                         TextSpan(
                           text: '  ·  ${o.note}',
                           style: AppTypography.caption.copyWith(
-                            color: enabled ? s.inkFaint : ink,
-                            fontWeight: FontWeight.w500,
+                            color: s.inkSecondary,
                           ),
                         ),
                     ],
@@ -168,83 +175,98 @@ class _ChoiceListRowState<T> extends State<ChoiceListRow<T>> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (!enabled && reason != null) ...[
-                  const SizedBox(height: 2),
+                if (!enabled && reason != null)
                   Text(
                     reason,
-                    style: AppTypography.caption.copyWith(color: s.inkFaint),
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                ],
               ],
             ),
           ),
           const SizedBox(width: AppSpacing.md),
-          _RadioDisc(selected: selected, enabled: enabled),
+          OptionRadio(selected: selected),
         ],
       ),
     );
 
-    final row = Semantics(
+    return Semantics(
       button: true,
+      inMutuallyExclusiveGroup: true,
       enabled: enabled,
       selected: selected,
       child: MergeSemantics(
-        child: phone
-            ? Material(
-                type: MaterialType.transparency,
-                child: InkWell(onTap: widget.onTap, child: body),
-              )
-            : MouseRegion(
-                cursor: enabled
-                    ? SystemMouseCursors.click
-                    : SystemMouseCursors.basic,
-                onEnter: (_) => setState(() => _hover = true),
-                onExit: (_) => setState(() => _hover = false),
-                child: GestureDetector(
-                  onTap: widget.onTap,
-                  behavior: HitTestBehavior.opaque,
-                  child: body,
-                ),
-              ),
+        child: FocusableActionDetector(
+          enabled: enabled,
+          mouseCursor: enabled
+              ? SystemMouseCursors.click
+              : SystemMouseCursors.basic,
+          onShowHoverHighlight: (v) => setState(() {
+            _hover = v;
+            if (!v) _down = false;
+          }),
+          onShowFocusHighlight: (v) => setState(() => _focus = v),
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                _activate();
+                return null;
+              },
+            ),
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onTap,
+            onTapDown: enabled ? (_) => setState(() => _down = true) : null,
+            onTapUp: enabled ? (_) => setState(() => _down = false) : null,
+            onTapCancel: enabled ? () => setState(() => _down = false) : null,
+            // A disabled option is legible but plainly not on offer.
+            child: Opacity(opacity: enabled ? 1 : 0.5, child: row),
+          ),
+        ),
       ),
     );
-    return row;
   }
 }
 
-/// The 18 dp disc at the end of a row: filled with a check when chosen, a
-/// hairline ring otherwise — the option card's disc, one size down.
-class _RadioDisc extends StatelessWidget {
-  const _RadioDisc({required this.selected, required this.enabled});
+/// The radio of an option row or card: an 18 px ring; chosen, the ring takes
+/// the primary ink and holds an 8 px dot in the accent — one of the three
+/// places the accent appears beyond the primary button.
+class OptionRadio extends StatelessWidget {
+  const OptionRadio({super.key, required this.selected});
 
   final bool selected;
-  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
+    final duration = AppMotion.of(context, AppMotion.quick);
     return AnimatedContainer(
-      duration: AppMotion.of(context, AppMotion.quick),
+      duration: duration,
       curve: AppMotion.settle,
-      width: 18,
-      height: 18,
+      width: AppSpacing.icon,
+      height: AppSpacing.icon,
+      alignment: Alignment.center,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: selected ? s.accent : Colors.transparent,
         border: Border.all(
-          color: selected
-              ? s.accent
-              : enabled
-                  ? s.edgeStrong
-                  : s.edge,
-          width: 2,
+          color: selected ? s.ink : s.edgeStrong,
+          width: 1.5,
         ),
       ),
-      child: selected
-          ? const Icon(Icons.check, size: 11, color: Colors.white)
-          : null,
+      child: AnimatedOpacity(
+        opacity: selected ? 1 : 0,
+        duration: duration,
+        curve: AppMotion.settle,
+        child: Container(
+          width: AppSpacing.sm,
+          height: AppSpacing.sm,
+          decoration: BoxDecoration(color: s.accent, shape: BoxShape.circle),
+        ),
+      ),
     );
   }
 }

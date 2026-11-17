@@ -1,26 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../app/app_state.dart';
+import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
 import '../../services/fee_bump_store.dart';
+import '../../services/price_service.dart';
+import '../../shared/amount_units.dart';
 import '../../shared/relative_time.dart';
 import '../../shared/widgets/app_password_gate.dart';
 import '../../shared/widgets/asset_logo.dart';
-import '../../shared/widgets/badges.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/chain_switch.dart';
 import '../../shared/widgets/code_box.dart';
-import '../../shared/widgets/glass_card.dart';
-import '../../shared/widgets/glass_dialog.dart';
+import '../../shared/widgets/app_dialog.dart';
 import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/list_rows.dart';
 import '../../shared/widgets/page_header.dart';
 import '../../shared/widgets/psbt_sign_flow.dart';
+import '../../shared/widgets/segmented_switch.dart';
 import '../../shared/widgets/privacy.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
@@ -30,17 +33,36 @@ import '../hardware/hw_error.dart';
 import '../hardware/ledger_connect_dialog.dart';
 import '../hardware/ledger_signing_dialog.dart';
 import '../psbt/cosign_handoff.dart';
+import 'activity_details.dart';
+import 'activity_rows.dart';
+import 'activity_sources.dart';
 import 'fee_bump_dialog.dart';
+import 'fee_bump_fold.dart';
+import 'models/activity_entry.dart';
 import 'models/fee_bump_preview.dart';
 import 'models/transaction.dart';
+import 'speed_up_button.dart';
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
+/// Activity: one timeline of the wallet's payments on both chains, its
+/// Templar Protocol loans, its swaps and its pegs (see
+/// models/activity_entry.dart for what each source contributes).
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key, this.bridge});
+  const HistoryScreen({super.key, this.bridge, this.loans, this.openTxid});
+
+  /// A transaction to open the detail of as soon as it is listed — where
+  /// "View in activity" lands after a send. A transaction just broadcast is
+  /// in no list until the next sync, so the screen keeps the request until
+  /// a load brings it.
+  final String? openTxid;
 
   /// Test seam; the app uses the global engine.
   final WalletBridge? bridge;
+
+  /// Test seam for the loan source; the app reads the protocol store and
+  /// the connected sites (or the mock bridge's demo portfolio).
+  final LoanActivityLoader? loans;
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
@@ -48,33 +70,128 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   late final WalletBridge _bridge = widget.bridge ?? walletBridge;
+  late final ActivitySources _sources = ActivitySources(
+    bridge: _bridge,
+    loans: widget.loans,
+  );
   List<Transaction> _txs = [];
+  ActivityExtras _extras = const ActivityExtras();
   bool _loading = true;
   String? _error;
   String _chainFilter = 'all';
+
+  /// The kind filter; null is "All".
+  ActivityKind? _kindFilter;
   final _searchController = TextEditingController();
   String? _feeBumpBusyTxid;
+
+  /// The app state this screen follows: a finished sync bumps its
+  /// `syncVersion` and the timeline is read again, so a payment that just
+  /// confirmed stops breathing without the user leaving the page.
+  AppState? _appState;
+  int _lastSyncVersion = 0;
+
+  /// The transaction whose detail is still owed ([HistoryScreen.openTxid]).
+  late String? _openTxid = widget.openTxid;
+
+  @override
+  void didUpdateWidget(HistoryScreen old) {
+    super.didUpdateWidget(old);
+    if (widget.openTxid != null && widget.openTxid != old.openTxid) {
+      _openTxid = widget.openTxid;
+      _scheduleOpen();
+    }
+  }
+
+  /// Opens the owed detail once the frame that lists it has been built.
+  void _scheduleOpen() {
+    if (_openTxid == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openOwedDetail());
+  }
+
+  void _openOwedDetail() {
+    final txid = _openTxid;
+    if (txid == null || !mounted) return;
+    final timeline = _timeline(_flags(context.read<AppState>()));
+    for (final e in timeline.entries) {
+      if (e is PaymentEntry) {
+        // A bump's other transaction is folded into this row: asking for
+        // the child opens the payment it pays for.
+        if (e.tx.txid == txid || e.tx.bump?.otherTxid == txid) {
+          _openTxid = null;
+          _showDetail(context, e.tx);
+          return;
+        }
+      } else if (e.txids.contains(txid)) {
+        _openTxid = null;
+        _showEntryDetail(context, e, timeline.linked);
+        return;
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     final appState = context.read<AppState>();
+    _appState = appState;
+    _lastSyncVersion = appState.syncVersion;
+    appState.addListener(_onAppStateChanged);
     if (appState.cachedTransactions != null) {
       _txs = appState.cachedTransactions!;
       _loading = false;
+      _scheduleOpen();
     }
+    final walletId = appState.activeWalletId;
+    final cachedExtras = walletId == null
+        ? null
+        : ActivitySources.cached(walletId);
+    if (cachedExtras != null) _extras = cachedExtras;
     _load();
+  }
+
+  ActivitySourceFlags _flags(AppState st) => ActivitySourceFlags(
+    bitcoin: st.activeWalletBitcoin,
+    liquid: st.activeWalletLiquid,
+    loans: st.loansEnabled,
+    liquidDex: st.liquidDexEnabled,
+    peg: st.pegEnabled,
+  );
+
+  /// Loans, swaps and pegs, beside `list_activity` and never in its way:
+  /// each source fails alone, and the rows already on screen stay.
+  Future<void> _loadExtras(AppState appState, String walletId) async {
+    final ActivityExtras extras;
+    try {
+      extras = await _sources.load(
+        walletId,
+        _flags(appState),
+        walletName: appState.activeWalletName,
+      );
+    } catch (_) {
+      return;
+    }
+    if (mounted) setState(() => _extras = extras);
   }
 
   @override
   void dispose() {
+    _appState?.removeListener(_onAppStateChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onAppStateChanged() {
+    final version = _appState?.syncVersion ?? 0;
+    if (version == _lastSyncVersion || !mounted) return;
+    _lastSyncVersion = version;
+    _load();
   }
 
   Future<void> _load() async {
     final appState = context.read<AppState>();
     final walletId = appState.activeWalletId ?? 'wallet-1';
+    final extras = _loadExtras(appState, walletId);
     // A bridge failure must not strand the spinner; cached rows (if any)
     // keep showing, otherwise the error card takes over.
     final List<Transaction> txs;
@@ -94,7 +211,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     // UTXOs while Activity shows nothing at all, which reads as a lost
     // transaction.
     final withConsolidations = await _withPendingConsolidations(walletId, txs);
-    final merged = await _withFeeBumpLinks(walletId, withConsolidations);
+    final merged = await _withFeeBumps(walletId, withConsolidations);
     if (mounted) {
       appState.cachedTransactions = merged;
       setState(() {
@@ -102,10 +219,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
         _loading = false;
         _error = null;
       });
+      _scheduleOpen();
     }
+    await extras;
+    if (mounted) _scheduleOpen();
   }
 
-  Future<List<Transaction>> _withFeeBumpLinks(
+  /// Folds every fee bump this app made into the transaction it was done
+  /// to (fee_bump_fold.dart): a sped-up payment is one row, not a payment
+  /// and its child, or a payment and its replacement.
+  Future<List<Transaction>> _withFeeBumps(
     String walletId,
     List<Transaction> txs,
   ) async {
@@ -115,80 +238,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     } catch (_) {
       return txs;
     }
-    if (records.isEmpty) return txs;
-    final byOriginal = {for (final r in records) r.originalTxid: r};
-    final byReplacement = {for (final r in records) r.replacementTxid: r};
-    final known = txs.map((e) => e.txid).toSet();
-    final linked = txs.map((tx) {
-      final outgoing = byOriginal[tx.txid];
-      if (outgoing != null) {
-        final verb = outgoing.method == 'cpfp' ? 'CPFP child' : 'Replaced by';
-        return tx.withFeeBumpLink(
-          replacedByTxid: outgoing.replacementTxid,
-          feeBumpMethod: outgoing.method,
-          note: '$verb ${_shortId(outgoing.replacementTxid)}',
-        );
-      }
-      final incoming = byReplacement[tx.txid];
-      if (incoming != null) {
-        final label = switch (incoming.method) {
-          'cancel' => 'Cancellation attempt',
-          'cpfp' => 'CPFP child',
-          _ => 'RBF replacement',
-        };
-        return tx.withFeeBumpLink(
-          replacesTxid: incoming.originalTxid,
-          feeBumpMethod: incoming.method,
-          note: '$label · ${_shortId(incoming.originalTxid)}',
-        );
-      }
-      return tx;
-    }).toList();
-
-    // Broadcast succeeded but sync may still be offline. Keep the new tx
-    // visible immediately; the chain-backed row replaces this placeholder on
-    // the next successful load.
-    for (final r in records.where((r) => !known.contains(r.replacementTxid))) {
-      Transaction? original;
-      for (final tx in txs) {
-        if (tx.txid == r.originalTxid) {
-          original = tx;
-          break;
-        }
-      }
-      linked.insert(
-        0,
-        Transaction(
-          txid: r.replacementTxid,
-          direction: r.method == 'rbf'
-              ? (original?.direction ?? TxDirection.outgoing)
-              : TxDirection.self,
-          chain: TxChain.bitcoin,
-          amount: r.method == 'rbf' ? (original?.amount ?? '—') : '—',
-          ticker: 'BTC',
-          timestamp: r.createdAt,
-          confirmations: 0,
-          fee: '${r.newFeeSats} sats',
-          feeSats: r.newFeeSats,
-          feeRate: r.newFeeRate,
-          vsize: 0,
-          isReplaceable: true,
-          note: switch (r.method) {
-            'cancel' => 'Cancellation attempt · ${_shortId(r.originalTxid)}',
-            'cpfp' => 'CPFP child · ${_shortId(r.originalTxid)}',
-            _ => 'RBF replacement · ${_shortId(r.originalTxid)}',
-          },
-          replacesTxid: r.originalTxid,
-          feeBumpMethod: r.method,
-        ),
-      );
-    }
-    return linked;
+    return foldFeeBumps(txs, records);
   }
-
-  static String _shortId(String txid) => txid.length <= 13
-      ? txid
-      : '${txid.substring(0, 6)}…${txid.substring(txid.length - 6)}';
 
   /// Prepends rows for consolidations the wallet engine has not caught up
   /// with. Once a sync returns the real transaction the placeholder is
@@ -229,72 +280,40 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return [...extra, ...txs];
   }
 
-  bool get _hasFilter =>
-      _chainFilter != 'all' || _searchController.text.isNotEmpty;
+  /// The kind filter's value, dropped when its kind is switched off.
+  ActivityKind? _effectiveKind(ActivitySourceFlags flags) =>
+      flags.kinds.contains(_kindFilter) ? _kindFilter : null;
 
-  List<Transaction> get _filtered {
-    return _txs.where((tx) {
-      if (_chainFilter == 'bitcoin' && tx.chain != TxChain.bitcoin) {
-        return false;
-      }
-      if (_chainFilter == 'liquid' && tx.chain != TxChain.liquid) return false;
-      final q = _searchController.text.trim().toLowerCase();
-      if (q.isEmpty) return true;
-      // Amounts carry an upper-case ticker ('+0.001 BTC', '-12.50 USDT'), so
-      // both sides are lower-cased or 'btc' would never match.
-      return tx.txid.contains(q) ||
-          (tx.note?.toLowerCase().contains(q) ?? false) ||
-          tx.amount.toLowerCase().contains(q) ||
-          tx.ticker.toLowerCase().contains(q);
-    }).toList();
+  bool _hasFilter(ActivitySourceFlags flags) =>
+      _chainFilter != 'all' ||
+      _effectiveKind(flags) != null ||
+      _searchController.text.isNotEmpty;
+
+  /// Payments, loans, swaps and pegs in one list: an on-chain transaction
+  /// that another entry owns (same txid) is folded into it. Only the
+  /// sources the wallet has right now count, so switching a module off
+  /// hides its rows at once.
+  ActivityTimeline _timeline(ActivitySourceFlags flags) {
+    final kinds = flags.kinds.toSet();
+    return mergeActivity(_txs, [
+      for (final e in _extras.entries)
+        if (kinds.contains(e.kind)) e,
+    ]);
   }
 
-  /// Builds date-keyed sections, each holding its transactions.
-  List<({String date, List<Transaction> txs})> get _grouped {
-    final items = _filtered;
-    if (items.isEmpty) return [];
-
-    final result = <({String date, List<Transaction> txs})>[];
-    String? lastDate;
-
-    for (final tx in items) {
-      final dateKey = _dateKey(tx);
-      if (dateKey != lastDate) {
-        result.add((date: dateKey, txs: []));
-        lastDate = dateKey;
-      }
-      result.last.txs.add(tx);
-    }
-    return result;
-  }
-
-  static String _dateKey(Transaction tx) {
-    // Unconfirmed transactions carry no block time: both engines report 0,
-    // which formats as 1 JAN 1970 and sinks the newest transaction in the
-    // wallet to the bottom of the page.
-    if (tx.confirmations == 0) return 'PENDING';
-    final dt = tx.timestamp;
-    const months = [
-      'JAN',
-      'FEB',
-      'MAR',
-      'APR',
-      'MAY',
-      'JUN',
-      'JUL',
-      'AUG',
-      'SEP',
-      'OCT',
-      'NOV',
-      'DEC',
-    ];
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final d = DateTime(dt.year, dt.month, dt.day);
-    if (d == today) return 'TODAY';
-    if (d == today.subtract(const Duration(days: 1))) return 'YESTERDAY';
-    return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
-  }
+  /// Day sections over the filtered timeline: "Pending" first, then
+  /// "Today", "Yesterday", "12 Sep 2026", and "Undated" last.
+  List<({String label, List<ActivityEntry> entries})> _grouped(
+    ActivityTimeline timeline,
+    ActivitySourceFlags flags,
+  ) => groupActivity(
+    filterActivity(
+      timeline.entries,
+      chain: _chainFilter,
+      kind: _effectiveKind(flags),
+      query: _searchController.text,
+    ),
+  );
 
   Future<void> _startFeeBump(Transaction tx, {required bool cancel}) async {
     final available = cancel ? tx.canCancel : tx.canSpeedUp;
@@ -302,8 +321,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final reason =
           tx.feeBumpUnavailableReason ??
           (cancel
-              ? 'This transaction cannot be cancelled with RBF.'
-              : 'This transaction cannot be sped up with RBF or CPFP.');
+              ? 'This transaction cannot be cancelled with RBF'
+              : 'This transaction cannot be sped up with RBF or CPFP');
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(reason)));
@@ -324,7 +343,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     if (type == 'watch-only') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('This watch-only wallet cannot sign transactions.'),
+          content: Text('This watch-only wallet cannot sign transactions'),
         ),
       );
       return;
@@ -438,7 +457,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         title: preview.isCancel ? 'Cancellation PSBT' : 'Fee-bump PSBT',
         progressNote: have == null
             ? _feeBumpSummary(preview)
-            : '${_feeBumpSummary(preview)} · $have of ${needed ?? '?'} signatures collected.',
+            : '${_feeBumpSummary(preview)} · $have of ${needed ?? '?'} signatures collected',
         quorumHave: have,
         quorumNeeded: needed,
         onBroadcast: (signed) =>
@@ -532,254 +551,430 @@ class _HistoryScreenState extends State<HistoryScreen> {
       SnackBar(
         content: Text(
           preview.isCancel
-              ? 'Cancellation replacement broadcast.'
-              : '${preview.method.toUpperCase()} transaction broadcast.',
+              ? 'Cancellation replacement broadcast'
+              : '${preview.method.toUpperCase()} transaction broadcast',
         ),
       ),
     );
   }
 
+  void _clearFilters() => setState(() {
+    _chainFilter = 'all';
+    _kindFilter = null;
+    _searchController.clear();
+  });
+
+  void _retry() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final grouped = _grouped;
     final st = context.watch<AppState>();
+    final flags = _flags(st);
+    final timeline = _timeline(flags);
+    final grouped = _grouped(timeline, flags);
+    final useSats = st.useSats;
     final phone = AppSpacing.isPhone(context);
     final pad = AppSpacing.pagePadding(context);
+    final kinds = flags.kinds;
+    final kind = _effectiveKind(flags);
 
-    // Title, chain switch, privacy eye and the search field. On a phone the
-    // subtitle goes (the title is a label there) and the search field gets a
-    // clear button and a search key; PrivacyToggle grows its own 48 dp
-    // target there.
+    // Payments only: no kind filter, the page is what it always was.
+    final Widget? kindFilter = kinds.length < 2
+        ? null
+        : phone
+        // A chip row that scrolls sideways: five 48 dp chips do not fit
+        // a phone's width, and a squeezed segmented track would cut them.
+        ? SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final k in <ActivityKind?>[null, ...kinds]) ...[
+                  if (k != null) const SizedBox(width: AppSpacing.sm),
+                  ChoiceTile(
+                    label: k?.filterLabel ?? 'All',
+                    selected: kind == k,
+                    onSelected: () => setState(() => _kindFilter = k),
+                  ),
+                ],
+              ],
+            ),
+          )
+        : SegmentedSwitch<ActivityKind?>(
+            selected: kind,
+            onChanged: (v) => setState(() => _kindFilter = v),
+            options: [
+              const SegOption(value: null, label: 'All'),
+              for (final k in kinds) SegOption(value: k, label: k.filterLabel),
+            ],
+          );
+
+    // A source that failed is named, so a missing row is not mistaken for
+    // a missing event.
+    final s = AppScheme.of(context);
+    final failed = [
+      for (final f in _extras.failed)
+        if (_sourceShown(f, flags)) f,
+    ];
+    final Widget? failedNote = failed.isEmpty
+        ? null
+        : Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.md),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outlined,
+                  size: AppSpacing.iconSmall,
+                  color: s.inkSecondary,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'Could not load ${failed.join(', ')}',
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
+                ),
+                GhostButton(label: 'Retry', onPressed: _retryExtras),
+              ],
+            ),
+          );
+
+    final chainFilter = ChainSwitch<String>(
+      selected: _chainFilter,
+      onChanged: (v) => setState(() => _chainFilter = v),
+      all: 'all',
+      bitcoin: 'bitcoin',
+      liquid: 'liquid',
+      bitcoinEnabled: st.activeWalletBitcoin,
+      liquidEnabled: st.activeWalletLiquid,
+      expand: phone,
+    );
+
+    final search = _SearchField(
+      controller: _searchController,
+      onChanged: () => setState(() {}),
+    );
+
+    // Title, privacy eye and the chain filter; the search under them with
+    // the kind filter at its right. On a phone each control takes its own
+    // full-width row under the title: chain, kinds, search.
     final header = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         PageHeader(
           title: 'Activity',
-          subtitle: phone ? null : 'Cross-chain transaction history',
-          actions: [
-            const PrivacyToggle(),
-            // Chain choice sits top-right on UTXOs, Receive and
-            // here alike — the same control in the same place on
-            // every per-chain screen, always present.
-            ChainSwitch<String>(
-              selected: _chainFilter,
-              onChanged: (v) => setState(() => _chainFilter = v),
-              all: 'all',
-              bitcoin: 'bitcoin',
-              liquid: 'liquid',
-              bitcoinEnabled: st.activeWalletBitcoin,
-              liquidEnabled: st.activeWalletLiquid,
-            ),
-          ],
+          actions: [const PrivacyToggle(), if (!phone) chainFilter],
         ),
-        // Second row: what this section does with the chain chosen
-        // above.
-        Row(
-          children: [
-            Expanded(
-              child: phone
-                  ? TextField(
-                      controller: _searchController,
-                      textInputAction: TextInputAction.search,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: InputDecoration(
-                        hintText: 'Search by txid or note…',
-                        prefixIcon: const Icon(Icons.search, size: 18),
-                        suffixIcon: _searchController.text.isEmpty
-                            ? null
-                            : IconButton(
-                                icon: const Icon(Icons.close, size: 18),
-                                tooltip: 'Clear search',
-                                onPressed: () {
-                                  _searchController.clear();
-                                  setState(() {});
-                                },
-                              ),
-                      ),
-                      onChanged: (_) => setState(() {}),
-                    )
-                  : TextField(
-                      controller: _searchController,
-                      decoration: const InputDecoration(
-                        hintText: 'Search by txid or note…',
-                        prefixIcon: Icon(Icons.search, size: 18),
-                        isDense: true,
-                      ),
-                      onChanged: (_) => setState(() {}),
-                    ),
-            ),
+        if (phone) ...[
+          chainFilter,
+          const SizedBox(height: AppSpacing.md),
+          if (kindFilter != null) ...[
+            kindFilter,
+            const SizedBox(height: AppSpacing.md),
           ],
-        ),
-        SizedBox(height: phone ? AppSpacing.sm : AppSpacing.lg),
+          search,
+        ] else
+          Row(
+            children: [
+              Expanded(child: search),
+              if (kindFilter != null) ...[
+                const SizedBox(width: AppSpacing.md),
+                kindFilter,
+              ],
+            ],
+          ),
+        ?failedNote,
       ],
     );
 
+    Widget row(ActivityEntry e) => switch (e) {
+      PaymentEntry(:final tx) => _TxRow(
+        tx: tx,
+        useSats: useSats,
+        onTap: () => _showDetail(context, tx),
+        showPendingActions: !tx.isConfirmed && tx.chain == TxChain.bitcoin,
+        onSpeedUp: tx.canSpeedUp
+            ? () => _startFeeBump(tx, cancel: false)
+            : null,
+        onCancel: tx.canCancel ? () => _startFeeBump(tx, cancel: true) : null,
+        unavailableReason: tx.feeBumpUnavailableReason,
+        busy: _feeBumpBusyTxid == tx.txid,
+      ),
+      _ => ActivityEntryRow(
+        entry: e,
+        useSats: useSats,
+        onTap: () => _showEntryDetail(context, e, timeline.linked),
+      ),
+    };
+
     Widget section(int i) {
-      final s = grouped[i];
-      final rows = [
-        for (final tx in s.txs)
-          _TxRow(
-            tx: tx,
-            onTap: () => _showDetail(context, tx),
-            showPendingActions: !tx.isConfirmed && tx.chain == TxChain.bitcoin,
-            onSpeedUp: tx.canSpeedUp
-                ? () => _startFeeBump(tx, cancel: false)
-                : null,
-            onCancel: tx.canCancel
-                ? () => _startFeeBump(tx, cancel: true)
-                : null,
-            unavailableReason: tx.feeBumpUnavailableReason,
-            busy: _feeBumpBusyTxid == tx.txid,
-          ),
-      ];
+      final g = grouped[i];
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _DateHeader(label: s.date),
-          // A day's transactions are one list card on a phone — the same
-          // panel, hairlines and radius the Dashboard's activity sits on, so
-          // a run of rows is the same object on both screens. GlassCard's
-          // gradient has nothing to bleed through on the flat phone canvas
-          // anyway. Desktop keeps the glass panel and its own dividers.
-          phone
-              ? ListCard(children: rows)
-              : GlassCard(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.cardPaddingSmall,
-                    vertical: AppSpacing.xs,
-                  ),
-                  child: Column(
-                    children: [
-                      for (int j = 0; j < rows.length; j++) ...[
-                        rows[j],
-                        if (j != rows.length - 1)
-                          Divider(
-                            height: 1,
-                            color: isDark
-                                ? AppColors.borderDark
-                                : AppColors.borderLight,
-                          ),
-                      ],
-                    ],
-                  ),
-                ),
-          // 16 on both: with the phone card carrying its own hairline border,
-          // the old 12 read as one continuous list rather than as days.
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.xl),
+          ListSectionLabel(label: g.label),
+          ListCard(children: [for (final e in g.entries) row(e)]),
         ],
       );
     }
 
-    void retry() {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
-      _load();
-    }
+    final Widget? state = _loading
+        ? null
+        : _error != null
+        ? _LoadError(message: _error!, onRetry: _retry)
+        : grouped.isEmpty
+        ? _EmptyState(filtered: _hasFilter(flags), onClear: _clearFilters)
+        : null;
 
-    if (phone) {
-      // One scroll view: the header scrolls away with the list, so with the
-      // keyboard up for a txid search the rows still have most of the
-      // screen. It is the depth-0 vertical scrollable, which is what the
-      // shell's scroll-to-top listens for.
-      return Scaffold(
-        body: PageBackground.flat(
-          child: CustomScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            slivers: [
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(pad, AppSpacing.lg, pad, 0),
-                sliver: SliverToBoxAdapter(child: header),
-              ),
-              if (_loading)
-                const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_error != null)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Padding(
-                    padding: EdgeInsets.all(pad),
-                    child: _LoadError(message: _error!, onRetry: retry),
-                  ),
-                )
-              else if (grouped.isEmpty)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: _EmptyState(
-                    filtered: _hasFilter,
-                    onClear: () => setState(() {
-                      _chainFilter = 'all';
-                      _searchController.clear();
-                    }),
-                  ),
-                )
-              else
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(pad, 0, pad, AppSpacing.xl),
-                  sliver: SliverList.builder(
-                    itemCount: grouped.length,
-                    itemBuilder: (context, i) => section(i),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      );
-    }
-
+    // One scroll view: the header scrolls away with the list, so with the
+    // keyboard up for a txid search the rows keep most of the screen. It is
+    // the depth-0 vertical scrollable, which is what the phone shell's
+    // scroll-to-top listens for.
     return Scaffold(
       body: PageBackground.flat(
-        child: Column(
-          children: [
-            Padding(
+        child: CustomScrollView(
+          keyboardDismissBehavior: phone
+              ? ScrollViewKeyboardDismissBehavior.onDrag
+              : ScrollViewKeyboardDismissBehavior.manual,
+          slivers: [
+            SliverPadding(
               padding: EdgeInsets.fromLTRB(pad, pad, pad, 0),
-              child: header,
+              sliver: SliverToBoxAdapter(child: header),
             ),
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _error != null
-                  ? _LoadError(message: _error!, onRetry: retry)
-                  : grouped.isEmpty
-                  ? Center(
-                      child: Text(
-                        'No transactions found',
-                        style: AppTypography.caption,
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: EdgeInsets.fromLTRB(pad, 0, pad, AppSpacing.xl),
-                      itemCount: grouped.length,
-                      itemBuilder: (context, i) => section(i),
-                    ),
-            ),
+            if (_loading)
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(pad, 0, pad, AppSpacing.xl),
+                sliver: const SliverToBoxAdapter(child: _LoadingList()),
+              )
+            else if (state != null)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Padding(padding: EdgeInsets.all(pad), child: state),
+              )
+            else
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(pad, 0, pad, AppSpacing.xxl),
+                sliver: SliverList.builder(
+                  itemCount: grouped.length,
+                  itemBuilder: (context, i) => section(i),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  void _showDetail(BuildContext context, Transaction tx) {
+  bool _sourceShown(String source, ActivitySourceFlags flags) =>
+      flags.kinds.contains(ActivitySources.kindOf(source));
+
+  void _retryExtras() {
     final appState = context.read<AppState>();
-    // On a phone the sheet must cover the whole screen — header and carousel
-    // included — so it goes on the root navigator, not the shell's nested
-    // one, where it would stop above the nav bar and leave it live.
-    final phone = AppSpacing.isPhone(context);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useRootNavigator: phone,
-      useSafeArea: phone,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _TxDetailSheet(
-        tx: tx,
+    final walletId = appState.activeWalletId;
+    if (walletId == null) return;
+    _loadExtras(appState, walletId);
+  }
+
+  /// A loan's, a swap's or a peg's detail, on the same material as a
+  /// payment's. A pending Bitcoin transaction folded into it keeps its
+  /// "Speed up".
+  void _showEntryDetail(
+    BuildContext context,
+    ActivityEntry entry,
+    Map<String, Transaction> linked,
+  ) {
+    final appState = context.read<AppState>();
+    Transaction? bumpable;
+    for (final txid in entry.txids) {
+      final tx = linked[txid];
+      if (tx != null &&
+          !tx.isConfirmed &&
+          tx.chain == TxChain.bitcoin &&
+          tx.canSpeedUp) {
+        bumpable = tx;
+        break;
+      }
+    }
+    final target = activityManageTarget(entry);
+    showAppDialog<void>(
+      context,
+      builder: (ctx) => ActivityEntryDetail(
+        entry: entry,
+        useSats: appState.useSats,
         btcExplorerUrl: appState.btcExplorerUrl,
         liquidExplorerUrl: appState.liquidExplorerUrl,
+        linked: linked,
+        onManage: () {
+          Navigator.of(ctx).pop();
+          context.go(target.route);
+        },
+        onSpeedUp: bumpable != null && _feeBumpBusyTxid != bumpable.txid
+            ? () {
+                Navigator.of(ctx).pop();
+                _startFeeBump(bumpable!, cancel: false);
+              }
+            : null,
+      ),
+    );
+  }
+
+  /// The detail: a dialog on desktop, a sheet over everything on a phone
+  /// (root navigator, so the tab bar does not stay live under it).
+  void _showDetail(BuildContext context, Transaction tx) {
+    final appState = context.read<AppState>();
+    final canBump =
+        !tx.isConfirmed && tx.chain == TxChain.bitcoin && tx.canSpeedUp;
+    showAppDialog<void>(
+      context,
+      builder: (ctx) => _TxDetail(
+        tx: tx,
+        useSats: appState.useSats,
+        btcExplorerUrl: appState.btcExplorerUrl,
+        liquidExplorerUrl: appState.liquidExplorerUrl,
+        onSpeedUp: canBump && _feeBumpBusyTxid != tx.txid
+            ? () {
+                Navigator.of(ctx).pop();
+                _startFeeBump(tx, cancel: false);
+              }
+            : null,
+      ),
+    );
+  }
+}
+
+// ── Amounts ───────────────────────────────────────────────────────────────────
+
+/// The true minus sign: a hyphen is narrower than a digit and breaks a
+/// tabular column.
+const String _minus = '−';
+
+/// One number format for the whole list. A bitcoin amount (BTC, LBTC, sats)
+/// is re-written in the user's unit — eight decimals or grouped sats; an
+/// issued asset keeps the figure and ticker the engine gave, since only the
+/// engine knows its precision. Incoming carries `+`, outgoing `−`.
+String formatTxAmount(Transaction tx, {required bool useSats}) {
+  var raw = tx.amount.trim();
+  if (raw.isEmpty) return '—';
+  var approx = '';
+  if (raw.startsWith('~')) {
+    approx = '~';
+    raw = raw.substring(1).trim();
+  }
+  var sign = '';
+  if (raw.startsWith('+')) {
+    sign = '+';
+    raw = raw.substring(1).trim();
+  } else if (raw.startsWith('-') || raw.startsWith(_minus)) {
+    sign = _minus;
+    raw = raw.substring(1).trim();
+  }
+  // A figure with no digits ('—' on a placeholder) has nothing to sign.
+  if (!raw.contains(RegExp(r'\d'))) return '$approx$raw';
+  sign = switch (tx.direction) {
+    TxDirection.incoming => '+',
+    TxDirection.outgoing => _minus,
+    TxDirection.self => sign,
+  };
+  final space = raw.lastIndexOf(' ');
+  final number = (space < 0 ? raw : raw.substring(0, space)).trim();
+  final unit = space < 0 ? tx.ticker : raw.substring(space + 1).trim();
+  final plain = number.replaceAll(',', '');
+  final coin = tx.chain == TxChain.liquid ? 'LBTC' : 'BTC';
+  final int? sats = switch (unit.toUpperCase()) {
+    'SAT' || 'SATS' => int.tryParse(plain),
+    'BTC' || 'TBTC' || 'LBTC' || 'L-BTC' => AmountUnits.satsFromCoin(plain),
+    _ => null,
+  };
+  final body = sats == null
+      ? '$number $unit'
+      : PriceService.formatUnit(
+          sats,
+          sat: useSats,
+          coin: unit.toUpperCase() == 'SAT' || unit.toUpperCase() == 'SATS'
+              ? coin
+              : unit,
+        );
+  return '$approx$sign$body';
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+/// The search: a short placeholder, and what it searches in the tooltip
+/// and the semantic label. 36 tall and at most 320 wide on desktop; the
+/// full column, with a clear button and a search key, on a phone.
+class _SearchField extends StatelessWidget {
+  const _SearchField({required this.controller, required this.onChanged});
+
+  final TextEditingController controller;
+  final VoidCallback onChanged;
+
+  static const String _what = 'Search by txid, note, asset, loan or order';
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppSpacing.isPhone(context);
+    final field = TextField(
+      controller: controller,
+      textInputAction: TextInputAction.search,
+      autocorrect: false,
+      enableSuggestions: false,
+      style: AppTypography.bodyOf(context).copyWith(color: s.ink),
+      decoration: InputDecoration(
+        hintText: 'Search',
+        isDense: !phone,
+        contentPadding: phone
+            ? null
+            : const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.sm,
+              ),
+        prefixIcon: Icon(
+          Icons.search_outlined,
+          size: phone ? AppSpacing.icon : AppSpacing.iconSmall,
+          color: s.inkSecondary,
+        ),
+        prefixIconConstraints: phone
+            ? null
+            : const BoxConstraints(
+                minWidth: AppSpacing.controlHeight,
+                minHeight: AppSpacing.controlHeight,
+              ),
+        suffixIcon: !phone || controller.text.isEmpty
+            ? null
+            : IconButton(
+                icon: Icon(
+                  Icons.close_outlined,
+                  size: AppSpacing.icon,
+                  color: s.inkSecondary,
+                ),
+                tooltip: 'Clear search',
+                onPressed: () {
+                  controller.clear();
+                  onChanged();
+                },
+              ),
+      ),
+      onChanged: (_) => onChanged(),
+    );
+    final labelled = Semantics(label: _what, textField: true, child: field);
+    if (phone) return labelled;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 320),
+        child: SizedBox(
+          height: AppSpacing.controlHeight,
+          child: Tooltip(message: _what, child: labelled),
+        ),
       ),
     );
   }
@@ -801,43 +996,42 @@ class _LoadError extends StatelessWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
-        child: GlassCard(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.error_outline_rounded, size: 40, color: s.danger),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'Could not load activity',
-                style: AppTypography.sectionTitleOf(context),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                message,
-                style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
-                textAlign: TextAlign.center,
-                // A raw FFI error can run for paragraphs; on a phone it must
-                // not push the Retry button under the nav bar.
-                maxLines: phone ? 6 : null,
-                overflow: phone ? TextOverflow.ellipsis : null,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              PrimaryButton(
-                label: 'Retry',
-                onPressed: onRetry,
-                isFullWidth: phone,
-              ),
-            ],
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: AppSpacing.icon, color: s.danger),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Could not load activity',
+              style: AppTypography.sectionTitle.copyWith(color: s.ink),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              message,
+              style: AppTypography.body.copyWith(color: s.inkSecondary),
+              textAlign: TextAlign.center,
+              // A raw FFI error can run for paragraphs; on a phone it must
+              // not push the Retry button under the tab bar.
+              maxLines: phone ? 6 : null,
+              overflow: phone ? TextOverflow.ellipsis : null,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            SecondaryButton(
+              label: 'Retry',
+              icon: Icons.refresh_outlined,
+              onPressed: onRetry,
+              isFullWidth: phone,
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-// ── Empty state (phone) ───────────────────────────────────────────────────────
+// ── Empty state ───────────────────────────────────────────────────────────────
 // Tells "no transactions yet" apart from "nothing matches the filter", and
-// offers the way back from the second.
+// offers the way on from each.
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.filtered, required this.onClear});
@@ -848,81 +1042,89 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Same glyphs, on the inset tile every other phone glyph sits on
-            // — the empty state stops being the one place one floats.
-            ListIconTile(
-              icon: filtered
-                  ? Icons.search_off_rounded
-                  : Icons.receipt_long_outlined,
-              tint: s.inkSecondary,
-              size: 56,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            filtered ? 'Nothing matches' : 'No activity yet',
+            style: AppTypography.bodyOf(
+              context,
+            ).copyWith(color: s.inkSecondary),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          if (filtered)
+            GhostButton(label: 'Clear filters', onPressed: onClear)
+          else
+            SecondaryButton(
+              label: 'Receive',
+              icon: Icons.call_received_outlined,
+              onPressed: () => context.go(AppRoutes.receive),
             ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              filtered ? 'No matches' : 'No transactions yet',
-              style: AppTypography.sectionTitleOf(context),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              filtered
-                  ? 'Nothing matches this chain or search.'
-                  : 'Received and sent transactions show up here.',
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-              textAlign: TextAlign.center,
-            ),
-            if (filtered) ...[
-              const SizedBox(height: AppSpacing.md),
-              // The shared tertiary rather than a bare TextButton: it is the
-              // only control on the screen when a filter matches nothing, and
-              // this way it inherits the phone slab (54 dp) centrally instead
-              // of staying the smallest tap target here.
-              GhostButton(label: 'Clear filters', onPressed: onClear),
-            ],
-          ],
-        ),
+        ],
       ),
     );
   }
 }
 
-// ── Date header ───────────────────────────────────────────────────────────────
+// ── Loading ───────────────────────────────────────────────────────────────────
 
-class _DateHeader extends StatelessWidget {
-  const _DateHeader({required this.label});
-  final String label;
+/// Quiet placeholders in the list's shape: a label, a card, rows with a
+/// tile, two lines and an amount. Still — the wait is short and a shimmer
+/// would be motion that states nothing.
+class _LoadingList extends StatelessWidget {
+  const _LoadingList();
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     final phone = AppSpacing.isPhone(context);
-    if (phone) {
-      // A day is a section label like any other on a phone — the same object
-      // over 'TODAY' as over the Dashboard's 'RECENT ACTIVITY'. It brings its
-      // own ink, letter spacing, left inset and bottom gap; only the gap
-      // above the group is ours. The keys are already uppercase, so nothing
-      // reads differently for its uppercasing them.
-      return Padding(
-        padding: const EdgeInsets.only(top: AppSpacing.md),
-        child: ListSectionLabel(label: label),
-      );
-    }
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Padding(
-      padding: EdgeInsets.only(
-        top: phone ? AppSpacing.md : AppSpacing.lg,
-        bottom: phone ? AppSpacing.xs : AppSpacing.sm,
+    Widget bar(double w, double h) => Container(
+      width: w,
+      height: h,
+      decoration: BoxDecoration(
+        color: s.panelInset,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
       ),
-      child: Text(
-        label,
-        style: AppTypography.navSection.copyWith(
-          color: isDark ? AppColors.textMutedDark : AppColors.textMuted,
-          letterSpacing: 1.0,
-        ),
+    );
+    return Semantics(
+      label: 'Loading activity',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: AppSpacing.xl),
+          bar(64, AppSpacing.md),
+          const SizedBox(height: AppSpacing.md),
+          ListCard(
+            children: [
+              for (var i = 0; i < 4; i++)
+                SizedBox(
+                  height: phone ? _rowHeightPhone : _rowHeight,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: kListPad),
+                    child: Row(
+                      children: [
+                        bar(kListTile, kListTile),
+                        const SizedBox(width: kListGap),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              bar(120, AppSpacing.md),
+                              const SizedBox(height: AppSpacing.sm),
+                              bar(180, AppSpacing.sm),
+                            ],
+                          ),
+                        ),
+                        bar(96, AppSpacing.md),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -930,9 +1132,95 @@ class _DateHeader extends StatelessWidget {
 
 // ── Transaction row ───────────────────────────────────────────────────────────
 
-class _TxRow extends StatelessWidget {
+/// A row's height: 60 on desktop, 64 on a phone (a touch row clears 48 with
+/// room for two lines).
+const double _rowHeight = 60;
+const double _rowHeightPhone = 64;
+
+/// The row's glyph: an outlined arrow for the direction.
+IconData _directionIcon(TxDirection d) => switch (d) {
+  TxDirection.incoming => Icons.call_received_outlined,
+  TxDirection.outgoing => Icons.arrow_outward_outlined,
+  TxDirection.self => Icons.swap_horiz_outlined,
+};
+
+/// The chain's mark for the corner badge: Bitcoin's glyph for the Bitcoin
+/// chain, the asset's own (teal either way) on Liquid.
+String _chainTicker(Transaction tx) =>
+    tx.chain == TxChain.bitcoin ? 'BTC' : tx.ticker;
+
+/// `1,787` — a fee is money, grouped.
+String _groupSats(int n) {
+  final digits = n.abs().toString();
+  final b = StringBuffer(n < 0 ? '−' : '');
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) b.write(',');
+    b.write(digits[i]);
+  }
+  return b.toString();
+}
+
+/// What a row says of the bump folded into it: `CPFP · fee 1,787 sats`.
+/// A cancellation is named by the row's title instead.
+String? _bumpWords(FeeBump bump, {required bool withFee}) {
+  if (bump.isCancel) return bump.awaitingSync ? 'Cancelling' : null;
+  final fee = bump.feeSats;
+  return withFee && fee != null
+      ? '${bump.label} · fee ${_groupSats(fee)} sats'
+      : bump.label;
+}
+
+/// The direction tile with the chain's glyph on its corner — the one place
+/// a chain hue appears in the row.
+class _TxGlyph extends StatelessWidget {
+  const _TxGlyph({required this.tx});
+  final Transaction tx;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return SizedBox.square(
+      dimension: kListTile,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ListIconTile(icon: _directionIcon(tx.direction)),
+          Positioned(
+            right: -AppSpacing.xs,
+            bottom: -AppSpacing.xs,
+            // A ring of the card's own tone keeps the badge off the tile.
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(color: s.panel, shape: BoxShape.circle),
+              child: AssetLogo(ticker: _chainTicker(tx), size: AppSpacing.lg),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 6 px status dot, inline with the text it qualifies.
+InlineSpan _dotSpan(Color color) => WidgetSpan(
+  alignment: PlaceholderAlignment.middle,
+  child: Padding(
+    padding: const EdgeInsets.only(right: AppSpacing.xs),
+    child: Container(
+      width: 6,
+      height: 6,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(999),
+      ),
+    ),
+  ),
+);
+
+class _TxRow extends StatefulWidget {
   const _TxRow({
     required this.tx,
+    required this.useSats,
     required this.onTap,
     required this.showPendingActions,
     required this.onSpeedUp,
@@ -941,6 +1229,7 @@ class _TxRow extends StatelessWidget {
     required this.busy,
   });
   final Transaction tx;
+  final bool useSats;
   final VoidCallback onTap;
   final bool showPendingActions;
   final VoidCallback? onSpeedUp;
@@ -949,305 +1238,365 @@ class _TxRow extends StatelessWidget {
   final bool busy;
 
   @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final isIn = tx.direction == TxDirection.incoming;
-
-    if (AppSpacing.isPhone(context)) {
-      // The row the Dashboard draws under RECENT ACTIVITY, field for field:
-      // its 'All →' link lands straight here, so the same transaction must
-      // not change shape mid-tap. Same Material glyphs as the desktop row
-      // below, in the _rounded variants the phone list grammar uses.
-      final isSelf = tx.direction == TxDirection.self;
-      final masked = balancesHidden(context);
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ListRow(
-            icon: isSelf
-                ? Icons.autorenew_rounded
-                : isIn
-                ? Icons.south_west_rounded
-                : Icons.north_east_rounded,
-            tint: tx.isConfirmed
-                ? (isIn ? s.success : s.inkSecondary)
-                : s.inkFaint,
-            title: tx.note ?? tx.directionLabel,
-            subtitle: <String>[
-              tx.chain == TxChain.bitcoin ? 'Bitcoin' : 'Liquid',
-              if (tx.isConfirmed) '${tx.confirmations} conf.' else 'Pending',
-              if (tx.isConfirmed) relativeTimeShort(tx.timestamp),
-            ].join(' · '),
-            subtitleColor: tx.isConfirmed ? null : s.inkFaint,
-            onTap: onTap,
-            trailing: ListAmount(
-              value: masked ? kMaskedAmount : tx.amount,
-              unit: masked ? null : tx.fiatEstimate,
-              valueColor: tx.isConfirmed
-                  ? (isIn ? s.success : s.ink)
-                  : s.inkSecondary,
-              maxWidth: 132,
-            ),
-          ),
-          if (showPendingActions)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                56,
-                0,
-                AppSpacing.sm,
-                AppSpacing.sm,
-              ),
-              child: _PendingActions(
-                onSpeedUp: busy ? null : onSpeedUp,
-                onCancel: busy ? null : onCancel,
-                unavailableReason: unavailableReason,
-                busy: busy,
-              ),
-            ),
-        ],
-      );
-    }
-
-    final color = tx.isConfirmed ? (isIn ? s.success : s.ink) : s.inkSecondary;
-    final icon = isIn ? Icons.south_west : Icons.north_east;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    // Asset logo (orange BTC / teal LBTC / teal token) with a small
-    // direction badge so in/out stays readable at a glance.
-    final logo = SizedBox(
-      width: 36,
-      height: 36,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          AssetLogo(ticker: tx.ticker, size: 36),
-          Positioned(
-            right: -2,
-            bottom: -2,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.surfaceDark : AppColors.surfaceLight,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                size: 11,
-                color: isIn ? s.success : s.inkSecondary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    final chainBadge = StatusBadge(
-      label: tx.chain == TxChain.bitcoin ? 'BTC' : 'Liquid',
-      variant: tx.chain == TxChain.bitcoin
-          ? BadgeVariant.accent
-          : BadgeVariant.warning,
-    );
-    final confStyle = AppTypography.caption.copyWith(
-      color: tx.isConfirmed ? AppColors.success : s.inkFaint,
-    );
-    final confText = tx.isConfirmed ? '${tx.confirmations} conf.' : 'Pending';
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-        child: Row(
-          children: [
-            logo,
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          tx.shortTxid,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.mono.copyWith(fontSize: 12),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      chainBadge,
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Text(confText, style: confStyle),
-                      if (tx.note != null) ...[
-                        Text('  ·  ', style: AppTypography.caption),
-                        Flexible(
-                          child: Text(
-                            tx.note!,
-                            style: AppTypography.caption,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Amount(
-                  tx.amount,
-                  style: AppTypography.numeric.copyWith(
-                    fontSize: 14.5,
-                    color: color,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (tx.fiatEstimate != null)
-                  Amount(
-                    tx.fiatEstimate!,
-                    style: AppTypography.numericSmall.copyWith(
-                      color: s.inkSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-              ],
-            ),
-            if (showPendingActions) ...[
-              const SizedBox(width: AppSpacing.md),
-              _PendingActions(
-                onSpeedUp: busy ? null : onSpeedUp,
-                onCancel: busy ? null : onCancel,
-                unavailableReason: unavailableReason,
-                busy: busy,
-              ),
-            ],
-            const SizedBox(width: AppSpacing.sm),
-            Icon(
-              Icons.chevron_right,
-              size: 16,
-              color: isDark ? AppColors.textMutedDark : AppColors.textMuted,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  State<_TxRow> createState() => _TxRowState();
 }
 
-class _PendingActions extends StatelessWidget {
-  const _PendingActions({
-    required this.onSpeedUp,
-    required this.onCancel,
-    required this.unavailableReason,
-    required this.busy,
-  });
-
-  final VoidCallback? onSpeedUp;
-  final VoidCallback? onCancel;
-  final String? unavailableReason;
-  final bool busy;
+class _TxRowState extends State<_TxRow> {
+  bool _hover = false;
+  bool _down = false;
+  bool _focus = false;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final phone = AppSpacing.isPhone(context);
-    final speed = Tooltip(
-      message: onSpeedUp == null
-          ? (unavailableReason ?? 'RBF and CPFP are unavailable')
-          : 'Raise the confirmation fee with RBF or CPFP',
-      child: _PendingActionButton(
-        label: busy ? 'Working…' : 'Speed up',
-        icon: Icons.bolt_rounded,
-        onPressed: onSpeedUp,
-        color: s.ink,
+    final tx = widget.tx;
+    final isIn = tx.direction == TxDirection.incoming;
+    final faint = AppTypography.caption.copyWith(color: s.inkFaint);
+    final bump = tx.bump;
+    // A phone's line has no room for it beside a pending state — and there
+    // the filled "Sped up" under the row already says it.
+    final bumpWords = bump == null || (phone && !tx.isConfirmed)
+        ? null
+        : _bumpWords(bump, withFee: !phone);
+
+    // Confirmed is the normal state and needs no colour: only a wait or a
+    // loss earns a dot.
+    final List<InlineSpan> state;
+    if (!tx.isConfirmed) {
+      state = [_dotSpan(s.pending), TextSpan(text: 'Pending', style: faint)];
+    } else {
+      final n = tx.confirmations;
+      final when = relativeTimeShort(tx.timestamp);
+      state = [
+        TextSpan(
+          text: phone ? when : '$n confirmation${n == 1 ? '' : 's'} · $when',
+          style: faint,
+        ),
+      ];
+    }
+    final subtitle = Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            // Four each side on a phone: the column beside the amount holds
+            // ~140 dp, and the state after the txid must not be cut.
+            text: phone && tx.txid.length > 9
+                ? '${tx.txid.substring(0, 4)}…'
+                      '${tx.txid.substring(tx.txid.length - 4)}'
+                : tx.shortTxidCompact,
+            style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
+          ),
+          TextSpan(text: ' · ', style: faint),
+          ...state,
+          // The fee bump folded into this row: the double bolt, the method
+          // and — where there is room — what it cost.
+          if (bumpWords != null) ...[
+            TextSpan(text: ' · ', style: faint),
+            if (!tx.bump!.isCancel)
+              const WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: Padding(
+                  padding: EdgeInsets.only(right: AppSpacing.xs),
+                  child: DoubleBolt(size: AppSpacing.md),
+                ),
+              ),
+            TextSpan(text: bumpWords, style: faint),
+          ],
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+
+    final amountColor = !tx.isConfirmed
+        ? s.inkSecondary
+        : (isIn ? s.success : s.ink);
+    final fiat = tx.fiatEstimate;
+    final amount = ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: phone ? 144 : 240),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Amount(
+            formatTxAmount(tx, useSats: widget.useSats),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.end,
+            style: AppTypography.numeric.copyWith(color: amountColor),
+          ),
+          if (fiat != null)
+            Amount(
+              fiat,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: AppTypography.numericSmall.copyWith(color: s.inkFaint),
+            ),
+        ],
       ),
     );
-    final cancel = Tooltip(
-      message: onCancel == null
-          ? (unavailableReason ??
-                'Only replaceable outgoing transactions can be cancelled')
-          : 'Attempt an RBF replacement back to your wallet',
-      child: _PendingActionButton(
-        label: 'Cancel',
-        icon: Icons.cancel_outlined,
-        onPressed: onCancel,
-        color: s.danger,
-      ),
-    );
-    return Row(
+
+    final text = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
-      children: phone
-          ? [
-              Expanded(child: speed),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(child: cancel),
-            ]
-          : [speed, const SizedBox(width: AppSpacing.sm), cancel],
+      children: [
+        Text(
+          tx.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.bodyOf(context).copyWith(color: s.ink),
+        ),
+        subtitle,
+        if (widget.showPendingActions && !phone) ...[
+          const SizedBox(height: AppSpacing.sm),
+          _PendingActions(
+            tx: tx,
+            onSpeedUp: widget.busy ? null : widget.onSpeedUp,
+            onCancel: widget.busy ? null : widget.onCancel,
+            onDetails: widget.onTap,
+            unavailableReason: widget.unavailableReason,
+            busy: widget.busy,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+        ],
+      ],
+    );
+
+    final body = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.instant),
+      curve: AppMotion.settle,
+      constraints: BoxConstraints(
+        minHeight: phone ? _rowHeightPhone : _rowHeight,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kListPad,
+        vertical: AppSpacing.sm,
+      ),
+      color: _down ? s.pressed : (_hover ? s.hover : Colors.transparent),
+      foregroundDecoration: _focus
+          ? BoxDecoration(border: Border.all(color: s.focus, width: 2))
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: widget.showPendingActions && !phone
+                ? CrossAxisAlignment.start
+                : CrossAxisAlignment.center,
+            children: [
+              Padding(
+                padding: EdgeInsets.only(
+                  top: widget.showPendingActions && !phone ? AppSpacing.xs : 0,
+                ),
+                child: _TxGlyph(tx: tx),
+              ),
+              const SizedBox(width: kListGap),
+              Expanded(child: text),
+              const SizedBox(width: AppSpacing.md),
+              amount,
+              const SizedBox(width: AppSpacing.xs),
+              Padding(
+                padding: EdgeInsets.only(
+                  top: widget.showPendingActions && !phone ? AppSpacing.sm : 0,
+                ),
+                child: Icon(
+                  Icons.chevron_right_outlined,
+                  size: AppSpacing.icon,
+                  color: s.inkFaint,
+                ),
+              ),
+            ],
+          ),
+          // On a phone the actions take the row's width under it, from the
+          // text's edge: two equal 44 dp slabs instead of a cramped pair
+          // beside the amount column.
+          if (widget.showPendingActions && phone)
+            Padding(
+              padding: const EdgeInsets.only(
+                left: kListTile + kListGap,
+                top: AppSpacing.sm,
+              ),
+              child: _PendingActions(
+                tx: tx,
+                onSpeedUp: widget.busy ? null : widget.onSpeedUp,
+                onCancel: widget.busy ? null : widget.onCancel,
+                onDetails: widget.onTap,
+                unavailableReason: widget.unavailableReason,
+                busy: widget.busy,
+              ),
+            ),
+        ],
+      ),
+    );
+
+    return Semantics(
+      button: true,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowHoverHighlight: (v) => setState(() {
+          _hover = v;
+          if (!v) _down = false;
+        }),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onTap();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          onTapDown: (_) => setState(() => _down = true),
+          onTapUp: (_) => setState(() => _down = false),
+          onTapCancel: () => setState(() => _down = false),
+          // Unconfirmed: the row breathes.
+          child: PendingEdge(pending: !tx.isConfirmed, child: body),
+        ),
+      ),
     );
   }
 }
 
-class _PendingActionButton extends StatelessWidget {
-  const _PendingActionButton({
-    required this.label,
-    required this.icon,
-    required this.onPressed,
-    required this.color,
+/// The fee actions under a pending row's text.
+///
+/// What is offered follows what is possible. A payment that came in can
+/// only be sped up by a child (CPFP) and can never be cancelled — it is not
+/// ours to replace — so it shows "Speed up" alone. One of ours shows
+/// "Cancel" beside it. Once the fee was raised the "Speed up" slot is the
+/// filled yellow "Sped up", which opens the detail where the bump is
+/// spelled out.
+class _PendingActions extends StatelessWidget {
+  const _PendingActions({
+    required this.tx,
+    required this.onSpeedUp,
+    required this.onCancel,
+    required this.onDetails,
+    required this.unavailableReason,
+    required this.busy,
   });
-  final String label;
-  final IconData icon;
-  final VoidCallback? onPressed;
-  final Color color;
+
+  final Transaction tx;
+  final VoidCallback? onSpeedUp;
+  final VoidCallback? onCancel;
+
+  /// Opens the transaction's detail.
+  final VoidCallback onDetails;
+  final String? unavailableReason;
+  final bool busy;
+
+  String get _speedUpTip {
+    if (onSpeedUp == null) {
+      return unavailableReason ??
+          (tx.direction == TxDirection.incoming
+              ? 'CPFP is unavailable: no coin of this payment is spendable'
+              : 'RBF and CPFP are unavailable');
+    }
+    if (tx.canRbf && tx.canCpfp) {
+      return 'Raise the confirmation fee with RBF or CPFP';
+    }
+    return tx.canRbf
+        ? 'Replace it with a higher-fee transaction (RBF)'
+        : 'A child transaction pays the fee for both (CPFP)';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    return TextButton.icon(
-      onPressed: onPressed,
-      style: TextButton.styleFrom(
-        foregroundColor: color,
-        backgroundColor: s.panelInset,
-        minimumSize: Size(AppSpacing.isPhone(context) ? 0 : 102, 48),
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        ),
-      ),
-      icon: Icon(icon, size: 18),
-      label: Text(label, maxLines: 1),
+    final phone = AppSpacing.isPhone(context);
+    final bump = tx.bump;
+    // A fee that was raised is a state; a cancellation in flight is not a
+    // speed-up, and keeps the ordinary button.
+    final spedUp = bump != null && !bump.isCancel;
+    final ours = tx.direction != TxDirection.incoming;
+
+    final Widget speed = spedUp
+        ? Tooltip(
+            message: 'Fee raised with ${bump.label} — show details',
+            child: SpedUpButton(onPressed: onDetails, isFullWidth: phone),
+          )
+        : Tooltip(
+            message: _speedUpTip,
+            child: SpeedUpButton(
+              label: busy ? 'Working…' : 'Speed up',
+              isLoading: busy,
+              isFullWidth: phone,
+              onPressed: onSpeedUp,
+            ),
+          );
+    // Only what this wallet sent can be cancelled; an incoming payment
+    // shows no Cancel at all rather than one that can never work.
+    final Widget? cancel = !ours
+        ? null
+        : Tooltip(
+            message: onCancel == null
+                ? (unavailableReason ??
+                      'Only replaceable outgoing transactions can be cancelled')
+                : 'Attempt an RBF replacement back to your wallet',
+            child: GhostButton(
+              label: 'Cancel',
+              isFullWidth: phone,
+              onPressed: onCancel,
+            ),
+          );
+    if (phone) {
+      return Row(
+        children: [
+          Expanded(child: speed),
+          if (cancel != null) ...[
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(child: cancel),
+          ],
+        ],
+      );
+    }
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: [speed, ?cancel],
     );
   }
 }
 
-// ── Detail bottom sheet ───────────────────────────────────────────────────────
+// ── Detail ────────────────────────────────────────────────────────────────────
 
-class _TxDetailSheet extends StatelessWidget {
-  const _TxDetailSheet({
+/// The transaction's detail on the dialog material (a sheet on a phone):
+/// the amount, its facts as key/value rows, the txid in a code box, and the
+/// way out to an explorer.
+class _TxDetail extends StatelessWidget {
+  const _TxDetail({
     required this.tx,
+    required this.useSats,
     required this.btcExplorerUrl,
     required this.liquidExplorerUrl,
+    this.onSpeedUp,
   });
+
   final Transaction tx;
+  final bool useSats;
   final String btcExplorerUrl;
   final String liquidExplorerUrl;
 
-  String _explorerUrl() {
+  /// Opens the fee-bump flow; null when this transaction cannot take one.
+  final VoidCallback? onSpeedUp;
+
+  String _explorerUrl(String txid) {
     final base = tx.chain == TxChain.liquid
         ? liquidExplorerUrl
         : btcExplorerUrl;
     final baseTrimmed = base.endsWith('/')
         ? base.substring(0, base.length - 1)
         : base;
-    return '$baseTrimmed/tx/${tx.txid}';
+    return '$baseTrimmed/tx/$txid';
   }
 
-  Future<void> _openExplorer(BuildContext context) async {
-    final url = _explorerUrl();
+  /// Opens this transaction in the explorer, or [txid] — the other
+  /// transaction of its fee bump.
+  Future<void> _openExplorer(BuildContext context, {String? txid}) async {
+    final url = _explorerUrl(txid ?? tx.txid);
     final uri = Uri.parse(url);
     // launchUrl answers false (or throws on some OEM builds and restricted
     // work profiles) when nothing can take an https VIEW intent; a silent
@@ -1272,235 +1621,127 @@ class _TxDetailSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final isDark = s.isDark;
-    final isIn = tx.direction == TxDirection.incoming;
-    final amountColor = isIn ? s.success : s.danger;
     final phone = AppSpacing.isPhone(context);
-    // A root-navigator sheet on an edge-to-edge phone runs under the gesture
-    // bar; the content clears it while the surface keeps the screen bottom.
-    final bottomInset = phone ? MediaQuery.viewPaddingOf(context).bottom : 0.0;
+    final isIn = tx.direction == TxDirection.incoming;
+    final amountColor = !tx.isConfirmed
+        ? s.inkSecondary
+        : (isIn ? s.success : s.ink);
+    final fiat = tx.fiatEstimate;
 
-    // Same glyph, same ink either way. On a phone it sits on the inset tile
-    // the rows behind this sheet all use, rather than on a tinted wash that
-    // is a surface step the phone uses nowhere else.
-    final iconTile = phone
-        ? ListIconTile(
-            icon: isIn ? Icons.call_received : Icons.send,
-            tint: amountColor,
-            size: 40,
-          )
-        : Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: amountColor.withValues(alpha: isDark ? 0.18 : 0.12),
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+    final figure = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Amount(
+              formatTxAmount(tx, useSats: useSats),
+              maxLines: 1,
+              style: AppTypography.numericLargeOf(
+                context,
+              ).copyWith(color: amountColor),
             ),
-            child: Icon(
-              isIn ? Icons.call_received : Icons.send,
-              size: 20,
-              color: amountColor,
-            ),
-          );
-    final chainBadge = StatusBadge(
-      label: tx.chain == TxChain.bitcoin ? 'Bitcoin' : 'Liquid',
-      variant: tx.chain == TxChain.bitcoin
-          ? BadgeVariant.accent
-          : BadgeVariant.warning,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        const PrivacyToggle(),
+      ],
     );
-    final title = isIn ? 'Received' : 'Sent';
 
-    final Widget header;
-    if (phone) {
-      // Title line, then the amount on its own line: at 19 px a real amount
-      // is ~180 dp and shares no row with a title and a badge at 379 dp.
-      header = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final content = SizedBox(
+      width: phone ? null : 480,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              iconTile,
+              _TxGlyph(tx: tx),
               const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        title,
-                        style: AppTypography.sectionTitleOf(context),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    chainBadge,
-                  ],
-                ),
+              Text(
+                tx.chain == TxChain.bitcoin ? 'Bitcoin' : 'Liquid',
+                style: AppTypography.body.copyWith(color: s.inkSecondary),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Amount(
-                    tx.amount,
-                    maxLines: 1,
-                    style: AppTypography.numericLargeOf(
-                      context,
-                    ).copyWith(color: amountColor),
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              const PrivacyToggle(size: 20),
-            ],
-          ),
-        ],
-      );
-    } else {
-      header = Row(
-        children: [
-          iconTile,
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: AppTypography.sectionTitle),
-                chainBadge,
-              ],
+          figure,
+          if (fiat != null)
+            Amount(
+              fiat,
+              style: AppTypography.numericSmall.copyWith(color: s.inkFaint),
             ),
+          const SizedBox(height: AppSpacing.lg),
+          KvRow(
+            label: 'Status',
+            value: tx.isConfirmed
+                ? '${tx.confirmations} confirmation'
+                      '${tx.confirmations == 1 ? '' : 's'}'
+                : 'Unconfirmed',
+            divider: true,
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Amount(
-                tx.amount,
-                style: AppTypography.numericLarge.copyWith(color: amountColor),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              const PrivacyToggle(size: 16),
-            ],
+          KvRow(
+            label: 'Date',
+            value: tx.isConfirmed ? _formatDate(tx.timestamp) : 'Pending',
+            divider: true,
           ),
-        ],
-      );
-    }
-
-    return SheetSurface(
-      topMargin: 80,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Handle
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-              decoration: BoxDecoration(
-                color: s.edgeStrong,
-                borderRadius: BorderRadius.circular(2),
-              ),
+          KvRow(label: 'Ticker', value: tx.ticker, divider: true),
+          if (tx.fee != null)
+            KvRow(label: 'Fee', value: tx.fee!, divider: true),
+          if (tx.feeRate != null)
+            KvRow(
+              label: 'Fee rate',
+              value: '${tx.feeRate!.toStringAsFixed(2)} sat/vB',
+              divider: true,
             ),
-          ),
-          Flexible(
-            child: SingleChildScrollView(
-              padding: phone
-                  ? EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      AppSpacing.sm,
-                      AppSpacing.lg,
-                      AppSpacing.lg + bottomInset,
-                    )
-                  : const EdgeInsets.fromLTRB(
-                      AppSpacing.xxl,
-                      AppSpacing.sm,
-                      AppSpacing.xxl,
-                      AppSpacing.xxl,
-                    ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  header,
-                  SizedBox(height: phone ? AppSpacing.lg : AppSpacing.xl),
-
-                  // Details table
-                  _DetailRow(
-                    label: 'Status',
-                    value: tx.isConfirmed
-                        ? '${tx.confirmations} confirmations'
-                        : 'Unconfirmed',
-                    valueColor: tx.isConfirmed ? s.success : s.warning,
-                  ),
-                  _DetailRow(
-                    label: 'Date',
-                    value: tx.isConfirmed
-                        ? _formatDate(tx.timestamp)
-                        : 'Pending',
-                  ),
-                  _DetailRow(label: 'Ticker', value: tx.ticker),
-                  if (tx.fee != null) _DetailRow(label: 'Fee', value: tx.fee!),
-                  if (tx.feeRate != null)
-                    _DetailRow(
-                      label: 'Fee rate',
-                      value: '${tx.feeRate!.toStringAsFixed(2)} sat/vB',
-                    ),
-                  if (tx.replacesTxid != null)
-                    _DetailRow(
-                      label: tx.feeBumpMethod == 'cpfp'
-                          ? 'CPFP parent'
-                          : 'Replaces',
-                      value: tx.replacesTxid!,
-                    ),
-                  if (tx.replacedByTxid != null)
-                    _DetailRow(
-                      label: tx.feeBumpMethod == 'cpfp'
-                          ? 'CPFP child'
-                          : 'Replaced by',
-                      value: tx.replacedByTxid!,
-                    ),
-                  if (tx.fiatEstimate != null)
-                    _DetailRow(label: 'Est. value', value: tx.fiatEstimate!),
-                  if (tx.note != null)
-                    _DetailRow(label: 'Note', value: tx.note!),
-                  if (tx.counterparty != null)
-                    _DetailRow(label: 'Counterparty', value: tx.counterparty!),
-
-                  const SizedBox(height: AppSpacing.lg),
-
-                  // TXID — full, selectable, copy with feedback.
-                  CodeBox(value: tx.txid, label: 'Transaction ID'),
-
-                  SizedBox(height: phone ? AppSpacing.lg : AppSpacing.xl),
-
-                  // Actions. On a phone this is the shared secondary, so its
-                  // height, radius and fill come from the one place that owns
-                  // them instead of from a local minimumSize patch here.
-                  phone
-                      ? SecondaryButton(
-                          label: 'View on Explorer',
-                          icon: Icons.open_in_new,
-                          onPressed: () => _openExplorer(context),
-                          isFullWidth: true,
-                        )
-                      : SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () => _openExplorer(context),
-                            icon: const Icon(Icons.open_in_new, size: 16),
-                            label: const Text('View on Explorer'),
-                          ),
-                        ),
-                ],
-              ),
+          if (tx.note != null)
+            KvRow(label: 'Note', value: tx.note!, divider: true),
+          if (tx.counterparty != null)
+            KvRow(
+              label: 'Counterparty',
+              value: tx.counterparty!,
+              divider: true,
             ),
-          ),
+          const SizedBox(height: AppSpacing.lg),
+          CodeBox(value: tx.txid, label: 'Transaction ID'),
+          // The fee bump folded into this transaction: what was done, with
+          // which other transaction, and what it cost — the second txid
+          // that would otherwise be a row of its own in the list.
+          if (tx.bump case final bump?) ...[
+            const SizedBox(height: AppSpacing.xl),
+            _BumpSection(
+              bump: bump,
+              incoming: isIn,
+              onExplorer: () => _openExplorer(context, txid: bump.otherTxid),
+            ),
+          ],
         ],
       ),
+    );
+
+    return AppDialog(
+      title: Text(tx.title),
+      scrollable: true,
+      content: content,
+      actions: [
+        GhostButton(
+          label: 'View in explorer',
+          icon: Icons.open_in_new_outlined,
+          onPressed: () => _openExplorer(context),
+        ),
+        if (onSpeedUp != null)
+          SpeedUpButton(
+            // A replacement can be replaced again; say so.
+            label: tx.bump == null ? 'Speed up' : 'Speed up again',
+            dense: false,
+            onPressed: onSpeedUp,
+          ),
+        SecondaryButton(
+          label: 'Close',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
     );
   }
 
@@ -1521,66 +1762,124 @@ class _TxDetailSheet extends StatelessWidget {
     ];
     final h = dt.hour.toString().padLeft(2, '0');
     final m = dt.minute.toString().padLeft(2, '0');
-    return '${dt.day} ${months[dt.month - 1]} ${dt.year}  $h:$m';
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year} $h:$m';
   }
 }
 
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.label, required this.value, this.valueColor});
-  final String label;
-  final String value;
-  final Color? valueColor;
+/// "Fee raised": the bump folded into a transaction, in its detail — the
+/// method under the double bolt, a sentence saying what it did, what it
+/// cost, and the other transaction it put on the chain.
+class _BumpSection extends StatelessWidget {
+  const _BumpSection({
+    required this.bump,
+    required this.incoming,
+    required this.onExplorer,
+  });
+
+  final FeeBump bump;
+
+  /// The bumped transaction is a payment that came in.
+  final bool incoming;
+
+  /// Opens the bump's other transaction in the explorer.
+  final VoidCallback onExplorer;
+
+  String get _headline => switch (bump.method) {
+    'cpfp' => 'Fee raised with CPFP',
+    'cancel' => bump.awaitingSync ? 'Cancellation sent' : 'Cancellation',
+    _ => bump.awaitingSync ? 'Replacement sent (RBF)' : 'Fee raised with RBF',
+  };
+
+  String get _what {
+    if (bump.isCpfp) {
+      return incoming
+          ? 'A child transaction spends the coin this payment sent you and '
+                'pays a fee for both, so the two confirm together. The '
+                'payment itself is unchanged.'
+          : 'A child transaction spends this payment\'s change and pays a '
+                'fee for both, so the two confirm together. The payment '
+                'itself is unchanged.';
+    }
+    if (bump.isCancel) {
+      return bump.awaitingSync
+          ? 'A replacement that sends these coins back to this wallet was '
+                'broadcast. It is a race: whichever confirms first stands.'
+          : 'This transaction sends the coins of the cancelled payment '
+                'back to this wallet.';
+    }
+    return bump.awaitingSync
+        ? 'A replacement paying a higher fee was broadcast. It takes this '
+              'transaction\'s place once the wallet has synced.'
+        : 'This transaction replaced an earlier one that paid a lower fee. '
+              'Same coins, same payment.';
+  }
+
+  String get _otherLabel => switch (bump.method) {
+    'cpfp' => 'Child transaction',
+    'cancel' =>
+      bump.awaitingSync ? 'Cancelling transaction' : 'Cancelled transaction',
+    _ => bump.awaitingSync ? 'Replacement' : 'Replaced transaction',
+  };
 
   @override
   Widget build(BuildContext context) {
-    final valueText = Text(
-      value,
-      style: AppTypography.bodySmall.copyWith(
-        fontWeight: FontWeight.w500,
-        color: valueColor,
-      ),
-    );
-    if (AppSpacing.isPhone(context)) {
-      final s = AppScheme.of(context);
-      // Label over value: no fixed label column to overflow at large font
-      // scales, and a long counterparty address wraps across the full width.
-      // The label is the app's uppercase micro-label — the same object that
-      // captions a code box or a card — so 'Status' cannot be mistaken for
-      // the value under it.
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs + 2),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final s = AppScheme.of(context);
+    final fee = bump.feeSats;
+    final rate = bump.feeRate;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
           children: [
-            Text(
-              label.toUpperCase(),
-              style: AppTypography.navSection.copyWith(
-                letterSpacing: 1.3,
-                color: s.inkFaint,
+            if (!bump.isCancel) ...[
+              const DoubleBolt(size: AppSpacing.icon),
+              const SizedBox(width: AppSpacing.sm),
+            ],
+            Expanded(
+              child: Text(
+                _headline,
+                style: AppTypography.sectionTitle.copyWith(color: s.ink),
               ),
             ),
-            const SizedBox(height: 3),
-            valueText,
           ],
         ),
-      );
-    }
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final labelText = Text(
-      label,
-      style: AppTypography.caption.copyWith(
-        color: isDark ? AppColors.textMutedDark : AppColors.textMuted,
-      ),
-    );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(width: 110, child: labelText),
-          Expanded(child: valueText),
-        ],
-      ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          _what,
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        KvRow(label: 'Method', value: bump.label, divider: true),
+        if (fee != null)
+          KvRow(
+            label: bump.isCpfp ? 'Child fee' : 'New fee',
+            value: '${_groupSats(fee)} sats',
+            divider: true,
+          ),
+        if (rate != null)
+          KvRow(
+            label: bump.isCpfp ? 'Pair rate' : 'New rate',
+            value: '${rate.toStringAsFixed(2)} sat/vB',
+            divider: true,
+          ),
+        if (bump.isCpfp)
+          KvRow(
+            label: 'Child',
+            value: bump.otherConfirmed ? 'Confirmed' : 'Unconfirmed',
+            divider: true,
+          ),
+        const SizedBox(height: AppSpacing.md),
+        CodeBox(value: bump.otherTxid, label: _otherLabel),
+        Align(
+          alignment: Alignment.centerRight,
+          child: GhostButton(
+            label: 'View in explorer',
+            icon: Icons.open_in_new_outlined,
+            onPressed: onExplorer,
+          ),
+        ),
+      ],
     );
   }
 }

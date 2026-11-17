@@ -28,7 +28,7 @@ testing without a site — is in [`PROTOCOL_CONNECTOR.md`](PROTOCOL_CONNECTOR.md
      cannot sign the proof of key yet (see section 6).
 
    Watch-only and multisig wallets cannot take part.
-4. Pick the Liquid network the site runs on: **Settings › Network & Sync ›
+4. Pick the Liquid network the site runs on: **Settings › Network ›
    Liquid network** (`Testnet` or `Regtest`), or the **Change network**
    button in **Settings › Templar Protocol**. Switching closes the open wallet:
    open it again and press **Sync**. If you get it wrong, the request screen

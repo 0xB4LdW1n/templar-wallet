@@ -3,16 +3,19 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/code_box.dart';
-import '../../shared/widgets/glass_card.dart';
-import '../../shared/widgets/hybrid_kit.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import '../vault/vault_unlock_screen.dart' show VaultBrandLine;
 
 /// Fatal startup screen: the native wallet engine (wallet-ffi library) could
 /// not be loaded. Shown in non-debug builds instead of the app — without the
 /// engine there is no real wallet data, and falling back to mock data would
 /// show phantom wallets and addresses nobody controls.
+///
+/// The pre-wallet column, like the vault screens: the mark, a danger glyph
+/// and the headline, what happened, the raw error in a well to copy, and the
+/// one way out. No accent: nothing here is an action the app wants taken.
 class BridgeErrorScreen extends StatelessWidget {
   const BridgeErrorScreen({super.key, required this.error});
 
@@ -20,58 +23,46 @@ class BridgeErrorScreen extends StatelessWidget {
   /// candidate path the loader tried.
   final Object error;
 
+  /// Wider than the vault column: the error lists file paths, and a path
+  /// broken over many lines is hard to report.
+  static const double _columnWidth = 560;
+
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final secondary = isDark
-        ? AppColors.textSecondaryDark
-        : AppColors.textSecondary;
-
+    final s = AppScheme.of(context);
+    final p = AppSpacing.pagePadding(context);
     return Scaffold(
-      body: PageBackground(
+      backgroundColor: s.canvas,
+      body: SafeArea(
         child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AppSpacing.xxxl),
-              child: GlassCard(
-                tint: AppColors.danger,
+          child: SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: _columnWidth + 2 * p),
+              child: Padding(
+                padding: EdgeInsets.all(p),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: AppColors.danger.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(
-                              AppSpacing.radiusSm,
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.link_off,
-                            size: 22,
-                            color: AppColors.danger,
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Text(
-                            'The wallet engine could not be loaded',
-                            style: AppTypography.sectionTitle,
-                          ),
-                        ),
-                      ],
+                    const VaultBrandLine(),
+                    const SizedBox(height: AppSpacing.xxl),
+                    Icon(
+                      Icons.link_off_outlined,
+                      size: AppSpacing.xl,
+                      color: s.danger,
                     ),
-                    const SizedBox(height: AppSpacing.lg),
+                    const SizedBox(height: AppSpacing.md),
+                    Text(
+                      'The wallet engine could not be loaded',
+                      style: AppTypography.displayTitleOf(
+                        context,
+                      ).copyWith(color: s.ink),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
                     Text(
                       'Templar Wallet could not start its native wallet engine, '
                       'so it cannot show or manage any wallets. Your wallet '
                       'files on disk are untouched.',
-                      style: AppTypography.body.copyWith(color: secondary),
+                      style: AppTypography.body.copyWith(color: s.inkSecondary),
                     ),
                     const SizedBox(height: AppSpacing.xl),
                     CodeBox(
@@ -80,23 +71,31 @@ class BridgeErrorScreen extends StatelessWidget {
                       maxLines: 16,
                     ),
                     const SizedBox(height: AppSpacing.xl),
-                    Text('What you can do', style: AppTypography.label),
+                    Text(
+                      'What you can do',
+                      style: AppTypography.eyebrow.copyWith(
+                        color: s.inkSecondary,
+                      ),
+                    ),
                     const SizedBox(height: AppSpacing.sm),
                     _step(
+                      s,
+                      1,
                       'Reinstall Templar Wallet — the engine library may be '
                       'missing or damaged.',
                     ),
                     _step(
-                      'If the problem persists, report the issue and '
-                      'include the error details above (use the copy '
-                      'button).',
+                      s,
+                      2,
+                      'If the problem persists, report the issue and include '
+                      'the error details above (use the copy button).',
                     ),
                     const SizedBox(height: AppSpacing.xl),
                     Align(
-                      alignment: Alignment.centerRight,
+                      alignment: Alignment.centerLeft,
                       child: SecondaryButton(
                         label: 'Quit',
-                        icon: Icons.close,
+                        icon: Icons.close_outlined,
                         onPressed: () => exit(1),
                       ),
                     ),
@@ -110,21 +109,24 @@ class BridgeErrorScreen extends StatelessWidget {
     );
   }
 
-  Widget _step(String text) => Padding(
+  Widget _step(AppScheme s, int n, String text) => Padding(
     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(top: 3),
-          child: Icon(
-            Icons.chevron_right,
-            size: 14,
-            color: AppColors.textMuted,
+        SizedBox(
+          width: AppSpacing.xl,
+          child: Text(
+            '$n.',
+            style: AppTypography.mono.copyWith(color: s.inkFaint),
           ),
         ),
-        const SizedBox(width: AppSpacing.xs),
-        Expanded(child: Text(text, style: AppTypography.bodySmall)),
+        Expanded(
+          child: Text(
+            text,
+            style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+          ),
+        ),
       ],
     ),
   );

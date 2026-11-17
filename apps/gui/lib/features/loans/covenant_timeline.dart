@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/widgets/banners.dart';
-import '../../shared/widgets/hybrid_kit.dart';
+import '../../shared/widgets/privacy.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
@@ -9,6 +9,12 @@ import '../protocol/models/protocol_portfolio.dart';
 import '../protocol/protocol_copy.dart';
 
 /// Human covenant lineage. It renders only nodes supplied by the backend.
+///
+/// A vertical timeline in the neutral ramp: a hairline spine, one 8 px node
+/// per generation — filled ink for what is done, a ring around an ink centre
+/// for the current one, a bare ring for what has not happened yet, the
+/// danger ink for a default or a missed installment. The outstanding balance
+/// at each generation sits right-aligned in one column.
 class CovenantTimeline extends StatelessWidget {
   const CovenantTimeline({super.key, required this.loan});
 
@@ -28,6 +34,7 @@ class CovenantTimeline extends StatelessWidget {
     return Semantics(
       label: 'Covenant lifecycle, ${nodes.length} generations',
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var index = 0; index < nodes.length; index++)
             _CovenantStep(
@@ -41,6 +48,8 @@ class CovenantTimeline extends StatelessWidget {
   }
 }
 
+enum _Node { done, current, upcoming, loss }
+
 class _CovenantStep extends StatelessWidget {
   const _CovenantStep({
     required this.node,
@@ -52,79 +61,83 @@ class _CovenantStep extends StatelessWidget {
   final bool first;
   final bool last;
 
+  /// Where the 8 px node sits: centred on the title's first line (20 tall).
+  static const double _nodeTop = 6;
+  static const double _node = 8;
+
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final tone = _tone(s, node.status);
+    final kind = _kind(node);
+    final missed = node.createdBy == 'renewal';
     final label = _label(node);
     final detail = _detail(node);
+    final spine = Container(width: 1, color: s.edgeStrong);
+    final quiet = AppTypography.caption.copyWith(color: s.inkSecondary);
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            width: 32,
+            width: AppSpacing.lg,
             child: Column(
               children: [
-                if (!first)
-                  Expanded(child: Container(width: 1, color: s.edgeStrong))
-                else
-                  const Spacer(),
-                Container(
-                  width: 18,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: tone.withValues(alpha: 0.15),
-                    border: Border.all(color: tone, width: 2),
-                  ),
-                  child: node.status == 'pending'
-                      ? Padding(
-                          padding: const EdgeInsets.all(3),
-                          child: CircularProgressIndicator(
-                            strokeWidth: 1.5,
-                            color: tone,
-                          ),
-                        )
-                      : Icon(_icon(node.status), size: 11, color: tone),
-                ),
-                if (!last)
-                  Expanded(child: Container(width: 1, color: s.edgeStrong))
-                else
-                  const Spacer(),
+                SizedBox(height: _nodeTop, child: first ? null : spine),
+                _Dot(kind: missed ? _Node.loss : kind),
+                Expanded(child: last ? const SizedBox.shrink() : spine),
               ],
             ),
           ),
-          const SizedBox(width: AppSpacing.sm),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+              padding: EdgeInsets.only(bottom: last ? 0 : AppSpacing.lg),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: Text(
                           label,
-                          style: AppTypography.body.copyWith(
-                            color: s.ink,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: AppTypography.bodyOf(
+                            context,
+                          ).copyWith(color: s.ink),
                         ),
                       ),
-                      TagChip(label: _statusLabel(node.status), color: tone),
+                      if (node.balance != null) ...[
+                        const SizedBox(width: AppSpacing.md),
+                        Amount(
+                          node.balance!.display,
+                          textAlign: TextAlign.end,
+                          style: AppTypography.numeric.copyWith(color: s.ink),
+                        ),
+                      ],
                     ],
                   ),
-                  if (detail.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      detail,
-                      style: AppTypography.caption.copyWith(
-                        color: s.inkSecondary,
-                      ),
-                    ),
-                  ],
+                  const SizedBox(height: AppSpacing.xs),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.xs,
+                    children: [
+                      Text(_statusLabel(node.status), style: quiet),
+                      if (missed)
+                        Text(
+                          'Missed',
+                          style: AppTypography.caption.copyWith(
+                            color: s.danger,
+                          ),
+                        ),
+                      if (detail.isNotEmpty)
+                        Text(
+                          detail,
+                          style: AppTypography.caption.copyWith(
+                            color: s.inkFaint,
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -133,6 +146,13 @@ class _CovenantStep extends StatelessWidget {
       ),
     );
   }
+
+  static _Node _kind(ProtocolCovenantNode node) => switch (node.status) {
+    'active' || 'current' => _Node.current,
+    'pending' || 'cancelled' => _Node.upcoming,
+    'defaulted' => _Node.loss,
+    _ => _Node.done,
+  };
 
   static String _label(ProtocolCovenantNode node) {
     if (node.isTerminal) {
@@ -155,10 +175,8 @@ class _CovenantStep extends StatelessWidget {
       if ((node.createdBy ?? '').isNotEmpty)
         'Created by ${ProtocolCopy.english.action(node.createdBy!).toLowerCase()}',
       if ((node.spentBy ?? '').isNotEmpty)
-        'Spent by ${ProtocolCopy.english.action(node.spentBy!).toLowerCase()}',
-      if (node.successorTxid != null) 'A successor was created',
-      if (node.balance != null)
-        '${node.balance!.display} outstanding at this generation',
+        'spent by ${ProtocolCopy.english.action(node.spentBy!).toLowerCase()}',
+      if (node.successorTxid != null) 'a successor was created',
     ];
     return parts.join(' · ');
   }
@@ -173,23 +191,48 @@ class _CovenantStep extends StatelessWidget {
     'cancelled' => 'Signing cancelled',
     _ => status.replaceAll('_', ' '),
   };
+}
 
-  static Color _tone(AppScheme s, String status) => switch (status) {
-    'pending' => s.inkSecondary,
-    'active' || 'current' => s.liquid,
-    'spent' || 'replaced' => s.inkFaint,
-    'defaulted' => s.danger,
-    'repaid' || 'returned' => s.success,
-    'cancelled' => s.inkFaint,
-    _ => s.warning,
-  };
+class _Dot extends StatelessWidget {
+  const _Dot({required this.kind});
+  final _Node kind;
 
-  static IconData _icon(String status) => switch (status) {
-    'active' || 'current' => Icons.lock_outline_rounded,
-    'spent' || 'replaced' => Icons.arrow_forward_rounded,
-    'defaulted' => Icons.warning_amber_rounded,
-    'repaid' || 'returned' => Icons.check_rounded,
-    'cancelled' => Icons.close_rounded,
-    _ => Icons.circle_outlined,
-  };
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    const size = _CovenantStep._node;
+    return switch (kind) {
+      _Node.done || _Node.loss => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: kind == _Node.loss ? s.danger : s.ink,
+          shape: BoxShape.circle,
+        ),
+      ),
+      _Node.current => Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: s.ink),
+        ),
+        child: Container(
+          width: 4,
+          height: 4,
+          decoration: BoxDecoration(color: s.ink, shape: BoxShape.circle),
+        ),
+      ),
+      _Node.upcoming => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: s.panel,
+          border: Border.all(color: s.edgeStrong),
+        ),
+      ),
+    };
+  }
 }

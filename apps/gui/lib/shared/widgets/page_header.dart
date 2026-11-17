@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 
+/// The page's name (design.md, "Controls"): `pageTitle` in the primary ink,
+/// the actions on the right centred on the title, one optional line of meta
+/// under it, 24 below the whole header (16 on a phone).
 class PageHeader extends StatelessWidget {
   const PageHeader({
     super.key,
@@ -11,6 +15,9 @@ class PageHeader extends StatelessWidget {
   });
 
   final String title;
+
+  /// One quiet line of meta — a count, a period, the wallet — not a sentence
+  /// restating the title.
   final String? subtitle;
 
   /// Right-aligned on the title row. The chain switch goes here on per-chain
@@ -19,50 +26,42 @@ class PageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // A phone gets the same header a size down and a tighter foot: the title
-    // is a label there, not the loudest thing on a 379 dp column.
+    final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
-    final titleBlock = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: AppTypography.pageTitleOf(context)),
-        if (subtitle != null)
-          Padding(
+    final sub = subtitle;
+    final titleText = Text(
+      title,
+      style: AppTypography.pageTitleOf(context).copyWith(color: s.ink),
+    );
+    final meta = sub == null
+        ? null
+        : Padding(
             padding: const EdgeInsets.only(top: AppSpacing.xs),
             child: Text(
-              subtitle!,
-              style: (phone ? AppTypography.bodySmall : AppTypography.body)
-                  .copyWith(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? const Color(0xFF9CA3AF)
-                        : const Color(0xFF6B7280),
-                  ),
+              sub,
+              style: AppTypography.caption.copyWith(color: s.inkSecondary),
             ),
-          ),
-      ],
-    );
+          );
     final actionRow = actions.isEmpty
         ? null
         : Row(
             mainAxisSize: MainAxisSize.min,
-            children: actions
-                .map(
-                  (a) => Padding(
-                    padding: const EdgeInsets.only(left: AppSpacing.sm),
-                    child: a,
-                  ),
-                )
-                .toList(),
+            children: [
+              for (var i = 0; i < actions.length; i++) ...[
+                if (i > 0) const SizedBox(width: AppSpacing.sm),
+                actions[i],
+              ],
+            ],
           );
 
     return Padding(
       padding: EdgeInsets.only(bottom: phone ? AppSpacing.lg : AppSpacing.xl),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // Phone widths: the chain switch and the other actions would leave
-          // the title a few dozen pixels, so they move under it instead.
-          // A single small action (the privacy eye, one icon button) stays
-          // on the title row even on a phone; only a real toolbar stacks.
+          // Narrow widths: the chain switch and the other actions would leave
+          // the title a few dozen pixels, so they move under it instead. A
+          // single small action (the privacy eye, one icon button) stays on
+          // the title row; only a real toolbar stacks.
           final stacked =
               actionRow != null &&
               constraints.maxWidth < 520 &&
@@ -71,7 +70,8 @@ class PageHeader extends StatelessWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                titleBlock,
+                titleText,
+                ?meta,
                 Padding(
                   padding: const EdgeInsets.only(top: AppSpacing.md),
                   child: SingleChildScrollView(
@@ -82,11 +82,21 @@ class PageHeader extends StatelessWidget {
               ],
             );
           }
-          return Row(
+          // The actions share the title's row so they centre on the title,
+          // not on the title and its meta together.
+          return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: titleBlock),
-              ?actionRow,
+              Row(
+                children: [
+                  Expanded(child: titleText),
+                  if (actionRow != null) ...[
+                    const SizedBox(width: AppSpacing.lg),
+                    actionRow,
+                  ],
+                ],
+              ),
+              ?meta,
             ],
           );
         },

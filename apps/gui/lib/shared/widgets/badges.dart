@@ -1,123 +1,67 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_colors.dart';
-import '../../theme/asset_palette.dart';
+import '../../theme/app_motion.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import 'hybrid_kit.dart';
+
+// Tags (design.md, "Controls"): quiet text on `panelInset`. A status is a
+// 6 px dot in its colour and a word in the secondary ink — never a filled
+// pill, never a coloured outline.
 
 enum BadgeVariant { success, warning, danger, accent, neutral }
 
-/// Small tinted status pill. Shrink-wrapped, and when a Row hands it less
-/// than it needs the label ellipsises instead of striping (the phone history
-/// row, where "Bitcoin" sits beside a full-width amount).
+/// A status tag. [BadgeVariant.success], [BadgeVariant.warning] and
+/// [BadgeVariant.danger] draw their dot; [BadgeVariant.accent] and
+/// [BadgeVariant.neutral] are the plain tag (the accent is never a status
+/// colour). Shrink-wrapped, and when a Row hands it less than it needs the
+/// label ellipsises instead of striping.
 class StatusBadge extends StatelessWidget {
   const StatusBadge({
     super.key,
     required this.label,
     this.variant = BadgeVariant.neutral,
     this.icon,
-    this.dot = false,
   });
 
   final String label;
   final BadgeVariant variant;
+
+  /// A glyph before the word, for a neutral tag. A status variant draws its
+  /// dot instead.
   final IconData? icon;
-  final bool dot;
 
   @override
   Widget build(BuildContext context) {
-    final (bg, fg) = switch (variant) {
-      BadgeVariant.success => (AppColors.successLight, AppColors.success),
-      BadgeVariant.warning => (AppColors.warningLight, AppColors.warning),
-      BadgeVariant.danger => (AppColors.dangerLight, AppColors.danger),
-      BadgeVariant.accent => (AppColors.accentLight, AppColors.accentDark),
-      BadgeVariant.neutral => (
-        Theme.of(context).brightness == Brightness.dark
-            ? AppColors.surfaceDark2
-            : AppColors.borderMuted,
-        Theme.of(context).brightness == Brightness.dark
-            ? AppColors.textSecondaryDark
-            : AppColors.textSecondary,
-      ),
+    final s = AppScheme.of(context);
+    final Color? hue = switch (variant) {
+      BadgeVariant.success => s.success,
+      BadgeVariant.warning => s.warning,
+      BadgeVariant.danger => s.danger,
+      BadgeVariant.accent || BadgeVariant.neutral => null,
     };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (dot) ...[
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(color: fg, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-          ] else if (icon != null) ...[
-            Icon(icon, size: 12, color: fg),
-            const SizedBox(width: AppSpacing.xs),
-          ],
-          // A loose Flexible in a min-size Row is a no-op while the label
-          // fits and is legal under unbounded width, so the badge can sit in
-          // a header scroller as well as a tight Row.
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.label.copyWith(color: fg),
-            ),
-          ),
-        ],
-      ),
-    );
+    return QuietTag(label: label, dot: hue, icon: hue == null ? icon : null);
   }
 }
 
+/// An asset's ticker as a tag: `monoSmall`, upper-cased because a ticker is
+/// data.
 class AssetBadge extends StatelessWidget {
-  const AssetBadge({super.key, required this.ticker, this.isNative = false});
+  /// The tag is the same for every asset; the chain is told by the asset's
+  /// glyph.
+  const AssetBadge({super.key, required this.ticker});
 
   final String ticker;
 
-  /// Retained for API compatibility; color now derives from the chain
-  /// (BTC → orange, every Liquid asset → green).
-  final bool isNative;
-
   @override
-  Widget build(BuildContext context) {
-    final p = AssetPalette.forTicker(ticker);
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        color: p.light,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: p.muted, width: 0.5),
-      ),
-      child: Text(
-        ticker.toUpperCase(),
-        maxLines: 1,
-        softWrap: false,
-        overflow: TextOverflow.ellipsis,
-        style: AppTypography.label.copyWith(
-          color: p.dark,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      QuietTag(label: ticker.toUpperCase(), mono: true);
 }
 
-class AssetChip extends StatelessWidget {
+/// One asset to pick, with its balance: a chip. Selected is the raised
+/// surface with a firmer edge and the primary ink — the same grammar as
+/// every other selection in the app.
+class AssetChip extends StatefulWidget {
   const AssetChip({
     super.key,
     required this.ticker,
@@ -132,56 +76,84 @@ class AssetChip extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
+  State<AssetChip> createState() => _AssetChipState();
+}
+
+class _AssetChipState extends State<AssetChip> {
+  bool _hover = false;
+  bool _focus = false;
+
+  @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg,
-          vertical: AppSpacing.sm,
-        ),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.accent
-              : isDark
-              ? AppColors.surfaceDark2
-              : AppColors.surfaceLight,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
-          border: Border.all(
-            color: isSelected
-                ? AppColors.accent
-                : isDark
-                ? AppColors.borderDark
-                : AppColors.borderLight,
+    final s = AppScheme.of(context);
+    final tap = widget.onTap;
+    final selected = widget.isSelected;
+    final lit = tap != null && _hover;
+    final radius = BorderRadius.circular(AppSpacing.radiusSm);
+
+    final chip = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.quick),
+      curve: AppMotion.settle,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: selected ? s.selected : (lit ? s.hover : Colors.transparent),
+        borderRadius: radius,
+        border: Border.all(color: selected || lit ? s.edgeStrong : s.edge),
+      ),
+      foregroundDecoration: _focus && tap != null
+          ? BoxDecoration(
+              borderRadius: radius,
+              border: Border.all(color: s.focus, width: 2),
+            )
+          : null,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            widget.ticker,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.label.copyWith(
+              color: selected ? s.ink : s.inkSecondary,
+            ),
           ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              ticker,
-              style: AppTypography.label.copyWith(
-                color: isSelected
-                    ? Colors.white
-                    : isDark
-                    ? AppColors.textSecondaryDark
-                    : AppColors.textSecondary,
-                fontWeight: FontWeight.w700,
-              ),
+          Text(
+            widget.amount,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.numericSmall.copyWith(
+              color: selected ? s.ink : s.inkSecondary,
             ),
-            const SizedBox(height: 2),
-            Text(
-              amount,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodySmall.copyWith(
-                color: isSelected ? Colors.white70 : null,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+          ),
+        ],
+      ),
+    );
+
+    return Semantics(
+      button: tap != null,
+      selected: selected,
+      child: FocusableActionDetector(
+        enabled: tap != null,
+        mouseCursor: tap != null
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
+        onShowHoverHighlight: (v) => setState(() => _hover = v),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              tap?.call();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: tap,
+          child: chip,
         ),
       ),
     );

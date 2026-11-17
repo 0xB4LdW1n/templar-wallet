@@ -12,7 +12,8 @@ import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/step_flow_scaffold.dart';
 import '../../shared/widgets/step_header.dart';
 import '../../shared/widgets/wallet_created_view.dart';
-import '../../theme/app_colors.dart';
+import '../../shared/widgets/list_rows.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../services/screen_security.dart';
 import '../../theme/app_typography.dart';
@@ -178,7 +179,7 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
   }
 
   String get _stepTitle => switch (_step) {
-    1 => 'Name & seed length',
+    1 => 'Name and seed length',
     2 => 'Back up your seed',
     3 => 'Verify your backup',
     _ => 'Wallet created',
@@ -186,36 +187,16 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
 
   String get _stepSubtitle => switch (_step) {
     1 => 'Give your wallet a name and choose its recovery-phrase length',
-    2 => 'Write these words down on paper. Keep them offline.',
+    2 => 'Write these words down on paper and keep them offline',
     3 => 'Enter the requested words to prove you saved them',
     _ => '',
   };
 
   Widget get _stepBody {
     if (_generatingMnemonic) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: AppSpacing.lg),
-            Text('Generating secure mnemonic…', style: AppTypography.body),
-          ],
-        ),
-      );
+      return const _Working('Generating the recovery phrase…');
     }
-    if (_creatingWallet) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: AppSpacing.lg),
-            Text('Creating wallet…', style: AppTypography.body),
-          ],
-        ),
-      );
-    }
+    if (_creatingWallet) return const _Working('Creating wallet…');
     return switch (_step) {
       1 => _NameAndSeedBody(
         controller: _nameController,
@@ -256,7 +237,7 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
           ),
           const SizedBox(width: AppSpacing.md),
           PrimaryButton(
-            label: 'Open Wallet',
+            label: 'Open wallet',
             onPressed: () => context.go(AppRoutes.dashboard),
           ),
         ],
@@ -264,15 +245,23 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
       3 => Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          GhostButton(label: 'Back', onPressed: _back),
+          GhostButton(label: 'Back', icon: Icons.arrow_back, onPressed: _back),
           const SizedBox(width: AppSpacing.md),
-          PrimaryButton(label: 'Confirm & Finish', onPressed: _verifyAndFinish),
+          PrimaryButton(
+            label: 'Confirm and finish',
+            onPressed: _verifyAndFinish,
+          ),
         ],
       ),
       _ => Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          if (_step > 1) GhostButton(label: 'Back', onPressed: _back),
+          if (_step > 1)
+            GhostButton(
+              label: 'Back',
+              icon: Icons.arrow_back,
+              onPressed: _back,
+            ),
           const SizedBox(width: AppSpacing.md),
           PrimaryButton(
             label: 'Continue',
@@ -281,6 +270,48 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
         ],
       ),
     };
+  }
+}
+
+/// A spinner and one line, while the engine works.
+class _Working extends StatelessWidget {
+  const _Working(this.message);
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            message,
+            style: AppTypography.body.copyWith(color: s.inkSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A field's label: an eyebrow above it, never floating inside.
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Text(
+        text,
+        style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+      ),
+    );
   }
 }
 
@@ -298,45 +329,38 @@ class _NameAndSeedBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final s = AppScheme.of(context);
     final d = newWalletDraft;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TextField(
-          controller: controller,
-          decoration: const InputDecoration(labelText: 'Wallet name'),
-          autofocus: true,
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          '${d.networksLabel} · ${d.networkLabel} · Software · Single-sig',
-          style: AppTypography.bodySmall.copyWith(
-            color: isDark ? AppColors.textMutedDark : AppColors.textMuted,
-          ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _FieldLabel('Wallet name'),
+            TextField(controller: controller, autofocus: true),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              '${d.networksLabel} · ${d.networkLabel} · Software · Single-sig',
+              style: AppTypography.caption.copyWith(color: s.inkFaint),
+            ),
+          ],
         ),
         const SizedBox(height: AppSpacing.xl),
-        Text(
-          'RECOVERY PHRASE',
-          style: AppTypography.label.copyWith(letterSpacing: 1.2),
-        ),
-        const SizedBox(height: AppSpacing.md),
+        const ListSectionLabel(label: 'Recovery phrase'),
         SelectableOptionCard(
           title: '12 words',
           description:
               '128 bits of entropy. Standard for most wallets. Easier to back up.',
           isSelected: seedLength == 12,
-          icon: Icons.lock_outline,
           onTap: () => onSelectLength(12),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         SelectableOptionCard(
           title: '24 words',
           description:
               '256 bits of entropy. Maximum security. Recommended for large holdings.',
           isSelected: seedLength == 24,
-          icon: Icons.security,
-          badge: 'Recommended',
           onTap: () => onSelectLength(24),
         ),
       ],
@@ -363,12 +387,14 @@ class _BackupBody extends StatelessWidget {
               'Never type or photograph your seed phrase. Anyone who sees it can steal your funds. This is shown only once.',
         ),
         const SizedBox(height: AppSpacing.xl),
+        // Three columns on a phone too: at 379 dp each well still holds an
+        // eight-letter word (the longest in the BIP39 list) beside "24."
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
-            mainAxisExtent: 44,
+            mainAxisExtent: 40,
             crossAxisSpacing: AppSpacing.sm,
             mainAxisSpacing: AppSpacing.sm,
           ),
@@ -381,6 +407,8 @@ class _BackupBody extends StatelessWidget {
   }
 }
 
+/// One word in its well: the position in a fixed right-aligned column, so
+/// "1." and "24." line up, then the word in mono.
 class _WordTile extends StatelessWidget {
   const _WordTile({required this.index, required this.word});
   final int index;
@@ -388,29 +416,32 @@ class _WordTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final s = AppScheme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceDark2 : AppColors.tableHeader,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(
-          color: isDark ? AppColors.borderDark : AppColors.codeBoxBorder,
-        ),
+        color: s.well,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: s.edge),
       ),
       child: Row(
         children: [
           SizedBox(
-            width: 20,
+            width: AppSpacing.xl,
             child: Text(
               '$index.',
-              style: AppTypography.caption.copyWith(color: AppColors.textMuted),
+              textAlign: TextAlign.right,
+              style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
             ),
           ),
+          const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
               word,
-              style: AppTypography.mono.copyWith(fontWeight: FontWeight.w600),
+              maxLines: 1,
+              overflow: TextOverflow.fade,
+              softWrap: false,
+              style: AppTypography.mono.copyWith(color: s.ink),
             ),
           ),
         ],
@@ -419,6 +450,10 @@ class _WordTile extends StatelessWidget {
   }
 }
 
+/// The requested positions, one field each, labelled "Word 7". Whether the
+/// words match is said once, on Confirm, for the set as a whole: marking
+/// each field right or wrong as it is typed would let anyone without the
+/// backup find the words by trial.
 class _VerifyBody extends StatelessWidget {
   const _VerifyBody({
     required this.mnemonic,
@@ -434,27 +469,28 @@ class _VerifyBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const InfoBanner(
-          message:
-              'Enter the words at the requested positions to confirm you have them saved.',
-        ),
-        const SizedBox(height: AppSpacing.xl),
-        ...indexes.map(
-          (i) => Padding(
+        for (final i in indexes)
+          Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-            child: TextField(
-              decoration: InputDecoration(labelText: 'Word #${i + 1}'),
-              autocorrect: false,
-              enableSuggestions: false,
-              keyboardType: TextInputType.visiblePassword,
-              textInputAction: TextInputAction.next,
-              onChanged: (v) => onAnswer(i, v),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _FieldLabel('Word ${i + 1}'),
+                TextField(
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  keyboardType: TextInputType.visiblePassword,
+                  textInputAction: TextInputAction.next,
+                  style: AppTypography.mono.copyWith(color: s.ink),
+                  onChanged: (v) => onAnswer(i, v),
+                ),
+              ],
             ),
           ),
-        ),
       ],
     );
   }

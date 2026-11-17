@@ -8,6 +8,10 @@ import 'step_header.dart';
 /// top, scrollable body, pinned action row at the bottom. Standardizing on
 /// this keeps back/cancel behavior and scrolling identical across the
 /// create-wallet, hardware, air-gap, multisig, and watch-only flows.
+///
+/// Every step is one readable column ([AppSpacing.formMaxWidth] unless the
+/// flow asks for more), centred the same way on every step so nothing moves
+/// sideways as the user advances (design.md, "Space").
 class StepFlowScaffold extends StatelessWidget {
   const StepFlowScaffold({
     required this.currentStep,
@@ -20,7 +24,7 @@ class StepFlowScaffold extends StatelessWidget {
     this.actions,
     this.banner,
     this.headerVariants,
-    this.maxWidth = 640,
+    this.maxWidth = AppSpacing.formMaxWidth,
     super.key,
   });
 
@@ -52,6 +56,8 @@ class StepFlowScaffold extends StatelessWidget {
   /// for the whole flow instead of jumping when a subtitle wraps.
   final List<StepHeaderVariant>? headerVariants;
 
+  /// The column's cap. A flow with wide content (a two-leg swap) passes
+  /// more; the page padding sits outside it.
   final double maxWidth;
 
   @override
@@ -73,13 +79,14 @@ class StepFlowScaffold extends StatelessWidget {
           // Edge-to-edge on mobile: header and action row stay clear of the
           // status bar and the gesture area. Inert on desktop.
           child: SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxWidth),
-                child: Padding(
-                  padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+            child: Padding(
+              padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxWidth),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       StepHeader(
                         currentStep: currentStep,
@@ -89,6 +96,7 @@ class StepFlowScaffold extends StatelessWidget {
                         onBack: onBack,
                         onCancel: onCancel,
                         variants: headerVariants,
+                        display: true,
                       ),
                       if (banner != null) ...[
                         const SizedBox(height: AppSpacing.lg),

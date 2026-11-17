@@ -81,9 +81,9 @@ committed that way. Never vendor or copy engine code into this repository.
 ## Platforms
 
 - Desktop: sidebar shell. Android (iOS too in code; there is no iOS runner):
-  `MobileShell` with the
-  carousel; every phone layout behind `AppLayout.isPhone`, desktop trees
-  untouched (`docs/decisions/0005-mobile-shell.md`).
+  `MobileShell` with a header and a tab bar; every phone layout behind
+  `AppLayout.isPhone`, desktop trees untouched
+  (`docs/decisions/0005-mobile-shell.md`).
 - macOS runs sandboxed: Ledger and Jade work natively, HWI cannot run.
   Windows/Linux: HWI families too (in-app installer; Linux udev rules via
   `pkexec`). Android: no USB hardware, QR air-gap only.

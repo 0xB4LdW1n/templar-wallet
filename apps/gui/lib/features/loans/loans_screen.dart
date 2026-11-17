@@ -21,7 +21,6 @@ import '../../services/protocol_store.dart';
 import '../../shared/relative_time.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/cards.dart';
 import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/list_rows.dart';
 import '../../shared/widgets/page_header.dart';
@@ -232,52 +231,49 @@ class _LoansScreenState extends State<LoansScreen> {
             if (network.isNotEmpty) protocolNetworkLabel(network),
           ].join(' · ');
     final loading = snap?.loading ?? false;
+    final live = site != null && site.hasPortfolio;
 
     final header = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (!phone)
-          PageHeader(
-            title: 'Loans',
-            subtitle: subtitle,
-            actions: [
-              const PrivacyToggle(),
-              GhostButton(
-                key: const Key('loans-settings'),
-                label: 'Templar Protocol',
-                icon: Icons.tune_rounded,
-                onPressed: () => context.go(AppRoutes.settingsProtocol),
+        PageHeader(
+          title: 'Loans',
+          subtitle: subtitle,
+          actions: [
+            const PrivacyToggle(),
+            _HeaderIconButton(
+              key: const Key('loans-settings'),
+              tooltip: 'Templar Protocol settings',
+              icon: Icons.settings_outlined,
+              onPressed: () => context.go(AppRoutes.settingsProtocol),
+            ),
+            if (live) ...[
+              _HeaderIconButton(
+                key: const Key('loans-refresh'),
+                tooltip: 'Refresh',
+                icon: Icons.refresh_outlined,
+                busy: loading,
+                onPressed: loading ? null : _refresh,
               ),
-              if (site != null && site.hasPortfolio) ...[
-                SecondaryButton(
-                  key: const Key('loans-refresh'),
-                  label: 'Refresh',
-                  icon: Icons.refresh_rounded,
-                  dense: true,
-                  isLoading: loading,
-                  onPressed: loading ? null : _refresh,
-                ),
+              if (phone)
+                _HeaderIconButton(
+                  key: const Key('loans-open-root'),
+                  tooltip: 'Open on Templar Protocol',
+                  icon: Icons.open_in_new_outlined,
+                  busy: _opening == 0,
+                  onPressed: _opening != null ? null : () => _open(null),
+                )
+              else
                 SecondaryButton(
                   key: const Key('loans-open-root'),
                   label: 'Open on Templar Protocol',
-                  icon: Icons.open_in_new,
-                  dense: true,
+                  icon: Icons.open_in_new_outlined,
                   isLoading: _opening == 0,
                   onPressed: _opening != null ? null : () => _open(null),
                 ),
-              ],
             ],
-          )
-        else
-          _PhoneHeader(
-            subtitle: subtitle,
-            loading: loading,
-            opening: _opening == 0,
-            canRefresh: site != null && site.hasPortfolio,
-            onRefresh: _refresh,
-            onOpen: _opening != null ? null : () => _open(null),
-            onSettings: () => context.go(AppRoutes.settingsProtocol),
-          ),
+          ],
+        ),
         if (_openError != null) ...[
           DangerBanner(
             title: 'Could not open the site',
@@ -304,12 +300,7 @@ class _LoansScreenState extends State<LoansScreen> {
               }
             },
             options: [
-              for (final s in _sites)
-                SegOption(
-                  value: s.key,
-                  label: s.site,
-                  icon: Icons.link_rounded,
-                ),
+              for (final s in _sites) SegOption(value: s.key, label: s.site),
             ],
           ),
           SizedBox(height: phone ? AppSpacing.md : AppSpacing.lg),
@@ -319,17 +310,25 @@ class _LoansScreenState extends State<LoansScreen> {
 
     return Scaffold(
       body: PageBackground.flat(
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(
-            pad,
-            phone ? AppSpacing.lg : pad,
-            pad,
-            pad + AppSpacing.xl,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: AppSpacing.contentMaxWidth + 2 * pad,
+            ),
+            child: ListView(
+              padding: EdgeInsets.fromLTRB(
+                pad,
+                phone ? AppSpacing.lg : pad,
+                pad,
+                pad + AppSpacing.xl,
+              ),
+              children: [
+                header,
+                ..._body(site: site, snap: snap, phone: phone),
+              ],
+            ),
           ),
-          children: [
-            header,
-            ..._body(site: site, snap: snap, phone: phone),
-          ],
         ),
       ),
     );
@@ -340,19 +339,12 @@ class _LoansScreenState extends State<LoansScreen> {
     required ProtocolPortfolioSnapshot? snap,
     required bool phone,
   }) {
-    if (!_sitesLoaded) {
-      return const [
-        Padding(
-          padding: EdgeInsets.all(AppSpacing.xxl),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      ];
-    }
+    if (!_sitesLoaded) return const [_Spinner()];
     if (site == null) {
       return [
         _Empty(
           key: const Key('loans-no-site'),
-          icon: Icons.link_off_rounded,
+          icon: Icons.link_off_outlined,
           title: 'No site connected to this wallet',
           body: _walletId == null
               ? 'Open a wallet first.'
@@ -361,7 +353,6 @@ class _LoansScreenState extends State<LoansScreen> {
                     'up here.',
           action: SecondaryButton(
             label: 'Templar Protocol settings',
-            icon: Icons.tune_rounded,
             onPressed: () => context.go(AppRoutes.settingsProtocol),
             isFullWidth: phone,
           ),
@@ -374,7 +365,7 @@ class _LoansScreenState extends State<LoansScreen> {
       return [
         _Empty(
           key: const Key('loans-reconnect'),
-          icon: Icons.sync_problem_rounded,
+          icon: Icons.sync_problem_outlined,
           title: 'Reconnect to see your loans',
           body:
               error?.kind == ProtocolPortfolioErrorKind.needsReconnect &&
@@ -386,7 +377,7 @@ class _LoansScreenState extends State<LoansScreen> {
           action: PrimaryButton(
             key: const Key('loans-open-site'),
             label: 'Open ${site.site}',
-            icon: Icons.open_in_new,
+            icon: Icons.open_in_new_outlined,
             onPressed: _openSite,
             isFullWidth: phone,
           ),
@@ -398,7 +389,7 @@ class _LoansScreenState extends State<LoansScreen> {
         return [
           _Empty(
             key: const Key('loans-error'),
-            icon: Icons.cloud_off_rounded,
+            icon: Icons.cloud_off_outlined,
             title: switch (error.kind) {
               ProtocolPortfolioErrorKind.rateLimited => 'Asked too often',
               ProtocolPortfolioErrorKind.offline => 'The site did not answer',
@@ -408,19 +399,13 @@ class _LoansScreenState extends State<LoansScreen> {
             action: SecondaryButton(
               key: const Key('loans-retry'),
               label: 'Try again',
-              icon: Icons.refresh_rounded,
               onPressed: _refresh,
               isFullWidth: phone,
             ),
           ),
         ];
       }
-      return const [
-        Padding(
-          padding: EdgeInsets.all(AppSpacing.xxl),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      ];
+      return const [_Spinner()];
     }
 
     final actionRequired = portfolio.actionRequiredLoans();
@@ -428,7 +413,26 @@ class _LoansScreenState extends State<LoansScreen> {
     final completed = portfolio.closedLoans;
     final offers = portfolio.offers;
     final s = AppScheme.of(context);
-    final gap = SizedBox(height: phone ? AppSpacing.md : AppSpacing.lg);
+    final gap = SizedBox(height: phone ? AppSpacing.xl : AppSpacing.xxl);
+    final updatedAt = snap?.fetchedAt ?? portfolio.asOf;
+    final stale = error != null;
+    final updating = snap?.loading ?? false;
+
+    Widget rows(List<ProtocolLoan> loans, {required bool acting}) => LoanList(
+      children: [
+        for (var i = 0; i < loans.length; i++)
+          LoanOverviewCard(
+            loan: loans[i],
+            updatedAt: updatedAt,
+            stale: stale,
+            updating: updating,
+            primaryEmphasis: acting && i == 0,
+            busy: acting && _opening == loans[i].id,
+            onPrimary: acting ? () => _act(loans[i]) : () => _details(loans[i]),
+            onOpen: () => _details(loans[i]),
+          ),
+      ],
+    );
 
     return [
       if (error != null) ...[
@@ -438,79 +442,44 @@ class _LoansScreenState extends State<LoansScreen> {
               '${error.message} Below is what ${site.site} said '
               '${snap?.fetchedAt != null ? relativeTimeShort(snap!.fetchedAt!) : 'earlier'}.',
         ),
-        gap,
+        SizedBox(height: phone ? AppSpacing.md : AppSpacing.lg),
       ],
       _SummaryStrip(portfolio: portfolio, phone: phone),
       gap,
       ListSectionLabel(label: 'Action required · ${actionRequired.length}'),
       if (actionRequired.isEmpty)
-        _Empty(
-          key: const Key('loans-no-action'),
-          icon: Icons.check_circle_outline_rounded,
+        const _EmptySection(
+          key: Key('loans-no-action'),
           title: 'Nothing needs you now',
           body:
-              'Pending signatures, installments, claims and covenant renewals appear here.',
+              'Pending signatures, installments, claims and covenant renewals appear here',
         )
       else
-        for (var i = 0; i < actionRequired.length; i++) ...[
-          if (i > 0) gap,
-          LoanOverviewCard(
-            loan: actionRequired[i],
-            updatedAt: snap?.fetchedAt ?? portfolio.asOf,
-            stale: error != null,
-            updating: snap?.loading ?? false,
-            primaryEmphasis: i == 0,
-            busy: _opening == actionRequired[i].id,
-            onPrimary: () => _act(actionRequired[i]),
-            onOpen: () => _details(actionRequired[i]),
-          ),
-        ],
-      SizedBox(height: phone ? AppSpacing.xl : AppSpacing.xxl),
+        rows(actionRequired, acting: true),
+      gap,
       ListSectionLabel(label: 'Active · ${active.length}'),
       if (active.isEmpty)
-        _Empty(
-          key: const Key('loans-no-active'),
-          icon: Icons.hourglass_empty_rounded,
+        const _EmptySection(
+          key: Key('loans-no-active'),
           title: 'No waiting loans',
           body:
-              'Loans waiting for a deadline, confirmation or another party appear here.',
+              'Loans waiting for a deadline, confirmation or another party appear here',
         )
       else
-        for (var i = 0; i < active.length; i++) ...[
-          if (i > 0) gap,
-          LoanOverviewCard(
-            loan: active[i],
-            updatedAt: snap?.fetchedAt ?? portfolio.asOf,
-            stale: error != null,
-            updating: snap?.loading ?? false,
-            onPrimary: () => _details(active[i]),
-            onOpen: () => _details(active[i]),
-          ),
-        ],
-      SizedBox(height: phone ? AppSpacing.xl : AppSpacing.xxl),
+        rows(active, acting: false),
+      gap,
       ListSectionLabel(label: 'Completed · ${completed.length}'),
       if (completed.isEmpty)
-        _Empty(
-          key: const Key('loans-no-completed'),
-          icon: Icons.inventory_2_outlined,
+        const _EmptySection(
+          key: Key('loans-no-completed'),
           title: 'No completed loans',
           body:
-              'Repaid, defaulted and liquidated loans remain available as history.',
+              'Repaid, defaulted and liquidated loans remain available as history',
         )
       else
-        for (var i = 0; i < completed.length; i++) ...[
-          if (i > 0) gap,
-          LoanOverviewCard(
-            loan: completed[i],
-            updatedAt: snap?.fetchedAt ?? portfolio.asOf,
-            stale: error != null,
-            updating: snap?.loading ?? false,
-            onPrimary: () => _details(completed[i]),
-            onOpen: () => _details(completed[i]),
-          ),
-        ],
+        rows(completed, acting: false),
       if (offers.isNotEmpty) ...[
-        SizedBox(height: phone ? AppSpacing.xl : AppSpacing.xxl),
+        gap,
         ListSectionLabel(label: 'Your offers · ${offers.length}'),
         ListCard(children: [for (final o in offers) _OfferRow(offer: o)]),
       ],
@@ -536,10 +505,9 @@ class _LoansScreenState extends State<LoansScreen> {
 
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
-/// Four stat tiles that say, before any card is read, what the site holds
-/// for this wallet: open loans, signatures waiting, offers, closed loans.
-/// A waiting signature lights its tile in the Action colour — it is the one
-/// thing on the page to do.
+/// What the site holds for this wallet, as figures before any row is read:
+/// open loans, signatures waiting, offers, closed loans. Numbers only — a
+/// label, the figure, one line of context — sharing one height.
 class _SummaryStrip extends StatelessWidget {
   const _SummaryStrip({required this.portfolio, required this.phone});
   final ProtocolPortfolio portfolio;
@@ -547,245 +515,182 @@ class _SummaryStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
     final p = portfolio;
     final open = p.openLoans.length;
     final toSign = p.pendingCount;
     final asBorrower = p.openLoans.where((l) => l.role == 'borrower').length;
     final asLender = open - asBorrower;
-    final tiles = <Widget>[
-      _StatTile(
-        icon: Icons.handshake_outlined,
-        tint: s.liquid,
+    final repaid = p.closedLoans
+        .where((l) => l.state == ProtocolLoanState.repaid)
+        .length;
+    final stats = <_Stat>[
+      _Stat(
+        label: 'Active loans',
         value: '$open',
-        label: open == 1 ? 'active loan' : 'active loans',
-        detail: open == 0
-            ? null
+        context: open == 0
+            ? 'None open'
             : [
                 if (asBorrower > 0) '$asBorrower borrowing',
                 if (asLender > 0) '$asLender lending',
               ].join(' · '),
       ),
-      _StatTile(
-        icon: Icons.draw_outlined,
-        tint: toSign > 0 ? s.accent : s.inkFaint,
+      _Stat(
+        label: 'To sign',
         value: '$toSign',
-        label: 'to sign',
-        detail: toSign > 0 ? 'the site waits for you' : 'nothing waiting',
-        emphasis: toSign > 0,
+        context: toSign > 0 ? 'The site waits for you' : 'Nothing waiting',
       ),
-      _StatTile(
-        icon: Icons.storefront_outlined,
-        tint: s.inkSecondary,
+      _Stat(
+        label: 'Open offers',
         value: '${p.offers.length}',
-        label: p.offers.length == 1 ? 'open offer' : 'open offers',
-        detail: p.offers.isEmpty ? null : 'yours on the market',
+        context: p.offers.isEmpty
+            ? 'None on the market'
+            : 'Yours on the market',
       ),
-      _StatTile(
-        icon: Icons.inventory_2_outlined,
-        tint: s.inkSecondary,
+      _Stat(
+        label: 'Closed',
         value: '${p.closedLoans.length}',
-        label: 'closed',
-        detail: p.closedLoans.isEmpty
-            ? null
-            : '${p.closedLoans.where((l) => l.state == ProtocolLoanState.repaid).length} repaid',
+        context: p.closedLoans.isEmpty ? 'No history yet' : '$repaid repaid',
       ),
     ];
-    if (phone) {
-      return Column(
+    final s = AppScheme.of(context);
+    Widget cell(_Stat st) => Padding(
+      padding: EdgeInsets.all(
+        phone ? AppSpacing.cardPaddingSmall : AppSpacing.cardPadding,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(child: tiles[0]),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(child: tiles[1]),
-            ],
+          Text(
+            st.label,
+            style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
           ),
           const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              Expanded(child: tiles[2]),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(child: tiles[3]),
-            ],
+          Text(
+            st.value,
+            style: AppTypography.balanceMediumOf(
+              context,
+            ).copyWith(color: s.ink),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            st.context,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
           ),
         ],
-      );
-    }
-    return Row(
-      children: [
-        for (var i = 0; i < tiles.length; i++) ...[
-          if (i > 0) const SizedBox(width: AppSpacing.md),
-          Expanded(child: tiles[i]),
-        ],
-      ],
+      ),
     );
-  }
-}
+    Widget divider({bool vertical = true}) => vertical
+        ? VerticalDivider(width: 1, thickness: 1, color: s.edge)
+        : Divider(height: 1, thickness: 1, color: s.edge);
 
-class _StatTile extends StatelessWidget {
-  const _StatTile({
-    required this.icon,
-    required this.tint,
-    required this.value,
-    required this.label,
-    this.detail,
-    this.emphasis = false,
-  });
-  final IconData icon;
-  final Color tint;
-  final String value;
-  final String label;
-  final String? detail;
-  final bool emphasis;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
+    // One card, the figures side by side with hairlines between them; a
+    // phone folds the four into two rows of two.
+    final List<Widget> lines = phone
+        ? [
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: cell(stats[0])),
+                  divider(),
+                  Expanded(child: cell(stats[1])),
+                ],
+              ),
+            ),
+            divider(vertical: false),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: cell(stats[2])),
+                  divider(),
+                  Expanded(child: cell(stats[3])),
+                ],
+              ),
+            ),
+          ]
+        : [
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < stats.length; i++) ...[
+                    if (i > 0) divider(),
+                    Expanded(child: cell(stats[i])),
+                  ],
+                ],
+              ),
+            ),
+          ];
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
+      key: const Key('loans-summary'),
       decoration: BoxDecoration(
         color: s.panel,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(
-          color: emphasis ? s.accent.withValues(alpha: 0.6) : s.edge,
-        ),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(color: s.edge),
+        boxShadow: s.panelShadow,
       ),
-      child: Row(
-        children: [
-          ListIconTile(icon: icon, tint: tint, size: 36),
-          const SizedBox(width: AppSpacing.sm + 2),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(
-                      value,
-                      style: AppTypography.numericLarge.copyWith(
-                        color: emphasis ? s.accent : s.ink,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Flexible(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.caption.copyWith(
-                          color: s.inkSecondary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (detail != null)
-                  Text(
-                    detail!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.caption.copyWith(
-                      color: s.inkFaint,
-                      fontSize: 11.5,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: lines,
       ),
     );
   }
 }
 
-/// The phone's header: the shell already names the wallet above, so this is
-/// the site line as an eyebrow with the two actions at its right.
-class _PhoneHeader extends StatelessWidget {
-  const _PhoneHeader({
-    required this.subtitle,
-    required this.loading,
-    required this.opening,
-    required this.canRefresh,
-    required this.onRefresh,
-    required this.onOpen,
-    required this.onSettings,
+class _Stat {
+  const _Stat({
+    required this.label,
+    required this.value,
+    required this.context,
   });
-  final String subtitle;
-  final bool loading;
-  final bool opening;
-  final bool canRefresh;
-  final VoidCallback onRefresh;
-  final VoidCallback? onOpen;
-  final VoidCallback onSettings;
+  final String label;
+  final String value;
+  final String context;
+}
+
+/// A chrome icon button in the page header: the privacy eye's metrics (a
+/// 28 px square on desktop, 48 dp on a phone), the icon in the secondary
+/// ink, a small spinner in its place while [busy].
+class _HeaderIconButton extends StatelessWidget {
+  const _HeaderIconButton({
+    super.key,
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+    this.busy = false,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'LOANS',
-                  style: AppTypography.navSection.copyWith(
-                    color: s.inkFaint,
-                    letterSpacing: 1.3,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: s.inkSecondary,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          const PrivacyToggle(),
-          IconButton(
-            tooltip: 'Templar Protocol settings',
-            onPressed: onSettings,
-            icon: Icon(Icons.tune_rounded, color: s.inkSecondary),
-          ),
-          if (canRefresh) ...[
-            IconButton(
-              key: const Key('loans-refresh'),
-              tooltip: 'Refresh',
-              onPressed: loading ? null : onRefresh,
-              icon: loading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(Icons.refresh_rounded, color: s.inkSecondary),
-            ),
-            IconButton(
-              key: const Key('loans-open-root'),
-              tooltip: 'Open on Templar Protocol',
-              onPressed: onOpen,
-              icon: opening
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(Icons.open_in_new, color: s.inkSecondary),
-            ),
-          ],
-        ],
-      ),
+    final phone = AppLayout.isPhone(context);
+    final side = phone
+        ? AppLayout.minTouchTarget
+        : AppSpacing.controlHeightSmall;
+    final glyph = phone ? 22.0 : AppSpacing.icon;
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      constraints: BoxConstraints.tightFor(width: side, height: side),
+      iconSize: glyph,
+      icon: busy
+          ? SizedBox.square(
+              dimension: AppSpacing.iconSmall,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: s.inkSecondary,
+              ),
+            )
+          : Icon(icon, color: s.inkSecondary),
     );
   }
 }
@@ -796,7 +701,6 @@ class _OfferRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
     final o = offer;
     final side = switch (o.side) {
       'lend' => 'Lending',
@@ -812,18 +716,12 @@ class _OfferRow extends StatelessWidget {
     ].join(' · ');
     return ListRow(
       icon: o.side == 'lend'
-          ? Icons.call_made_rounded
-          : Icons.call_received_rounded,
-      tint: s.liquid,
+          ? Icons.call_made_outlined
+          : Icons.call_received_outlined,
       title:
           '$side${o.principal != null ? ' ${o.principal!.display}' : ''} · #${o.id}',
-      subtitle: [
-        if (o.state.isNotEmpty) o.state,
-        if (terms.isNotEmpty) terms,
-      ].join(' · '),
-      trailing: o.state.isNotEmpty
-          ? TagChip(label: o.state, color: s.inkSecondary)
-          : null,
+      subtitle: terms.isEmpty ? null : terms,
+      trailing: o.state.isNotEmpty ? QuietTag(label: o.state) : null,
       chevron: o.url != null,
       onTap: o.url == null
           ? null
@@ -832,6 +730,26 @@ class _OfferRow extends StatelessWidget {
   }
 }
 
+class _Spinner extends StatelessWidget {
+  const _Spinner();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(AppSpacing.xxl),
+    child: Center(
+      child: SizedBox.square(
+        dimension: AppSpacing.xl,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: AppScheme.of(context).inkSecondary,
+        ),
+      ),
+    ),
+  );
+}
+
+/// A page with nothing to list: centred in the content column, a neutral
+/// outlined glyph, the fact as a title, the explanation, the way forward.
 class _Empty extends StatelessWidget {
   const _Empty({
     super.key,
@@ -848,32 +766,71 @@ class _Empty extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    return FormCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          ListIconTile(icon: icon, tint: s.inkSecondary, size: 56),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            title,
-            style: AppTypography.sectionTitleOf(context).copyWith(color: s.ink),
-            textAlign: TextAlign.center,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxxl),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(icon, size: AppSpacing.xl, color: s.inkFaint),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                title,
+                style: AppTypography.sectionTitle.copyWith(color: s.ink),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                body,
+                style: AppTypography.bodyOf(
+                  context,
+                ).copyWith(color: s.inkSecondary),
+                textAlign: TextAlign.center,
+              ),
+              if (action != null) ...[
+                const SizedBox(height: AppSpacing.xl),
+                action!,
+              ],
+            ],
           ),
-          const SizedBox(height: AppSpacing.xs),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Text(
-              body,
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          if (action != null) ...[
-            const SizedBox(height: AppSpacing.lg),
-            action!,
-          ],
-        ],
+        ),
       ),
+    );
+  }
+}
+
+/// An empty section of the list: one quiet card in the place its rows
+/// would take, so the three sections keep their rhythm.
+class _EmptySection extends StatelessWidget {
+  const _EmptySection({super.key, required this.title, required this.body});
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return LoanList(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: AppTypography.bodyOf(context).copyWith(color: s.ink),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                body,
+                style: AppTypography.caption.copyWith(color: s.inkSecondary),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

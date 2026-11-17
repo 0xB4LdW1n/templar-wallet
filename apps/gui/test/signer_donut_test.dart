@@ -1,4 +1,5 @@
-// SignerDonut — the signature-quorum ring shown when a PSBT is inspected.
+// SignerDonut — the signature ring, and the header and list that sit beside
+// it in the co-sign flow.
 //
 // The counts it draws come straight off an untrusted blob, so the degenerate
 // shapes are the point of this file: no signers at all, more signatures than
@@ -7,6 +8,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:templar_wallet/shared/widgets/seal_mark.dart';
 import 'package:templar_wallet/shared/widgets/signer_donut.dart';
 
 Widget host(Widget child, {bool dark = false, bool reduceMotion = false}) {
@@ -27,7 +29,7 @@ void main() {
       host(const SignerDonut(signed: 2, total: 3, requiredCount: 2)),
     );
     await t.pumpAndSettle();
-    expect(find.text('2/3'), findsOneWidget);
+    expect(find.text('2 of 3'), findsOneWidget);
     expect(find.text('signed'), findsOneWidget);
   });
 
@@ -73,7 +75,7 @@ void main() {
     await t.pumpWidget(host(const SignerDonut(signed: 0, total: 0)));
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
-    expect(find.text('0/0'), findsNothing);
+    expect(find.text('0 of 0'), findsNothing);
     expect(find.text('signed'), findsNothing);
   });
 
@@ -86,7 +88,7 @@ void main() {
     );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
-    expect(find.text('2/2'), findsOneWidget);
+    expect(find.text('2 of 2'), findsOneWidget);
   });
 
   testWidgets('a quorum bigger than the ring paints anyway', (t) async {
@@ -95,7 +97,7 @@ void main() {
     );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
-    expect(find.text('0/2'), findsOneWidget);
+    expect(find.text('0 of 2'), findsOneWidget);
   });
 
   testWidgets('single signer ring paints without a seam', (t) async {
@@ -104,7 +106,7 @@ void main() {
     );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
-    expect(find.text('1/1'), findsOneWidget);
+    expect(find.text('1 of 1'), findsOneWidget);
   });
 
   testWidgets('lands filled under reduced motion, without animating', (
@@ -118,7 +120,7 @@ void main() {
     );
     // No settle: the value must already be final on the first frame.
     await t.pump();
-    expect(find.text('2/3'), findsOneWidget);
+    expect(find.text('2 of 3'), findsOneWidget);
     expect(t.takeException(), isNull);
   });
 
@@ -131,7 +133,7 @@ void main() {
     );
     await t.pumpAndSettle();
     expect(t.takeException(), isNull);
-    expect(find.text('3/3'), findsOneWidget);
+    expect(find.text('3 of 3'), findsOneWidget);
   });
 
   // ── SignerChart: the donut plus the legend and the quorum line ──────────
@@ -143,7 +145,7 @@ void main() {
       ),
     );
     await t.pumpAndSettle();
-    expect(find.text('1/3'), findsOneWidget);
+    expect(find.text('1 of 3'), findsOneWidget);
     expect(find.text('Signed (1)'), findsOneWidget);
     expect(find.text('Not signed (2)'), findsOneWidget);
     expect(
@@ -166,7 +168,7 @@ void main() {
       ),
     );
     await t.pumpAndSettle();
-    expect(find.text('1/3'), findsOneWidget);
+    expect(find.text('1 of 3'), findsOneWidget);
     expect(find.text('Signed (1)'), findsOneWidget);
     expect(
       find.text(
@@ -197,6 +199,62 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('1 of 2 required signatures collected'), findsOneWidget);
     expect(find.textContaining('signers on this transaction'), findsNothing);
+  });
+
+  // ── SignatureHeader / SignerList ────────────────────────────────────────
+
+  testWidgets('the header states the quorum in words and seals', (t) async {
+    await t.pumpWidget(
+      host(
+        const SignatureHeader(
+          state: 'Needs 1 more signature',
+          signed: 1,
+          required: 2,
+        ),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(find.text('Needs 1 more signature'), findsOneWidget);
+    expect(find.text('1 of 2 signatures'), findsOneWidget);
+    final tally = t.widget<SealTally>(find.byType(SealTally));
+    expect(tally.signed, 1);
+    expect(tally.required, 2);
+  });
+
+  testWidgets('no stated quorum draws no row of seals', (t) async {
+    await t.pumpWidget(
+      host(const SignatureHeader(state: 'Partially signed', signed: 1)),
+    );
+    await t.pumpAndSettle();
+    expect(find.byType(SealTally), findsNothing);
+    expect(find.text('1 signature collected'), findsOneWidget);
+  });
+
+  testWidgets('a stamped seal only on the rows that have signed', (t) async {
+    await t.pumpWidget(
+      host(
+        const SignerList(
+          slots: [
+            SignerSlot(
+              id: 'aa000001',
+              signed: true,
+              name: 'Jade',
+              isLocal: true,
+            ),
+            SignerSlot(id: 'bb000002', signed: false),
+          ],
+        ),
+      ),
+    );
+    await t.pumpAndSettle();
+    final seals = t.widgetList<SealMark>(find.byType(SealMark)).toList();
+    expect(seals.map((m) => m.stamped), [true, false]);
+    expect(find.text('Jade'), findsOneWidget);
+    expect(find.text('This wallet'), findsOneWidget);
+    // An unnamed key is shown by its fingerprint.
+    expect(find.text('bb000002'), findsOneWidget);
+    expect(find.text('Signed'), findsOneWidget);
+    expect(find.text('Not signed'), findsOneWidget);
   });
 
   testWidgets('chart with no quorum in the policy still counts', (t) async {

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../bridge/bridge_provider.dart';
-import '../../theme/app_colors.dart';
+import '../../shared/widgets/buttons.dart';
+import '../../shared/widgets/list_rows.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import '../../services/udev_installer.dart';
@@ -32,8 +34,8 @@ String? fingerprintFromTypeLabel(String? typeLabel) {
 }
 
 /// Shows the Ledger connect gate. Polls the HWI bridge until a device matching
-/// [expectedFingerprint] appears (any device if null), then shows a green tick
-/// and resolves with [LedgerConnectResult.connected].
+/// [expectedFingerprint] appears (any device if null), then marks the steps
+/// done and resolves with [LedgerConnectResult.connected].
 Future<LedgerConnectResult> showLedgerConnectDialog(
   BuildContext context, {
   String? expectedFingerprint,
@@ -109,115 +111,39 @@ Future<HwOpenChoice> showHwOpenChoiceDialog(
   final result = await showDialog<HwOpenChoice>(
     context: context,
     builder: (ctx) {
-      final isDark = Theme.of(ctx).brightness == Brightness.dark;
       return AlertDialog(
         title: Text('Open "$walletName"'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _HwOpenOption(
-              icon: Icons.usb_rounded,
-              iconColor: AppColors.accent,
-              iconBg: AppColors.accentLight,
-              title: 'Connect device',
-              subtitle: 'Plug in your hardware wallet to sign and send.',
-              onTap: () => Navigator.of(ctx).pop(HwOpenChoice.connect),
-              isDark: isDark,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            _HwOpenOption(
-              icon: Icons.visibility_outlined,
-              iconColor: AppColors.textSecondary,
-              iconBg: isDark
-                  ? AppColors.surfaceDark
-                  : AppColors.backgroundLight,
-              title: 'Open watch-only',
-              subtitle: 'View balance and receive. No device needed.',
-              onTap: () => Navigator.of(ctx).pop(HwOpenChoice.watchOnly),
-              isDark: isDark,
-            ),
-          ],
+        content: SizedBox(
+          width: 400,
+          child: ListCard(
+            children: [
+              ListRow(
+                icon: Icons.usb_outlined,
+                title: 'Connect device',
+                subtitle: 'Plug in your hardware wallet to sign and send',
+                chevron: true,
+                onTap: () => Navigator.of(ctx).pop(HwOpenChoice.connect),
+              ),
+              ListRow(
+                icon: Icons.visibility_outlined,
+                title: 'Open watch-only',
+                subtitle: 'View balance and receive. No device needed',
+                chevron: true,
+                onTap: () => Navigator.of(ctx).pop(HwOpenChoice.watchOnly),
+              ),
+            ],
+          ),
         ),
         actions: [
-          TextButton(
+          GhostButton(
+            label: 'Cancel',
             onPressed: () => Navigator.of(ctx).pop(HwOpenChoice.cancelled),
-            child: const Text('Cancel'),
           ),
         ],
       );
     },
   );
   return result ?? HwOpenChoice.cancelled;
-}
-
-/// One tappable row in the HW open choice dialog.
-class _HwOpenOption extends StatelessWidget {
-  const _HwOpenOption({
-    required this.icon,
-    required this.iconColor,
-    required this.iconBg,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-    required this.isDark,
-  });
-
-  final IconData icon;
-  final Color iconColor;
-  final Color iconBg;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-  final bool isDark;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-      child: Container(
-        width: 360,
-        padding: const EdgeInsets.all(AppSpacing.md),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-          border: Border.all(
-            color: isDark ? AppColors.borderDark : AppColors.borderLight,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-              ),
-              child: Icon(icon, color: iconColor, size: 22),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: AppTypography.body.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(subtitle, style: AppTypography.caption),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right, size: 20),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class LedgerConnectDialog extends StatefulWidget {
@@ -256,10 +182,8 @@ class LedgerConnectDialog extends StatefulWidget {
   State<LedgerConnectDialog> createState() => _LedgerConnectDialogState();
 }
 
-class _LedgerConnectDialogState extends State<LedgerConnectDialog>
-    with SingleTickerProviderStateMixin {
+class _LedgerConnectDialogState extends State<LedgerConnectDialog> {
   final _bridge = walletBridge;
-  late final AnimationController _anim;
   Timer? _poll;
   bool _found = false;
   String? _error;
@@ -277,10 +201,6 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
   @override
   void initState() {
     super.initState();
-    _anim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    )..repeat();
     _startPolling();
   }
 
@@ -428,13 +348,12 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
   void _onFound(HwDevice device) {
     _found = true;
     _poll?.cancel();
-    _anim.stop();
     widget.onDeviceFound?.call(device);
     setState(() => _device = device);
     // With a confirm button the gate waits for the user: the next step is
     // an approval on the device, which nobody wants sprung on them.
     if (widget.confirmLabel != null) return;
-    // Hold the green tick briefly so the confirmation is visible.
+    // Hold the finished step list briefly so the confirmation is visible.
     Timer(const Duration(milliseconds: 900), () {
       if (mounted) Navigator.of(context).pop(LedgerConnectResult.connected);
     });
@@ -443,7 +362,6 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
   @override
   void dispose() {
     _poll?.cancel();
-    _anim.dispose();
     super.dispose();
   }
 
@@ -465,10 +383,10 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
           ),
         ),
         actions: [
-          TextButton(
+          GhostButton(
+            label: 'Cancel',
             onPressed: () =>
                 Navigator.of(context).pop(LedgerConnectResult.cancelled),
-            child: const Text('Cancel'),
           ),
         ],
       );
@@ -492,201 +410,229 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog>
           ),
         ),
         actions: [
-          TextButton(
+          GhostButton(
+            label: 'Cancel',
             onPressed: () =>
                 Navigator.of(context).pop(LedgerConnectResult.cancelled),
-            child: const Text('Cancel'),
           ),
           if (widget.allowWatchOnly)
-            TextButton(
+            GhostButton(
+              label: 'Open in watch-only',
               onPressed: () =>
                   Navigator.of(context).pop(LedgerConnectResult.watchOnly),
-              child: const Text('Open in watch-only'),
             ),
         ],
       );
     }
+
+    final s = AppScheme.of(context);
+    final device = _device;
+    final error = _error;
+    // What the gate is waiting for, as a list the user can follow: plugged
+    // in, unlocked, read. The current step carries a spinner because the
+    // gate is live — it keeps watching the bus until something answers.
+    final steps = <(String, _StepState)>[
+      (
+        'Plug in the device with its cable',
+        _found || _devicePresent ? _StepState.done : _StepState.current,
+      ),
+      (
+        'Unlock it with your PIN — on a Ledger, open the Bitcoin Testnet app',
+        _found
+            ? _StepState.done
+            : (_devicePresent && !_scanInFlight)
+            ? _StepState.current
+            : _StepState.pending,
+      ),
+      (
+        'Read the device',
+        _found
+            ? _StepState.done
+            : _scanInFlight
+            ? _StepState.current
+            : _StepState.pending,
+      ),
+    ];
+
     return AlertDialog(
       title: Text(_found ? 'Device connected' : widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: AppSpacing.lg),
-          _Indicator(anim: _anim, found: _found),
-          const SizedBox(height: AppSpacing.xl),
-          Text(
-            _found
-                ? widget.confirmLabel != null
-                      ? '${_device?.model ?? 'Device'} ready '
-                            '(${_device?.fingerprint ?? ''}). Press '
-                            '“${widget.confirmLabel}”, then approve the '
-                            'transaction on the device screen.'
-                      : '${_device?.model ?? 'Device'} ready (${_device?.fingerprint ?? ''}).'
-                : _devicePresent
-                ? 'Device detected. Unlock it with your PIN — and on a '
-                      'Ledger, open the Bitcoin Testnet app.'
-                : 'Plug in your device with its cable, then unlock it with '
-                      'your PIN.',
-            textAlign: TextAlign.center,
-            style: AppTypography.body,
-          ),
-          if (!_found) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_scanInFlight)
-                  SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(AppColors.accentMuted),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _DeviceSteps(steps: steps),
+            if (_found && device != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: s.panelInset,
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        device.model,
+                        style: AppTypography.body.copyWith(
+                          color: s.ink,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
-                  )
-                else
-                  Icon(
-                    _devicePresent ? Icons.usb_rounded : Icons.search_rounded,
-                    size: 13,
-                    color: AppColors.accentMuted,
-                  ),
-                const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      device.fingerprint,
+                      style: AppTypography.mono.copyWith(color: s.inkSecondary),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    _Dot(s.success),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      'Ready',
+                      style: AppTypography.caption.copyWith(color: s.ink),
+                    ),
+                  ],
+                ),
+              ),
+              if (widget.confirmLabel != null) ...[
+                const SizedBox(height: AppSpacing.sm),
                 Text(
-                  _scanInFlight
-                      ? 'Reading the device…'
-                      : _devicePresent
-                      ? 'Connected — waiting for you to unlock it'
-                      : 'Watching for a device…',
-                  style: AppTypography.caption,
+                  'Press “${widget.confirmLabel}”, then approve the '
+                  'transaction on the device screen.',
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
                 ),
               ],
-            ),
+            ],
+            if (error != null && !_found) ...[
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                error,
+                style: AppTypography.caption.copyWith(color: s.danger),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ],
-          if (_error != null && !_found) ...[
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: AppTypography.caption.copyWith(color: AppColors.danger),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ],
+        ),
       ),
       actions: _found
           ? (widget.confirmLabel == null
                 ? null
                 : [
-                    TextButton(
+                    GhostButton(
+                      label: 'Cancel',
                       onPressed: () => Navigator.of(
                         context,
                       ).pop(LedgerConnectResult.cancelled),
-                      child: const Text('Cancel'),
                     ),
-                    FilledButton.icon(
+                    PrimaryButton(
+                      label: widget.confirmLabel!,
+                      icon: Icons.draw_outlined,
                       onPressed: () => Navigator.of(
                         context,
                       ).pop(LedgerConnectResult.connected),
-                      icon: const Icon(Icons.draw_outlined, size: 16),
-                      label: Text(widget.confirmLabel!),
                     ),
                   ])
           : [
-              TextButton(
+              GhostButton(
+                label: 'Cancel',
                 onPressed: () =>
                     Navigator.of(context).pop(LedgerConnectResult.cancelled),
-                child: const Text('Cancel'),
               ),
               if (widget.allowWatchOnly)
-                TextButton(
+                GhostButton(
+                  label: 'Open in watch-only',
                   onPressed: () =>
                       Navigator.of(context).pop(LedgerConnectResult.watchOnly),
-                  child: const Text('Open in watch-only'),
                 ),
               // The device is opened once per connection, not on a loop: on a
               // Jade each attempt is another PIN prompt. After a declined or
               // timed-out unlock, retrying is the user's call.
               if (_devicePresent)
-                TextButton(
+                SecondaryButton(
+                  label: _identifyAttempted ? 'Retry' : 'Check device',
                   onPressed: _scanInFlight ? null : _identify,
-                  child: Text(_identifyAttempted ? 'Retry' : 'Check device'),
                 ),
             ],
     );
   }
 }
 
-/// Pulsing scan ring while searching, animated green check once found.
-class _Indicator extends StatelessWidget {
-  const _Indicator({required this.anim, required this.found});
-  final AnimationController anim;
-  final bool found;
+enum _StepState { done, current, pending }
+
+/// A device's steps, one per line: done ones with a neutral check, the
+/// current one with a small spinner, the rest in the faint ink.
+class _DeviceSteps extends StatelessWidget {
+  const _DeviceSteps({required this.steps});
+
+  final List<(String, _StepState)> steps;
 
   @override
   Widget build(BuildContext context) {
-    if (found) {
-      return TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0.6, end: 1),
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOutBack,
-        builder: (_, scale, child) => Transform.scale(
-          scale: scale,
-          child: Container(
-            width: 72,
-            height: 72,
-            decoration: const BoxDecoration(
-              color: AppColors.successLight,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.check_rounded,
-              color: AppColors.success,
-              size: 40,
-            ),
-          ),
-        ),
-      );
-    }
-    return AnimatedBuilder(
-      animation: anim,
-      builder: (_, child) {
-        final t = anim.value;
-        return SizedBox(
-          width: 88,
-          height: 88,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Expanding fading pulse ring.
-              Opacity(
-                opacity: (1 - t).clamp(0.0, 1.0) * 0.5,
-                child: Container(
-                  width: 56 + 32 * t,
-                  height: 56 + 32 * t,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.accentMuted, width: 2),
+    final s = AppScheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (label, state) in steps)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: AppSpacing.iconSmall,
+                  height: 20,
+                  child: Center(
+                    child: switch (state) {
+                      _StepState.done => Icon(
+                        Icons.check_outlined,
+                        size: AppSpacing.iconSmall,
+                        color: s.inkSecondary,
+                      ),
+                      _StepState.current => const SizedBox(
+                        width: AppSpacing.md,
+                        height: AppSpacing.md,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      _StepState.pending => _Dot(s.inkFaint),
+                    },
                   ),
                 ),
-              ),
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: AppColors.accentLight,
-                  shape: BoxShape.circle,
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: AppTypography.body.copyWith(
+                      color: switch (state) {
+                        _StepState.done => s.inkSecondary,
+                        _StepState.current => s.ink,
+                        _StepState.pending => s.inkFaint,
+                      },
+                    ),
+                  ),
                 ),
-                child: Icon(
-                  Icons.usb_rounded,
-                  color: AppColors.accent,
-                  size: 32,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        );
-      },
+      ],
     );
   }
+}
+
+/// 6 px dot.
+class _Dot extends StatelessWidget {
+  const _Dot(this.color);
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 6,
+    height: 6,
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(999),
+    ),
+  );
 }

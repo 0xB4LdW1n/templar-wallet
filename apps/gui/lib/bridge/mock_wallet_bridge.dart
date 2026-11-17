@@ -22,6 +22,14 @@ import '../features/swap/models/swap_offer.dart';
 import '../features/peg/models/peg_models.dart';
 
 class MockWalletBridge implements WalletBridge {
+  /// The token the mock "Primary" wallet issued, and its reissuance token
+  /// (both in [getWalletSummary]). Tests and the tour record the issuance in
+  /// `IssuedAssetStore` with these ids to see the Issued assets block.
+  static const String mockIssuedAssetId =
+      '7f3b2c41d5e6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3';
+  static const String mockIssuedTokenId =
+      'c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b37f3b';
+
   @override
   Future<List<String>> generateMnemonic(int wordCount) async {
     await Future.delayed(const Duration(milliseconds: 200));
@@ -77,6 +85,7 @@ class MockWalletBridge implements WalletBridge {
         balanceSats: 1234567,
         txCount: 42,
         lastSyncAt: DateTime.now().subtract(const Duration(minutes: 3)),
+        masterFingerprint: 'deadbeef',
       ),
       WalletSummary(
         id: 'wallet-2',
@@ -86,6 +95,9 @@ class MockWalletBridge implements WalletBridge {
         balanceSats: 50000000,
         txCount: 8,
         lastSyncAt: DateTime.now().subtract(const Duration(hours: 1)),
+        masterFingerprint: '73c5da0a',
+        requiredSigs: 2,
+        totalSigners: 3,
       ),
       WalletSummary(
         id: 'wallet-3',
@@ -96,6 +108,7 @@ class MockWalletBridge implements WalletBridge {
         txCount: 5,
         lastSyncAt: DateTime.now().subtract(const Duration(days: 1)),
         isWatchOnly: true,
+        masterFingerprint: 'a1b2c3d4',
       ),
     ];
   }
@@ -146,6 +159,29 @@ class MockWalletBridge implements WalletBridge {
           displayAmount: '100.00 USDT',
           fiatEstimate: '\$100.00',
           status: 'third-party',
+          utxoCount: 1,
+          isNative: false,
+        ),
+        // A token this wallet issued, and its reissuance token. The engine
+        // knows neither by name (no registry entry): the Liquid page names
+        // them from the issued-asset record when one exists on this device.
+        AssetBalance(
+          assetId: mockIssuedAssetId,
+          ticker: mockIssuedAssetId,
+          name: mockIssuedAssetId,
+          amount: 2500000000000,
+          displayAmount: '25,000.00000000 TMPL',
+          status: 'synced',
+          utxoCount: 2,
+          isNative: false,
+        ),
+        AssetBalance(
+          assetId: mockIssuedTokenId,
+          ticker: mockIssuedTokenId,
+          name: mockIssuedTokenId,
+          amount: 100000000,
+          displayAmount: '1.00000000 RT',
+          status: 'synced',
           utxoCount: 1,
           isNative: false,
         ),
@@ -262,7 +298,9 @@ class MockWalletBridge implements WalletBridge {
             '9999999999999999999999999999999999999999999999999999999999999999',
         direction: TxDirection.outgoing,
         chain: TxChain.bitcoin,
-        amount: '-0.0004 BTC',
+        // As the engine reports an outgoing payment: its net outflow, the
+        // 40,000 sats paid plus the 141 of fee.
+        amount: '-0.00040141 BTC',
         ticker: 'BTC',
         timestamp: DateTime.now(),
         confirmations: 0,
@@ -333,7 +371,9 @@ class MockWalletBridge implements WalletBridge {
     return FeeBumpPreview(
       method: resolved,
       originalTxid: txid,
-      psbtBase64: 'cHNidP8BAAoCAAAAAQ==',
+      // Tagged with the method, so [inspectPsbt] reads the blob back as the
+      // bump it is (the fee-bump dialog draws the transaction from it).
+      psbtBase64: 'cHNidP8BAAoCAAAAAQ==$_mockBumpMarker$resolved',
       oldFeeSats: 141,
       oldFeeRate: 1,
       oldVsize: 141,
@@ -343,6 +383,60 @@ class MockWalletBridge implements WalletBridge {
       extraFeeSats: cpfp ? 1000 : 987,
       effectiveFeeRate: 8,
       totalFeeSats: cpfp ? 1141 : 1128,
+    );
+  }
+
+  static const _mockBumpMarker = '~bump-';
+
+  /// What [inspectPsbt] answers for a PSBT from [previewFeeBump]: the pending
+  /// 40,000 sat payment, re-priced. Figures agree with that preview — the RBF
+  /// replacement keeps its coin and its recipient and gives 987 sats of
+  /// change to the fee.
+  PsbtInspection _mockBumpInspection(String psbtBase64, int signed) {
+    const coin = PsbtInput(
+      outpoint:
+          '5f3c9a1e7b2d4c6f8a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f:0',
+      amountSats: 50000,
+      displayAmount: '0.00050000 BTC',
+      isMine: true,
+    );
+    const parentChange = PsbtInput(
+      outpoint:
+          '9999999999999999999999999999999999999999999999999999999999999999:1',
+      amountSats: 9859,
+      displayAmount: '0.00009859 BTC',
+      isMine: true,
+    );
+    PsbtOutput mine(int sats) => PsbtOutput(
+      address: 'tb1qmockchangeaddr9999',
+      amountSats: sats,
+      displayAmount: '$sats sats',
+      isMine: true,
+    );
+    const recipient = PsbtOutput(
+      address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
+      amountSats: 40000,
+      displayAmount: '0.00040000 BTC',
+      isMine: false,
+    );
+    final cpfp = psbtBase64.contains('${_mockBumpMarker}cpfp');
+    final cancel = psbtBase64.contains('${_mockBumpMarker}cancel');
+    final fee = cpfp ? 1000 : 1128;
+    return PsbtInspection(
+      inputs: [cpfp ? parentChange : coin],
+      outputs: cpfp
+          ? [mine(8859)]
+          : cancel
+          ? [mine(48872)]
+          : [recipient, mine(8872)],
+      feeSats: fee,
+      feeDisplay: '$fee sats',
+      sigsPresent: signed.clamp(0, 1),
+      sigsRequired: 1,
+      signers: [PsbtSigner(fingerprint: 'deadbeef', hasSigned: signed > 0)],
+      policyHint: '',
+      rawPsbt: psbtBase64,
+      ownershipKnown: true,
     );
   }
 
@@ -370,12 +464,15 @@ class MockWalletBridge implements WalletBridge {
     ];
   }
 
+  // Six settled coins on four addresses — one address was paid three times,
+  // so the wall has a tray with several notes in it — and a payment still in
+  // the mempool. The settled ones add up to the summary's 0.01234567 BTC.
   static const List<Utxo> _mockUtxos = [
     Utxo(
       outpoint:
           'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890:0',
-      amount: 900000,
-      displayAmount: '0.009 BTC',
+      amount: 600000,
+      displayAmount: '0.00600000 BTC',
       confirmations: 6,
       state: UtxoState.available,
       address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
@@ -392,6 +489,34 @@ class MockWalletBridge implements WalletBridge {
     ),
     Utxo(
       outpoint:
+          '5e2f9a7c1b3d4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f7:0',
+      amount: 200000,
+      displayAmount: '0.00200000 BTC',
+      confirmations: 310,
+      state: UtxoState.available,
+      label: 'October',
+      address: 'tb1q9d4ywgfnd8h43da5tpcxcn6ajv590cg6d3tg6a',
+    ),
+    Utxo(
+      outpoint:
+          '7c41d09e5ab26f38c7d1e4f5a6b7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f:2',
+      amount: 80000,
+      displayAmount: '0.00080000 BTC',
+      confirmations: 1021,
+      state: UtxoState.available,
+      address: 'tb1q9d4ywgfnd8h43da5tpcxcn6ajv590cg6d3tg6a',
+    ),
+    Utxo(
+      outpoint:
+          '0f6b3e8d2a4c5e7f9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e:0',
+      amount: 19454,
+      displayAmount: '0.00019454 BTC',
+      confirmations: 2260,
+      state: UtxoState.available,
+      address: 'tb1q9d4ywgfnd8h43da5tpcxcn6ajv590cg6d3tg6a',
+    ),
+    Utxo(
+      outpoint:
           'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef:0',
       amount: 546,
       displayAmount: '546 sats',
@@ -399,13 +524,13 @@ class MockWalletBridge implements WalletBridge {
       state: UtxoState.dusty,
       address: 'tb1q6rfmyvrl56kkxsmfkm2y4z4rkxkqgz4k3j5x7',
     ),
-    // A payment still in the mempool: the grey provisional note, so the
-    // pending shape can be checked without waiting on a faucet.
+    // A payment still in the mempool, to an address that already holds a
+    // coin: the dashed provisional note, beside the settled one.
     Utxo(
       outpoint:
           'cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe:1',
       amount: 150000,
-      displayAmount: '0.0015 BTC',
+      displayAmount: '0.00150000 BTC',
       confirmations: 0,
       state: UtxoState.unconfirmed,
       address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
@@ -455,6 +580,15 @@ class MockWalletBridge implements WalletBridge {
           'wpkh([deadbeef/84h/1h/0h]tpubDC7KMhGhFE2MhAJXrWMxumRnpFDqgtQQiQSFLGCaAk5CW8BQBuNr7PKRqNGV1ZB6qKP3zERkHV7DGUzPMDQc2y4kF7K8UrHeRfFXWkHPPjE/1/*)',
       multipathDescriptor:
           'wpkh([deadbeef/84h/1h/0h]tpubDC7KMhGhFE2MhAJXrWMxumRnpFDqgtQQiQSFLGCaAk5CW8BQBuNr7PKRqNGV1ZB6qKP3zERkHV7DGUzPMDQc2y4kF7K8UrHeRfFXWkHPPjE/<0;1>/*)',
+      // "Primary" is the mock wallet with a Liquid side, so it is the one
+      // that has a confidential descriptor to show.
+      liquidDescriptor: walletId == 'wallet-1'
+          ? 'ct(slip77(9c8e4f05c7711a98c838be228bcb84924d4570ca53f35fa1c793e58841d47023),'
+                'elwpkh([deadbeef/84h/1h/0h]tpubDC7KMhGhFE2MhAJXrWMxumRnpFDqgtQQiQSFLGCaAk5CW8BQBuNr7PKRqNGV1ZB6qKP3zERkHV7DGUzPMDQc2y4kF7K8UrHeRfFXWkHPPjE/<0;1>/*))'
+          : null,
+      masterBlindingKey: walletId == 'wallet-1'
+          ? '9c8e4f05c7711a98c838be228bcb84924d4570ca53f35fa1c793e58841d47023'
+          : null,
       hasSeed: true,
       hasPassphrase: false,
       lastBackupAt: DateTime.now().subtract(const Duration(days: 5)),
@@ -950,6 +1084,18 @@ class MockWalletBridge implements WalletBridge {
       'utxo':
           'aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa7777bbbb8888:1',
     },
+    // An older offer whose coin has since been spent: Activity's closed row.
+    {
+      'offer_id': 'of_9e8d7c6b',
+      'kind': 'swap',
+      'status': 'closed',
+      'created_at': _nowSecs() - 2 * 86400 - 5400,
+      'offers': _leg(_lbtcTestnet, 'LBTC', 100000, '0.00100000'),
+      'wants': _leg(_usdtTestnet, 'USDT', 6800000000, '68.00'),
+      'proposal_json': _testnetProposalJson,
+      'utxo':
+          'cccc3333dddd4444eeee5555ffff6666aaaa7777bbbb8888aaaa1111bbbb2222:0',
+    },
   ];
 
   @override
@@ -1032,7 +1178,158 @@ class MockWalletBridge implements WalletBridge {
   Future<AtomicSwap> atomicSwapJoin(String walletId, int offerId) async =>
       throw UnimplementedError('Atomic swaps require the native engine');
   @override
-  Future<List<AtomicSwap>> atomicSwapList(String walletId) async => const [];
+  Future<List<AtomicSwap>> atomicSwapList(String walletId) async {
+    // "Primary" (both chains) has one swap under way, so Activity and
+    // LiquiDEX have a cross-chain row to draw; every other wallet has none.
+    if (walletId != 'wallet-1') return const [];
+    await Future.delayed(const Duration(milliseconds: 300));
+    return [
+      AtomicSwap.fromJson({
+        'offer_id': 7,
+        'role': 'taker',
+        'next_action': 'wait',
+        'can_fund': false,
+        'can_claim': false,
+        'can_refund': false,
+        'row': {
+          'status': 'funded',
+          'state': {
+            'offered_chain': 'liquid',
+            'offered_asset_id': _usdtTestnet,
+            'offered_ticker': 'USDT',
+            'offered_name': 'Tether USD',
+            'offered_precision': 8,
+            'offered_amount_sats': 6800000000,
+            'wanted_chain': 'bitcoin',
+            'wanted_asset_id': 'btc',
+            'wanted_ticker': 'BTC',
+            'wanted_name': 'Bitcoin',
+            'wanted_precision': 8,
+            'wanted_amount_sats': 100000,
+            'maker_timeout': 2905210,
+            'taker_timeout': 2905150,
+          },
+        },
+      }),
+    ];
+  }
+
+  /// A Templar Protocol portfolio (`GET /connector/portfolio`, CONNECTOR.md
+  /// §7) for "Primary", so Activity has loans to draw in mock mode. Not a
+  /// bridge method — the real app asks the connected site — and null for
+  /// every other wallet.
+  Map<String, dynamic>? demoLoanPortfolio(String walletId) {
+    if (walletId != 'wallet-1') return null;
+    final now = _nowSecs();
+    const day = 86400;
+    return {
+      'version': 2,
+      'site': 'Templar Protocol demo',
+      'network': 'liquid-testnet',
+      'tip_height': 2905000,
+      'as_of': now,
+      'wallet': {'label': 'Primary', 'escrow_fingerprint': 'deadbeef'},
+      'loans': [
+        {
+          'id': 45,
+          'ref': 'SQ-45',
+          'role': 'borrower',
+          'state': 'originating',
+          'principal': {
+            'ticker': 'USDT',
+            'amount': '250',
+            'asset': _usdtTestnet,
+          },
+          'collateral': {
+            'ticker': 'LBTC',
+            'amount': '0.006',
+            'sats': 600000,
+            'asset': _lbtcTestnet,
+          },
+          'opened_at': now - 1800,
+          'pending_request': {
+            'id': 'req-45',
+            'action': 'origination',
+            'link': 'templar://sign?url=https%3A%2F%2Fdemo.invalid%2Freq-45',
+            'expires_at': now + day,
+          },
+        },
+        {
+          'id': 42,
+          'ref': 'SQ-42',
+          'role': 'borrower',
+          'state': 'active',
+          'principal': {
+            'ticker': 'USDT',
+            'amount': '600',
+            'asset': _usdtTestnet,
+          },
+          'collateral': {
+            'ticker': 'LBTC',
+            'amount': '0.012',
+            'sats': 1200000,
+            'asset': _lbtcTestnet,
+          },
+          'interest': {'ticker': 'USDT', 'amount': '18', 'rate_bps': 300},
+          'owed': {'ticker': 'USDT', 'amount': '412'},
+          'opened_at': now - 12 * day,
+          'due_at_estimate': now + 18 * day,
+          'txids': {'origination': 'a1' * 32},
+          'repayment_plan': {
+            'kind': 'installments',
+            'n_total': 6,
+            'n_paid': 2,
+            'm_missed': 0,
+            'm_max': 2,
+            'balance': {'ticker': 'USDT', 'amount': '412'},
+            'regular_due': {'ticker': 'USDT', 'amount': '103'},
+            'deadline_estimate': now + 4 * day,
+          },
+          'covenant': {
+            'status': 'active',
+            'current_txid': 'c3' * 32,
+            'nodes': [
+              {'index': 0, 'status': 'replaced', 'txid': 'a1' * 32},
+              {
+                'index': 1,
+                'status': 'replaced',
+                'txid': 'b2' * 32,
+                'created_by': 'installment',
+              },
+              {
+                'index': 2,
+                'status': 'active',
+                'txid': 'c3' * 32,
+                'created_by': 'installment',
+              },
+            ],
+          },
+        },
+        {
+          'id': 37,
+          'ref': 'SQ-37',
+          'role': 'lender',
+          'state': 'repaid',
+          'principal': {
+            'ticker': 'USDT',
+            'amount': '300',
+            'asset': _usdtTestnet,
+          },
+          'collateral': {
+            'ticker': 'LBTC',
+            'amount': '0.006',
+            'sats': 600000,
+            'asset': _lbtcTestnet,
+          },
+          'interest': {'ticker': 'USDT', 'amount': '6', 'rate_bps': 200},
+          'opened_at': now - 41 * day,
+          'txids': {'origination': 'd4' * 32, 'repayment': 'e5' * 32},
+        },
+      ],
+      'offers': const [],
+    };
+  }
+
   @override
   Future<AtomicSwap> atomicSwapFund(String walletId, int offerId) async =>
       throw UnimplementedError('Atomic swaps require the native engine');
@@ -1158,6 +1455,61 @@ class MockWalletBridge implements WalletBridge {
     }
   }
 
+  bool _demoPegsSeeded = false;
+
+  /// Two orders for "Primary", once: a peg-in that completed five days ago
+  /// and a peg-out under way (the simulated provider walks it to
+  /// `completed` over the next minute, as it does any new order).
+  void _seedDemoPegs() {
+    if (_demoPegsSeeded) return;
+    _demoPegsSeeded = true;
+    final now = _nowSecs();
+    final done = now - 5 * 86400;
+    _pegOrders['pg_demo_in'] = <String, dynamic>{
+      'order_id': 'pg_demo_in',
+      'wallet_id': 'wallet-1',
+      'direction': 'in',
+      'status': 'completed',
+      'deposit_address': _pegInDepositAddr,
+      'deposit_expected_sats': 500000,
+      'payout_address': 'tlq1qqdemopayout0000000000000000000000000000000000000',
+      'payout_expected_sats': 499250,
+      'created_at': done,
+      'updated_at': done + 110,
+      'eta_minutes': 2,
+      'txid_deposit': 'f6' * 32,
+      'txid_payout': '07' * 32,
+      'simulated': true,
+      'status_history': <Map<String, dynamic>>[
+        {'status': 'awaiting_deposit', 'at': done},
+        {'status': 'deposit_seen', 'at': done + 20},
+        {'status': 'confirming', 'at': done + 50},
+        {'status': 'settling', 'at': done + 80},
+        {'status': 'completed', 'at': done + 110},
+      ],
+    };
+    final started = now - 55;
+    _pegOrders['pg_demo_out'] = <String, dynamic>{
+      'order_id': 'pg_demo_out',
+      'wallet_id': 'wallet-1',
+      'direction': 'out',
+      'status': 'awaiting_deposit',
+      'deposit_address': _pegOutDepositAddr,
+      'deposit_expected_sats': 200000,
+      'payout_address': 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
+      'payout_expected_sats': 199550,
+      'created_at': started,
+      'updated_at': started,
+      'eta_minutes': 2,
+      'txid_deposit': null,
+      'txid_payout': null,
+      'simulated': true,
+      'status_history': <Map<String, dynamic>>[
+        {'status': 'awaiting_deposit', 'at': started},
+      ],
+    };
+  }
+
   @override
   Future<PegOrder> pegStatus(String orderId) async {
     await Future.delayed(const Duration(milliseconds: 200));
@@ -1172,6 +1524,7 @@ class MockWalletBridge implements WalletBridge {
   @override
   Future<List<PegOrder>> pegList(String walletId) async {
     await Future.delayed(const Duration(milliseconds: 300));
+    if (walletId == 'wallet-1') _seedDemoPegs();
     final orders =
         _pegOrders.values.where((o) => o['wallet_id'] == walletId).toList()
           ..sort(
@@ -1522,6 +1875,9 @@ class MockWalletBridge implements WalletBridge {
         .allMatches(psbtBase64)
         .length
         .clamp(0, fingerprints.length);
+    if (psbtBase64.contains(_mockBumpMarker)) {
+      return _mockBumpInspection(psbtBase64, signed);
+    }
     // The shape a current engine answers with a wallet open: every input
     // priced and owned, the recipient not ours, the change ours — so the
     // co-sign screen's ownership banner and its YOURS chips are exercised on

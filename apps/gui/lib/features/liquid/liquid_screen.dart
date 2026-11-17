@@ -1,32 +1,39 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../app/app_state.dart';
 import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
+import '../../features/dashboard/models/balance_history.dart';
 import '../../features/dashboard/models/dashboard_data.dart';
 import '../../services/asset_registry_service.dart';
 import '../../services/issued_asset_store.dart';
+import '../../services/price_service.dart';
 import '../../shared/widgets/asset_card.dart';
 import '../../shared/widgets/asset_logo.dart';
-import '../../shared/widgets/badges.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/code_box.dart';
-import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/cards.dart';
 import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/list_rows.dart';
 import '../../shared/widgets/page_header.dart';
 import '../../shared/widgets/privacy.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
-// The phone's Issue/Reissue/Burn rows live with the Asset Operations screen so
-// both entry points show one object; the desktop card here stays local.
-import 'asset_operations_screen.dart';
+import 'asset_detail_dialog.dart';
+import 'liquid_issued.dart';
+import 'liquid_overview.dart';
 
 // ── Screen ───────────────────────────────────────────────────────────────────
+//
+// Liquid's own dashboard. At the top, the L-BTC balance and its chart — in
+// Liquid's hue — with the split of the Liquid assets beside it; under it two
+// blocks: the assets this wallet holds, and "Issued assets", which carries
+// the three asset operations (issue, reissue, burn) over the list of what
+// this wallet issued. Tapping an asset opens its detail in the same dialog a
+// transaction's detail uses. Nothing on this page is filled with the accent:
+// there is no single thing the page exists to do.
 
 class LiquidScreen extends StatefulWidget {
   const LiquidScreen({super.key});
@@ -44,6 +51,8 @@ class _LiquidScreenState extends State<LiquidScreen> {
   bool _showHidden = false;
   bool _loading = true;
   String? _error;
+  BalanceHistory? _history;
+  bool _historyFailed = false;
   int _lastSyncVersion = 0;
   String? _lastWalletId;
   AppState? _appState;
@@ -52,6 +61,7 @@ class _LiquidScreenState extends State<LiquidScreen> {
   void initState() {
     super.initState();
     _load();
+    _loadHistory();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _appState = context.read<AppState>();
@@ -77,6 +87,7 @@ class _LiquidScreenState extends State<LiquidScreen> {
       _lastWalletId = newWalletId;
       setState(() => _loading = true);
       _load();
+      _loadHistory();
     }
   }
 
@@ -126,6 +137,25 @@ class _LiquidScreenState extends State<LiquidScreen> {
     }
   }
 
+  /// The chart's history loads on its own: a slow or failing call never
+  /// holds up the assets.
+  Future<void> _loadHistory() async {
+    if (!mounted) return;
+    if (context.read<AppState>().syncState == SyncState.syncing) return;
+    final walletId = context.read<AppState>().activeWalletId ?? 'wallet-1';
+    try {
+      final history = await _bridge.getBalanceHistory(walletId);
+      if (mounted) {
+        setState(() {
+          _history = history;
+          _historyFailed = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _historyFailed = true);
+    }
+  }
+
   Future<void> _hideAsset(String assetId) async {
     await IssuedAssetStore.instance.hideAsset(assetId);
     final hidden = await IssuedAssetStore.instance.getHiddenAssets();
@@ -138,40 +168,27 @@ class _LiquidScreenState extends State<LiquidScreen> {
     if (mounted) setState(() => _hiddenAssets = hidden);
   }
 
-  void _showDetail(AssetGroup group, {bool isRt = false}) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      // Root navigator on a phone: the sheet must cover the carousel nav,
-      // not stop above it inside the shell's nested navigator.
-      useRootNavigator: AppLayout.isPhone(context),
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AssetDetailSheet(
-        asset: group.main,
-        isRt: isRt,
-        reissuanceToken: group.reissuanceToken,
-        blockstreamInfo: AssetRegistryService.instance.get(group.main.assetId),
-        isHidden: _hiddenAssets.contains(group.main.assetId),
-        onHide: () {
-          Navigator.pop(context);
-          _hideAsset(group.main.assetId);
-        },
-        onUnhide: () {
-          Navigator.pop(context);
-          _unhideAsset(group.main.assetId);
-        },
-        onTapToken: group.reissuanceToken != null
-            ? () {
-                Navigator.pop(context);
-                _showDetail(
-                  AssetGroup(main: group.reissuanceToken!),
-                  isRt: true,
-                );
-              }
-            : null,
-      ),
+  void _showDetail(AssetGroup group) {
+    final id = group.main.assetId;
+    final hidden = _hiddenAssets.contains(id);
+    showAssetDetailDialog(
+      context,
+      asset: group.main,
+      reissuanceToken: group.reissuanceToken,
+      issued: _issuedAssets[id],
+      // An orphan reissuance token (its asset not held) is still a token.
+      isReissuanceToken: _issuedAssets.values.any((e) => e.tokenId == id),
+      isHidden: hidden,
+      onToggleHidden: () => hidden ? _unhideAsset(id) : _hideAsset(id),
     );
+  }
+
+  void _retry() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    _load();
   }
 
   @override
@@ -183,152 +200,102 @@ class _LiquidScreenState extends State<LiquidScreen> {
     final hiddenCount = _hiddenAssets
         .where((id) => groups.any((g) => g.main.assetId == id))
         .length;
+    final lbtc = _liquidAssets.where((a) => a.ticker == 'LBTC').firstOrNull;
+    final tokenIds = {
+      for (final e in _issuedAssets.values)
+        if (e.tokenId != null) e.tokenId!,
+    };
 
-    final s = AppScheme.of(context);
-    final phone = AppLayout.isPhone(context);
     return Scaffold(
       body: PageBackground.flat(
-        child: ListView(
-          padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-          children: [
-            const PageHeader(
-              title: 'Liquid',
-              subtitle: 'Asset management on the Liquid Network',
-              actions: [PrivacyToggle()],
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: AppSpacing.contentMaxWidth,
             ),
-            // Confidentiality signal — core property of Liquid, surfaced openly.
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-              child: Row(
+            child: ListenableBuilder(
+              // L-BTC's fiat follows the price as it arrives or changes
+              // currency.
+              listenable: PriceService.instance,
+              builder: (context, _) => ListView(
+                padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
                 children: [
-                  Icon(
-                    Icons.visibility_off_outlined,
-                    size: 14,
-                    color: s.liquid,
+                  const PageHeader(
+                    title: 'Liquid assets',
+                    actions: [PrivacyToggle()],
                   ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(
-                    child: Text(
-                      'Liquid uses confidential transactions: amounts and asset '
-                      'types are blinded on-chain and visible only to this wallet.',
-                      style: AppTypography.caption.copyWith(
-                        color: s.inkSecondary,
+                  if (_loading)
+                    const Padding(
+                      padding: EdgeInsets.all(AppSpacing.xl),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_error != null)
+                    _LoadError(message: _error!, onRetry: _retry)
+                  else ...[
+                    LiquidOverview(
+                      lbtcSats: lbtc?.amount ?? 0,
+                      history: _history,
+                      historyFailed: _historyFailed,
+                      shares: [
+                        // L-BTC first: the chain's own coin leads the split.
+                        for (final g in visible)
+                          if (g.main.ticker == 'LBTC') _share(g),
+                        for (final g in visible)
+                          if (g.main.ticker != 'LBTC' &&
+                              !tokenIds.contains(g.main.assetId))
+                            _share(g),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xxl),
+                    const ListSectionLabel(label: 'Assets'),
+                    _assetList(context, visible, hiddenCount),
+                    const SizedBox(height: AppSpacing.xxl),
+                    const ListSectionLabel(label: 'Issued assets'),
+                    IssuedAssetsCard(
+                      issued: _issuedAssets.values.toList(),
+                      holdings: _liquidAssets,
+                      onOpen: (entry, asset, token) => showAssetDetailDialog(
+                        context,
+                        asset: asset,
+                        reissuanceToken: token,
+                        issued: entry,
                       ),
                     ),
-                  ),
+                    const SizedBox(height: AppSpacing.xl),
+                    const _ConfidentialNote(),
+                  ],
                 ],
               ),
             ),
-            // ── Asset operations row ───────────────────────────────────────────
-            _AssetOpsRow(),
-            const SizedBox(height: AppSpacing.xl),
-            // ── Liquid asset balances ──────────────────────────────────────────
-            if (phone)
-              // The label carries its own bottom padding; the show-hidden
-              // toggle moves into the card below, where it survives every
-              // asset being hidden and gets a full row to be tapped on.
-              const ListSectionLabel(label: 'Liquid assets')
-            else ...[
-              Row(
-                children: [
-                  Text(
-                    'Liquid Assets',
-                    style: AppTypography.sectionTitle.copyWith(color: s.ink),
-                  ),
-                  const Spacer(),
-                  if (hiddenCount > 0)
-                    InkWell(
-                      onTap: () => setState(() => _showHidden = !_showHidden),
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.xs,
-                          vertical: 2,
-                        ),
-                        child: Text(
-                          _showHidden
-                              ? 'Hide hidden ($hiddenCount)'
-                              : 'Show hidden ($hiddenCount)',
-                          style: AppTypography.caption.copyWith(
-                            color: s.liquid,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-            ],
-            if (_loading)
-              const Center(child: CircularProgressIndicator())
-            else if (_error != null)
-              _LoadError(
-                message: _error!,
-                onRetry: () {
-                  setState(() {
-                    _loading = true;
-                    _error = null;
-                  });
-                  _load();
-                },
-              )
-            else if (phone)
-              _phoneAssetList(context, visible, hiddenCount)
-            else if (visible.isEmpty)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                  child: Text(
-                    'No Liquid assets found',
-                    style: AppTypography.caption,
-                  ),
-                ),
-              )
-            else
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  // One column on a phone: a 183 dp card ellipsises balances.
-                  final minCols = AppLayout.isPhone(context) ? 1 : 2;
-                  final cols = (constraints.maxWidth / 240).floor().clamp(
-                    minCols,
-                    5,
-                  );
-                  final cardWidth =
-                      (constraints.maxWidth - (cols - 1) * AppSpacing.md) /
-                      cols;
-                  return Wrap(
-                    spacing: AppSpacing.md,
-                    runSpacing: AppSpacing.md,
-                    children: visible
-                        .map(
-                          (g) => SizedBox(
-                            width: cardWidth,
-                            child: GroupedAssetCard(
-                              group: g,
-                              isHidden: _hiddenAssets.contains(g.main.assetId),
-                              onTap: () => _showDetail(g),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  );
-                },
-              ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  /// The phone's asset list: one card of rows, drawn exactly like the
-  /// Dashboard's assets group so the same asset does not appear in two
-  /// different materials one tap apart.
+  LiquidShare _share(AssetGroup g) {
+    final a = g.main;
+    final entry = _issuedAssets[a.assetId];
+    final name = a.ticker == 'LBTC'
+        ? 'Liquid Bitcoin'
+        : liquidAssetName(a, issued: entry);
+    final ticker = liquidAssetTicker(a, issued: entry);
+    final (figure, unit) = splitAmountUnit(a.displayAmount);
+    return LiquidShare(
+      asset: a,
+      name: name,
+      amount: unit == null ? '$figure $ticker' : a.displayAmount,
+    );
+  }
+
+  /// One card of rows — the Dashboard's assets group, so the same asset is
+  /// drawn in one material wherever it appears.
   ///
-  /// The show-hidden toggle rides at the foot of the card rather than in the
-  /// section label: it stays reachable when every asset is hidden (the list
-  /// is then empty), and it gets a whole row instead of the 12 dp-tall text
-  /// target the desktop header uses.
-  Widget _phoneAssetList(
+  /// The show-hidden toggle rides at the foot of the card: it stays reachable
+  /// when every asset is hidden (the list is then empty) and gets a whole row
+  /// to be pressed on.
+  Widget _assetList(
     BuildContext context,
     List<AssetGroup> visible,
     int hiddenCount,
@@ -338,16 +305,16 @@ class _LiquidScreenState extends State<LiquidScreen> {
     return ListCard(
       children: [
         if (visible.isEmpty)
-          // A row with no onTap is non-interactive — the Dashboard's own
-          // empty-group pattern, so the section still has a shape.
-          ListRow(
-            icon: Icons.inbox_rounded,
-            tint: s.inkFaint,
-            title: 'No Liquid assets',
-            subtitle: 'Assets you hold or issue appear here',
-          )
+          const _EmptyAssets()
         else
-          for (final g in visible) _assetRow(context, g, masked),
+          for (final g in visible)
+            _AssetRow(
+              group: g,
+              issued: _issuedAssets[g.main.assetId],
+              hidden: _hiddenAssets.contains(g.main.assetId),
+              masked: masked,
+              onTap: () => _showDetail(g),
+            ),
         if (hiddenCount > 0)
           ListRow(
             // The eye shows the current state, never the action — the same
@@ -363,60 +330,277 @@ class _LiquidScreenState extends State<LiquidScreen> {
       ],
     );
   }
+}
 
-  Widget _assetRow(BuildContext context, AssetGroup g, bool masked) {
+/// Confidentiality is a property of every asset on the page, so it is
+/// stated once, quietly, at its foot.
+class _ConfidentialNote extends StatelessWidget {
+  const _ConfidentialNote();
+
+  @override
+  Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final reg = AssetRegistryService.instance;
-    final asset = g.main;
-    final hidden = _hiddenAssets.contains(asset.assetId);
-    final ticker = reg.displayTicker(asset);
-    final name = reg.displayName(asset);
-    final info = reg.get(asset.assetId);
-    final (value, unit) = _splitUnit(asset.displayAmount);
-    return ListRow(
-      // The two glyphs the Dashboard already uses for exactly these two
-      // cases, so one asset is drawn one way across the phone.
-      icon: asset.ticker == 'LBTC'
-          ? Icons.currency_bitcoin
-          : Icons.water_drop_rounded,
-      tint: s.liquid,
-      title: name == 'Unknown Asset' ? ticker : name,
-      // The RT pill and the per-asset gradient tint are grid devices; in one
-      // column the same facts read better as words.
-      subtitle: <String>[
-        if (info?.domain != null && info!.domain!.isNotEmpty)
-          info.domain!
-        else
-          ticker,
-        '${asset.utxoCount} UTXO${asset.utxoCount == 1 ? '' : 's'}',
-        if (g.reissuanceToken != null) 'reissuance token',
-        if (hidden) 'hidden',
-      ].join(' · '),
-      subtitleColor: hidden ? s.inkFaint : null,
-      // ListAmount takes a plain String, so the mask is applied by hand here;
-      // GroupedAssetCard masked internally through the Amount widget.
-      trailing: ListAmount(
-        value: masked ? kMaskedAmount : value,
-        unit: masked ? null : (unit ?? ticker),
-      ),
-      chevron: true,
-      onTap: () => _showDetail(g),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(
+            Icons.visibility_off_outlined,
+            size: AppSpacing.iconSmall,
+            color: s.inkFaint,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            'Liquid uses confidential transactions: amounts and asset types '
+            'are blinded on-chain and visible only to this wallet',
+            style: AppTypography.caption.copyWith(color: s.inkFaint),
+          ),
+        ),
+      ],
     );
   }
 }
 
-/// "1,000 FOO" → the number, and its unit. Mirrors the Dashboard's private
-/// helper of the same name; a shared one belongs in list_rows.dart next to
-/// ListAmount, which is not this pass's file to change.
-(String, String?) _splitUnit(String text) {
-  final i = text.lastIndexOf(' ');
-  if (i <= 0) return (text, null);
-  return (text.substring(0, i), text.substring(i + 1));
+// ── Asset row ─────────────────────────────────────────────────────────────────
+
+/// One asset: its glyph, its name over its ticker and issuer, and on the
+/// right the balance over its fiat value (only when the asset has a price)
+/// and its coin count. 64 tall.
+class _AssetRow extends StatefulWidget {
+  const _AssetRow({
+    required this.group,
+    required this.issued,
+    required this.hidden,
+    required this.masked,
+    required this.onTap,
+  });
+
+  final AssetGroup group;
+  final IssuedAssetEntry? issued;
+  final bool hidden;
+  final bool masked;
+  final VoidCallback onTap;
+
+  @override
+  State<_AssetRow> createState() => _AssetRowState();
+}
+
+class _AssetRowState extends State<_AssetRow> {
+  bool _hover = false;
+  bool _down = false;
+  bool _focus = false;
+
+  static const double _height = 64;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    final reg = AssetRegistryService.instance;
+    final asset = widget.group.main;
+    final info = reg.get(asset.assetId);
+    final ticker = liquidAssetTicker(asset, issued: widget.issued);
+    final name = asset.ticker == 'LBTC'
+        ? 'Liquid Bitcoin'
+        : liquidAssetName(asset, issued: widget.issued);
+    final domain = info?.domain;
+    // The reissuance token is not a property of the holding: it has its own
+    // line under "Issued assets". Here the row only says where it came from.
+    final meta = <String>[
+      ticker,
+      if (domain != null && domain.isNotEmpty) domain,
+      // A phone row has half the width: the shorter words read whole.
+      if (widget.issued != null)
+        phone ? 'issued here' : 'issued by this wallet',
+      if (widget.hidden) 'hidden',
+    ].join(' · ');
+    final (figure, unit) = splitAmountUnit(asset.displayAmount);
+    // Only L-BTC has a price. An issued token shows nothing rather than a
+    // made-up €0.00.
+    final fiat = asset.ticker == 'LBTC' && !widget.masked
+        ? PriceService.instance.fiatDisplay(asset.amount)
+        : null;
+    final coins = '${asset.utxoCount} UTXO${asset.utxoCount == 1 ? '' : 's'}';
+    final nameInk = widget.hidden ? s.inkSecondary : s.ink;
+
+    final amount = Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Flexible(
+              child: Text(
+                widget.masked ? kMaskedAmount : figure,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.numeric.copyWith(color: nameInk),
+              ),
+            ),
+            if (!widget.masked) ...[
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                unit ?? ticker,
+                maxLines: 1,
+                style: AppTypography.numericSmall.copyWith(color: s.inkFaint),
+              ),
+            ],
+          ],
+        ),
+        // Desktop gives the coin count its own column, so the line under
+        // the amount is the fiat value or nothing; a phone has room for one
+        // line and prefers the fiat value.
+        if (fiat != null || phone)
+          Text(
+            fiat ?? coins,
+            maxLines: 1,
+            style: AppTypography.numericSmall.copyWith(color: s.inkFaint),
+          ),
+      ],
+    );
+
+    final content = Row(
+      children: [
+        AssetLogo(ticker: asset.ticker, size: 32),
+        const SizedBox(width: kListGap),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.bodyOf(
+                  context,
+                ).copyWith(color: nameInk, fontWeight: FontWeight.w500),
+              ),
+              Text(
+                meta,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.caption.copyWith(color: s.inkFaint),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 240),
+          child: amount,
+        ),
+        if (!phone) ...[
+          const SizedBox(width: AppSpacing.lg),
+          SizedBox(
+            width: 64,
+            child: Text(
+              coins,
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              style: AppTypography.caption.copyWith(color: s.inkFaint),
+            ),
+          ),
+        ],
+        const SizedBox(width: AppSpacing.xs),
+        Icon(
+          Icons.chevron_right_outlined,
+          size: AppSpacing.icon,
+          color: s.inkFaint,
+        ),
+      ],
+    );
+
+    final body = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.instant),
+      curve: AppMotion.settle,
+      color: _down
+          ? s.pressed
+          : _hover
+          ? s.hover
+          : Colors.transparent,
+      foregroundDecoration: _focus
+          ? BoxDecoration(border: Border.all(color: s.focus, width: 2))
+          : null,
+      constraints: const BoxConstraints(minHeight: _height),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kListPad,
+        vertical: AppSpacing.sm,
+      ),
+      child: content,
+    );
+
+    return Semantics(
+      button: true,
+      child: MergeSemantics(
+        child: FocusableActionDetector(
+          mouseCursor: SystemMouseCursors.click,
+          onShowHoverHighlight: (v) => setState(() {
+            _hover = v;
+            if (!v) _down = false;
+          }),
+          onShowFocusHighlight: (v) => setState(() => _focus = v),
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                widget.onTap();
+                return null;
+              },
+            ),
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onTap,
+            onTapDown: (_) => setState(() => _down = true),
+            onTapUp: (_) => setState(() => _down = false),
+            onTapCancel: () => setState(() => _down = false),
+            child: body,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// No assets: one quiet line and the one way to get some.
+class _EmptyAssets extends StatelessWidget {
+  const _EmptyAssets();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: Column(
+        children: [
+          Text(
+            'No Liquid assets yet',
+            textAlign: TextAlign.center,
+            style: AppTypography.body.copyWith(color: s.inkSecondary),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          SecondaryButton(
+            label: 'Receive',
+            icon: Icons.south_west_outlined,
+            isFullWidth: phone,
+            onPressed: () => context.go(AppRoutes.receive),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ── Load failure ──────────────────────────────────────────────────────────────
 // Replaces only the balances section; a failed load must not masquerade as
-// "No Liquid assets found".
+// "No Liquid assets".
 
 class _LoadError extends StatelessWidget {
   const _LoadError({required this.message, required this.onRetry});
@@ -426,491 +610,34 @@ class _LoadError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: GlassCard(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+    return SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Icon(Icons.error_outline_rounded, size: 40, color: s.danger),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                'Could not load Liquid assets',
-                style: AppTypography.sectionTitle,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                message,
-                style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              PrimaryButton(
-                label: 'Retry',
-                onPressed: onRetry,
-                // A card's single action spans the card on a phone; on
-                // desktop it stays the intrinsically sized button it was.
-                isFullWidth: AppLayout.isPhone(context),
+              Icon(Icons.error_outline, size: AppSpacing.icon, color: s.danger),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Could not load Liquid assets',
+                  style: AppTypography.sectionTitle.copyWith(color: s.ink),
+                ),
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Asset Operations section ───────────────────────────────────────────────────
-
-class _AssetOpsRow extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    // Phone: one card of three rows instead of three bordered slabs (~250 dp
-    // of chrome before a single balance appears), and the same object the
-    // Asset Operations screen draws.
-    if (AppLayout.isPhone(context)) {
-      return const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListSectionLabel(label: 'Asset operations'),
-          AssetOpsRows(),
-        ],
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Asset Operations', style: AppTypography.sectionTitle),
-        const SizedBox(height: AppSpacing.md),
-        _OperationCard(
-          icon: Icons.add_circle_outline,
-          title: 'Issue Asset',
-          description: 'Create a new Liquid asset with custom parameters.',
-          color: AppColors.liquid,
-          onTap: () => context.go(AppRoutes.issueAsset),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _OperationCard(
-          icon: Icons.refresh,
-          title: 'Reissue',
-          description:
-              'Mint additional supply of an existing asset you control.',
-          color: AppColors.success,
-          onTap: () => context.go(AppRoutes.reissueAsset),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _OperationCard(
-          icon: Icons.local_fire_department_outlined,
-          title: 'Burn',
-          description:
-              'Permanently destroy asset supply. This is irreversible.',
-          color: AppColors.danger,
-          onTap: () => context.go(AppRoutes.burnAsset),
-        ),
-      ],
-    );
-  }
-}
-
-class _OperationCard extends StatelessWidget {
-  const _OperationCard({
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.color,
-    required this.onTap,
-  });
-  final IconData icon;
-  final String title;
-  final String description;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-      child: Container(
-        padding: const EdgeInsets.all(AppSpacing.cardPadding),
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.surfaceDark : AppColors.surfaceLight,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-          border: Border.all(
-            color: isDark ? AppColors.borderDark : AppColors.borderLight,
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            message,
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
           ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-              ),
-              child: Icon(icon, size: 20, color: color),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: AppTypography.label.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(description, style: AppTypography.caption),
-                ],
-              ),
-            ),
-            Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: isDark
-                  ? AppColors.textSecondaryDark
-                  : AppColors.textSecondary,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Asset detail bottom sheet ─────────────────────────────────────────────────
-
-class _AssetDetailSheet extends StatelessWidget {
-  const _AssetDetailSheet({
-    required this.asset,
-    required this.blockstreamInfo,
-    required this.isHidden,
-    required this.onHide,
-    required this.onUnhide,
-    this.isRt = false,
-    this.reissuanceToken,
-    this.onTapToken,
-  });
-
-  final AssetBalance asset;
-  final bool isRt;
-  final AssetBalance? reissuanceToken;
-  final VoidCallback? onTapToken;
-  final BlockstreamAssetInfo? blockstreamInfo;
-  final bool isHidden;
-  final VoidCallback onHide;
-  final VoidCallback onUnhide;
-
-  void _copy(BuildContext context, String value) {
-    Clipboard.setData(ClipboardData(text: value));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Copied'), duration: Duration(seconds: 1)),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final isDark = s.isDark;
-    final reg = AssetRegistryService.instance;
-    final info = blockstreamInfo;
-    final name = reg.displayName(asset, isRt: isRt);
-    final ticker = reg.displayTicker(asset, isRt: isRt);
-    // The sheet opens on both platforms (only useRootNavigator differs), so
-    // every phone treatment below is gated.
-    final phone = AppLayout.isPhone(context);
-
-    return SheetSurface(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          AppSpacing.pagePadding(context),
-          AppSpacing.xl,
-          AppSpacing.pagePadding(context),
-          AppSpacing.xxl + MediaQuery.of(context).padding.bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle bar
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: s.edgeStrong,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            // Header
-            Row(
-              children: [
-                AssetBadge(ticker: ticker, isNative: asset.ticker == 'LBTC'),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name, style: AppTypography.sectionTitle),
-                      if (isRt)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.sm,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.liquid.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'REISSUANCE TOKEN',
-                            style: AppTypography.caption.copyWith(
-                              color: AppColors.liquidDark,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        )
-                      else
-                        Text(ticker, style: AppTypography.caption),
-                    ],
-                  ),
-                ),
-                Amount(
-                  asset.displayAmount,
-                  style: AppTypography.body.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            const Divider(),
-            const SizedBox(height: AppSpacing.lg),
-            // Detail rows
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.visibility_off_outlined,
-                    size: 14,
-                    color: AppColors.liquid,
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(
-                    child: Text(
-                      'Confidential asset — amounts are blinded on-chain.',
-                      style: AppTypography.caption.copyWith(
-                        color: AppColors.liquidDark,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            _DetailRow(
-              label: 'Asset ID',
-              value: asset.assetId,
-              onCopy: () => _copy(context, asset.assetId),
-            ),
-            if (ticker.isNotEmpty && ticker != asset.assetId)
-              _DetailRow(label: 'Ticker', value: ticker),
-            if (info?.precision != null)
-              _DetailRow(label: 'Precision', value: '${info!.precision}'),
-            if (info?.domain != null)
-              _DetailRow(label: 'Domain', value: info!.domain!),
-            // Reissuance token section — only on parent assets.
-            if (reissuanceToken != null) ...[
-              const Divider(),
-              const SizedBox(height: AppSpacing.md),
-              // The phone row is titled 'Reissuance Token' itself, so the
-              // heading above it would say the same thing twice.
-              if (!phone) ...[
-                Text(
-                  'Reissuance Token',
-                  style: AppTypography.label.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.liquidDark,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-              ],
-              if (phone)
-                // It was a list row in everything but implementation: a
-                // bespoke tinted box in a bare GestureDetector, with no
-                // ripple. Icons.refresh is the glyph the RT pill and the
-                // Reissue operation already use.
-                ListCard(
-                  children: [
-                    ListRow(
-                      icon: Icons.refresh,
-                      tint: s.liquid,
-                      title: 'Reissuance Token',
-                      subtitle: reg.displayTicker(reissuanceToken!, isRt: true),
-                      trailing: ListAmount(
-                        value: balancesHidden(context)
-                            ? kMaskedAmount
-                            : reissuanceToken!.displayAmount,
-                      ),
-                      chevron: onTapToken != null,
-                      onTap: onTapToken,
-                    ),
-                  ],
-                )
-              else
-                GestureDetector(
-                  onTap: onTapToken,
-                  child: Container(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    decoration: BoxDecoration(
-                      color: AppColors.liquid.withValues(
-                        alpha: isDark ? 0.12 : 0.07,
-                      ),
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                      border: Border.all(
-                        color: AppColors.liquid.withValues(alpha: 0.35),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        AssetLogo(
-                          ticker: asset.ticker,
-                          size: 28,
-                          isReissuanceToken: true,
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Reissuance Token',
-                                style: AppTypography.bodySmall.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Amount(
-                                reissuanceToken!.displayAmount,
-                                style: AppTypography.caption,
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (onTapToken != null)
-                          Icon(
-                            Icons.chevron_right,
-                            size: 18,
-                            color: AppColors.liquidDark.withValues(alpha: 0.7),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-            const SizedBox(height: AppSpacing.xl),
-            // Actions
-            if (phone) ...[
-              // Stacked and full width: side by side these two labels ellipsise
-              // on a 379 dp column, and the phone's control decisions (54 dp,
-              // filled, radius 16) arrive from buttons.dart instead of being
-              // re-specified here. Copy leads because it is what this sheet is
-              // opened for; hiding an asset is the rarer, stickier action.
-              SecondaryButton(
-                label: 'Copy ID',
-                icon: Icons.copy,
-                isFullWidth: true,
-                onPressed: () => _copy(context, asset.assetId),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              SecondaryButton(
-                label: isHidden ? 'Unhide' : 'Hide asset',
-                icon: isHidden ? Icons.visibility : Icons.visibility_off,
-                isFullWidth: true,
-                onPressed: isHidden ? onUnhide : onHide,
-              ),
-            ] else
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: Icon(
-                        isHidden ? Icons.visibility : Icons.visibility_off,
-                        size: 16,
-                      ),
-                      label: Text(isHidden ? 'Unhide' : 'Hide asset'),
-                      onPressed: isHidden ? onUnhide : onHide,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: isHidden
-                            ? AppColors.success
-                            : AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.copy, size: 16),
-                      label: const Text('Copy ID'),
-                      onPressed: () => _copy(context, asset.assetId),
-                    ),
-                  ),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.label, required this.value, this.onCopy});
-  final String label;
-  final String value;
-  final VoidCallback? onCopy;
-
-  @override
-  Widget build(BuildContext context) {
-    // This sheet opens on desktop too, so the phone treatment is gated.
-    // CopyRow already solved what this row hand-rolled badly on a phone: a
-    // 64-hex asset ID wrapping to four mono lines behind a 14 px copy target.
-    // It stacks the label, middle-ellipsises the value to one line, and gives
-    // the copy control a 48 dp button with a copied confirmation.
-    if (AppLayout.isPhone(context)) {
-      return CopyRow(label: label, value: value, singleLine: onCopy != null);
-    }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(width: 90, child: Text(label, style: AppTypography.caption)),
-          Expanded(
-            child: GestureDetector(
-              onTap: onCopy,
-              child: Text(
-                value,
-                style: AppTypography.mono.copyWith(fontSize: 12),
-              ),
-            ),
+          const SizedBox(height: AppSpacing.lg),
+          SecondaryButton(
+            label: 'Retry',
+            icon: Icons.refresh,
+            onPressed: onRetry,
+            isFullWidth: AppLayout.isPhone(context),
           ),
-          if (onCopy != null)
-            GestureDetector(
-              onTap: onCopy,
-              child: const Icon(
-                Icons.copy,
-                size: 14,
-                color: AppColors.textSecondary,
-              ),
-            ),
         ],
       ),
     );

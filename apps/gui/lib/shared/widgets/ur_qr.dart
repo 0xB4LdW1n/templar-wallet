@@ -14,9 +14,12 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../services/app_settings.dart';
 import '../../services/crash_log.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import 'banners.dart';
+import 'buttons.dart';
+import 'app_dialog.dart';
 
 /// mobile_scanner ships no Windows/Linux implementation — on those desktops
 /// starting the camera throws MissingPluginException, which escapes every
@@ -75,21 +78,25 @@ class _UrAnimatedQrState extends State<UrAnimatedQr> {
   @override
   Widget build(BuildContext context) {
     if (widget.parts.isEmpty) return const SizedBox.shrink();
+    final s = AppScheme.of(context);
+    final n = widget.parts.length;
     return LayoutBuilder(
       builder: (context, constraints) {
         var side = widget.size;
         if (constraints.hasBoundedWidth) {
-          final fits = constraints.maxWidth - 2 * AppSpacing.sm;
+          final fits = constraints.maxWidth - 2 * AppSpacing.lg;
           if (fits < side) side = math.max(fits, 120);
         }
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // A white square whatever the theme: a camera reads dark modules
+            // on white, and the quiet zone is part of the code.
             Container(
-              padding: const EdgeInsets.all(AppSpacing.sm),
+              padding: const EdgeInsets.all(AppSpacing.lg),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               ),
               child: QrImageView(
                 // UR payloads are case-insensitive; upper-case enables the QR
@@ -97,19 +104,57 @@ class _UrAnimatedQrState extends State<UrAnimatedQr> {
                 data: widget.parts[_index].toUpperCase(),
                 version: QrVersions.auto,
                 size: side,
+                padding: EdgeInsets.zero,
                 backgroundColor: Colors.white,
               ),
             ),
-            if (widget.parts.length > 1) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                'frame ${_index + 1}/${widget.parts.length}',
-                style: AppTypography.caption,
+            if (n > 1) ...[
+              const SizedBox(height: AppSpacing.sm),
+              SizedBox(
+                width: side + 2 * AppSpacing.lg,
+                child: Column(
+                  children: [
+                    Text(
+                      'Part ${_index + 1} of $n',
+                      style: AppTypography.numericSmall.copyWith(
+                        color: s.inkSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    _ThinBar(value: (_index + 1) / n),
+                  ],
+                ),
               ),
             ],
           ],
         );
       },
+    );
+  }
+}
+
+/// A 2 px neutral progress line: the ink over the hairline.
+class _ThinBar extends StatelessWidget {
+  const _ThinBar({required this.value, this.onDark = false});
+
+  final double value;
+
+  /// Drawn over the camera's black page rather than a panel.
+  final bool onDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: LinearProgressIndicator(
+        value: value.clamp(0.0, 1.0),
+        minHeight: 2,
+        backgroundColor: onDark ? Colors.white.withValues(alpha: 0.2) : s.edge,
+        valueColor: AlwaysStoppedAnimation(
+          onDark ? Colors.white : s.inkSecondary,
+        ),
+      ),
     );
   }
 }
@@ -192,38 +237,25 @@ Future<void> showCameraUnsupportedDialog(BuildContext context) {
       : Platform.isLinux
       ? 'Linux'
       : 'this platform';
-  return showDialog<void>(
-    context: context,
-    builder: (context) => AlertDialog(
-      backgroundColor: AppColors.surfaceDark,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-      ),
-      title: Row(
-        children: [
-          const Icon(Icons.videocam_off_outlined, color: Colors.white70),
-          const SizedBox(width: AppSpacing.sm),
-          Text(
-            'Camera not available',
-            style: AppTypography.body.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
+  return showAppDialog<void>(
+    context,
+    builder: (context) => AppDialog(
+      icon: const Icon(Icons.videocam_off_outlined),
+      title: const Text('Camera not available'),
       content: Text(
         'Camera QR scanning is not available on $os.\n\n'
         'Nothing is blocked: use Paste or Load file instead. Air-gap signing '
         'still works end to end — the app shows the unsigned transaction as a '
         'QR for your device to read, and you bring the signed one back as '
         'text or a .psbt file.',
-        style: AppTypography.bodySmall.copyWith(color: Colors.white70),
+        style: AppTypography.body.copyWith(
+          color: AppScheme.of(context).inkSecondary,
+        ),
       ),
       actions: [
-        TextButton(
+        SecondaryButton(
+          label: 'OK',
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('OK'),
         ),
       ],
     ),
@@ -364,55 +396,67 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
     return widget.fullScreen ? _buildPage(context) : _buildDialog(context);
   }
 
-  /// Desktop: the floating 460 dp dialog.
+  /// Desktop: a floating dialog in the dialog material, the camera in it.
   Widget _buildDialog(BuildContext context) {
+    final s = AppScheme.of(context);
     return Dialog(
-      backgroundColor: AppColors.surfaceDark,
+      backgroundColor: s.panel,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+        side: BorderSide(color: s.edge),
       ),
-      child: SizedBox(
+      child: Container(
         width: 460,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+          boxShadow: s.floatShadow,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl,
                 AppSpacing.lg,
                 AppSpacing.md,
-                AppSpacing.sm,
                 AppSpacing.md,
               ),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.qr_code_scanner,
-                    size: 18,
-                    color: Colors.white,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
                       widget.title,
-                      style: AppTypography.body.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: AppTypography.sectionTitle.copyWith(color: s.ink),
                     ),
                   ),
+                  _TorchButton(controller: _controller, onDark: false),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white70),
+                    tooltip: 'Close',
+                    icon: Icon(
+                      Icons.close,
+                      size: AppSpacing.icon,
+                      color: s.inkSecondary,
+                    ),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
               ),
             ),
             ClipRRect(
-              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-              child: SizedBox(width: 420, height: 420, child: _scanner()),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              child: SizedBox(
+                width: 412,
+                height: 412,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [_scanner(), const _Viewfinder()],
+                ),
+              ),
             ),
             Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
+              padding: const EdgeInsets.all(AppSpacing.xl),
               child: _caption(),
             ),
           ],
@@ -430,10 +474,7 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.xs,
-                vertical: AppSpacing.xs,
-              ),
+              padding: const EdgeInsets.all(AppSpacing.xs),
               child: Row(
                 children: [
                   IconButton(
@@ -447,46 +488,19 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
                       widget.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.body.copyWith(
+                      style: AppTypography.sectionTitle.copyWith(
                         color: Colors.white,
-                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
-                  _TorchButton(controller: _controller),
+                  _TorchButton(controller: _controller, onDark: true),
                 ],
               ),
             ),
             Expanded(
               child: Stack(
                 fit: StackFit.expand,
-                children: [
-                  _scanner(),
-                  // Viewfinder: a square guide so the user knows where to
-                  // hold the code. Decorative only — detection covers the
-                  // whole frame.
-                  IgnorePointer(
-                    child: Center(
-                      child: FractionallySizedBox(
-                        widthFactor: 0.78,
-                        child: AspectRatio(
-                          aspectRatio: 1,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.7),
-                                width: 2,
-                              ),
-                              borderRadius: BorderRadius.circular(
-                                AppSpacing.radiusMd,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                children: [_scanner(), const _Viewfinder()],
               ),
             ),
             Padding(
@@ -543,41 +557,108 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
     );
   }
 
+  /// Under the camera: what has been read so far, then any problem. On the
+  /// phone page the ground is the camera's black, so the ink is white.
   Widget _caption() {
-    final style =
-        (widget.fullScreen ? AppTypography.bodySmall : AppTypography.caption)
-            .copyWith(color: Colors.white70);
+    final s = AppScheme.of(context);
+    final onDark = widget.fullScreen;
+    final ink = onDark ? Colors.white.withValues(alpha: 0.75) : s.inkSecondary;
+    final style = (onDark ? AppTypography.bodySmall : AppTypography.caption)
+        .copyWith(color: ink);
+    final align = onDark ? TextAlign.center : TextAlign.start;
+    final n = _parts.length;
     return Column(
+      crossAxisAlignment: onDark
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.stretch,
       children: [
-        if (_parts.isNotEmpty) ...[
-          LinearProgressIndicator(value: _progress),
+        if (n > 0) ...[
+          // The decoder estimates how much of the payload it has; a fountain
+          // code has no fixed part count to state, so the line counts parts
+          // read and the bar carries the estimate.
+          _ThinBar(value: _progress, onDark: onDark),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            '${_parts.length} frame${_parts.length == 1 ? '' : 's'} captured — keep the camera on the animation',
+            '$n part${n == 1 ? '' : 's'} read · keep the camera on the '
+            'animation',
             style: style,
-            textAlign: widget.fullScreen ? TextAlign.center : null,
+            textAlign: align,
           ),
         ] else
           Text(
-            'Point the camera at the QR (animated codes are read frame by frame).',
+            'Point the camera at the QR. Animated codes are read part by part.',
             style: style,
-            textAlign: widget.fullScreen ? TextAlign.center : null,
+            textAlign: align,
           ),
         if (_error != null) ...[
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            _error!,
-            textAlign: widget.fullScreen ? TextAlign.center : null,
-            style: AppTypography.caption.copyWith(color: AppColors.danger),
-          ),
+          const SizedBox(height: AppSpacing.md),
+          DangerBanner(message: _error!),
         ],
         if (_deviceHint != null) ...[
-          const SizedBox(height: AppSpacing.sm),
-          _DeviceStepHint(message: _deviceHint!),
+          const SizedBox(height: AppSpacing.md),
+          _DeviceStepHint(message: _deviceHint!, onDark: onDark),
         ],
       ],
     );
   }
+}
+
+/// Four corner marks over the camera — where to hold the code. Decorative:
+/// detection covers the whole frame.
+class _Viewfinder extends StatelessWidget {
+  const _Viewfinder();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Center(
+        child: FractionallySizedBox(
+          widthFactor: 0.72,
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: CustomPaint(
+              painter: _CornersPainter(
+                color: Colors.white.withValues(alpha: 0.6),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CornersPainter extends CustomPainter {
+  const _CornersPainter({required this.color});
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final arm = size.shortestSide * 0.12;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+    final w = size.width;
+    final h = size.height;
+    final path = Path()
+      ..moveTo(0, arm)
+      ..lineTo(0, 0)
+      ..lineTo(arm, 0)
+      ..moveTo(w - arm, 0)
+      ..lineTo(w, 0)
+      ..lineTo(w, arm)
+      ..moveTo(w, h - arm)
+      ..lineTo(w, h)
+      ..lineTo(w - arm, h)
+      ..moveTo(arm, h)
+      ..lineTo(0, h)
+      ..lineTo(0, h - arm);
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_CornersPainter old) => old.color != color;
 }
 
 /// The scanned QR belongs to a flow the device has not finished yet — a Jade
@@ -586,32 +667,28 @@ class _UrScannerDialogState extends State<_UrScannerDialog> {
 /// Deliberately not styled as an error: nothing is broken, the camera is
 /// simply pointed at an earlier step, and the way out is on the device.
 class _DeviceStepHint extends StatelessWidget {
-  const _DeviceStepHint({required this.message});
+  const _DeviceStepHint({required this.message, this.onDark = false});
 
   final String message;
+  final bool onDark;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: AppColors.warning.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.lock_outline, size: 16, color: AppColors.warning),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              message,
-              style: AppTypography.caption.copyWith(color: Colors.white),
-            ),
+    final s = AppScheme.of(context);
+    final ink = onDark ? Colors.white.withValues(alpha: 0.75) : s.inkSecondary;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.lock_outline, size: AppSpacing.iconSmall, color: ink),
+        const SizedBox(width: AppSpacing.sm),
+        Flexible(
+          child: Text(
+            message,
+            style: AppTypography.caption.copyWith(color: ink),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -620,24 +697,31 @@ class _DeviceStepHint extends StatelessWidget {
 /// torch (front cameras and emulators have none) so the header never shows
 /// a control that does nothing.
 class _TorchButton extends StatelessWidget {
-  const _TorchButton({required this.controller});
+  const _TorchButton({required this.controller, this.onDark = true});
   final MobileScannerController controller;
+
+  /// Over the camera's black page (phone) rather than the dialog's panel.
+  final bool onDark;
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     return ValueListenableBuilder<MobileScannerState>(
       valueListenable: controller,
       builder: (context, state, _) {
         final torch = state.torchState;
         if (torch == TorchState.unavailable) {
-          return const SizedBox(width: AppLayout.minTouchTarget);
+          return onDark
+              ? const SizedBox(width: AppLayout.minTouchTarget)
+              : const SizedBox.shrink();
         }
         final on = torch == TorchState.on;
         return IconButton(
           tooltip: on ? 'Torch off' : 'Torch on',
           icon: Icon(
-            on ? Icons.flash_on : Icons.flash_off,
-            color: on ? AppColors.warning : Colors.white,
+            on ? Icons.flashlight_on_outlined : Icons.flashlight_off_outlined,
+            size: onDark ? 22 : AppSpacing.icon,
+            color: onDark ? Colors.white : s.inkSecondary,
           ),
           onPressed: controller.toggleTorch,
         );
@@ -702,7 +786,7 @@ class _UrScannerError extends StatelessWidget {
   Widget build(BuildContext context) {
     final denied = error.errorCode == MobileScannerErrorCode.permissionDenied;
     final style = (large ? AppTypography.body : AppTypography.bodySmall)
-        .copyWith(color: Colors.white70);
+        .copyWith(color: Colors.white.withValues(alpha: 0.75));
     return ColoredBox(
       color: Colors.black,
       child: Center(
@@ -712,10 +796,10 @@ class _UrScannerError extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (large) ...[
-                const Icon(
+                Icon(
                   Icons.videocam_off_outlined,
-                  color: Colors.white54,
-                  size: 40,
+                  color: Colors.white.withValues(alpha: 0.6),
+                  size: AppSpacing.xxl,
                 ),
                 const SizedBox(height: AppSpacing.md),
               ],
@@ -724,7 +808,9 @@ class _UrScannerError extends StatelessWidget {
               SelectableText(
                 _detail,
                 textAlign: TextAlign.center,
-                style: AppTypography.monoSmall.copyWith(color: Colors.white38),
+                style: AppTypography.monoSmall.copyWith(
+                  color: Colors.white.withValues(alpha: 0.5),
+                ),
               ),
               const SizedBox(height: AppSpacing.lg),
               Wrap(
@@ -733,24 +819,16 @@ class _UrScannerError extends StatelessWidget {
                 alignment: WrapAlignment.center,
                 children: [
                   if (onRetry != null)
-                    OutlinedButton.icon(
-                      onPressed: onRetry,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white38),
-                      ),
-                      icon: const Icon(Icons.refresh, size: 16),
-                      label: const Text('Try again'),
+                    _OnCameraButton(
+                      onPressed: onRetry!,
+                      icon: Icons.refresh_outlined,
+                      label: 'Try again',
                     ),
                   if (denied && AppSettingsLauncher.supported)
-                    OutlinedButton.icon(
+                    const _OnCameraButton(
                       onPressed: AppSettingsLauncher.open,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white38),
-                      ),
-                      icon: const Icon(Icons.settings_outlined, size: 16),
-                      label: const Text('Open app settings'),
+                      icon: Icons.settings_outlined,
+                      label: 'Open app settings',
                     ),
                 ],
               ),
@@ -758,6 +836,44 @@ class _UrScannerError extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A quiet outlined button for the camera's black ground, where the panel
+/// buttons of the kit would read as holes: white ink, a white hairline.
+class _OnCameraButton extends StatelessWidget {
+  const _OnCameraButton({
+    required this.onPressed,
+    required this.icon,
+    required this.label,
+  });
+
+  final VoidCallback onPressed;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final phone = AppLayout.isPhone(context);
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        minimumSize: Size(
+          0,
+          phone ? AppLayout.minTouchTarget : AppSpacing.controlHeight,
+        ),
+        textStyle: AppTypography.button,
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.4)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+            phone ? AppSpacing.radiusPhoneControl : AppSpacing.radiusMd,
+          ),
+        ),
+      ),
+      icon: Icon(icon, size: AppSpacing.iconSmall),
+      label: Text(label),
     );
   }
 }

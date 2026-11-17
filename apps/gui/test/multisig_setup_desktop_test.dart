@@ -9,8 +9,9 @@
 //
 // "Import the keys" below it drew its key-source picker with Material's
 // `SegmentedButton`: not the app's material, and five named segments never
-// fitted the wizard's 640 dp column. Chips wrapped onto two ragged lines
-// instead; it is a [ChoiceList] now — one row per source, in one panel.
+// fitted the wizard's 640 dp column. It is a run of the kit's [ChoiceTile]
+// chips now, with short labels that fit, and the one that cannot be taken
+// says why on it.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -19,7 +20,7 @@ import 'package:templar_wallet/bridge/wallet_bridge.dart';
 import 'package:templar_wallet/features/wallet_picker/models/wallet_summary.dart';
 import 'package:templar_wallet/features/create_wallet/models/new_wallet_draft.dart';
 import 'package:templar_wallet/features/create_wallet/multisig_setup_screen.dart';
-import 'package:templar_wallet/shared/widgets/choice_list.dart';
+import 'package:templar_wallet/shared/widgets/buttons.dart';
 
 /// No wallets to lend a key: the step still has to build its N slots and its
 /// source picker. Keeps the real engine (and the user's wallet directory) out
@@ -64,12 +65,16 @@ Widget _host([WalletBridge? bridge]) => MaterialApp(
   ),
 );
 
-/// The step's own progress line, e.g. "0 of 3 provided". Read rather than
-/// hardcoded: the default threshold belongs to the wizard, not to this test.
+/// The step's own progress line, e.g. "0 of 3 keys imported". Read rather
+/// than hardcoded: the default threshold belongs to the wizard, not to this
+/// test.
 String _provided(WidgetTester t) => t
     .widgetList<Text>(find.byType(Text))
     .map((w) => w.data ?? '')
-    .firstWhere((s) => s.endsWith(' provided'), orElse: () => '');
+    .firstWhere(
+      (s) => RegExp(r'^\d+ of \d+ keys imported$').hasMatch(s),
+      orElse: () => '',
+    );
 
 /// Walk to "Import the keys" and type [key] into the first cosigner field.
 Future<void> _typeFirstKey(WidgetTester t, String key) async {
@@ -113,11 +118,11 @@ void main() {
 
     expect(t.takeException(), isNull);
     expect(find.text('Choose your threshold'), findsOneWidget);
-    expect(find.text('Signatures required (M)'), findsOneWidget);
-    expect(find.text('Total keys (N)'), findsOneWidget);
+    expect(find.text('Signatures required'), findsOneWidget);
+    expect(find.text('Total keys'), findsOneWidget);
   });
 
-  testWidgets('key sources are one list of rows', (t) async {
+  testWidgets('key sources are one run of chips', (t) async {
     _desktopWindow(t);
     await t.pumpWidget(_host());
     await t.pumpAndSettle();
@@ -129,17 +134,16 @@ void main() {
     expect(t.takeException(), isNull);
     // A watch-only coordinator imports public keys only: paste/scan, an app
     // wallet, a USB device — no "New key", no "Seed phrase".
-    expect(find.byWidgetPredicate((w) => w is ChoiceList), findsOneWidget);
-    expect(find.byWidgetPredicate((w) => w is ChoiceListRow), findsNWidgets(3));
-    // The option the user cannot take says why, in place.
+    expect(find.byType(ChoiceTile), findsNWidgets(3));
+    // The option the user cannot take says why, on the option itself.
     expect(
-      find.text('No software wallet in this app to lend a key'),
+      find.byTooltip('No software wallet in this app to lend a key'),
       findsOneWidget,
     );
     // "Air-gap / QR" named one of the three things this source does, and the
     // common one — a key from another wallet of your own, or from a phone —
     // was not it.
-    expect(find.text('Paste or scan a key'), findsOneWidget);
+    expect(find.text('Paste or scan'), findsOneWidget);
     expect(find.text('Air-gap / QR'), findsNothing);
     expect(find.text('New key'), findsNothing);
   });
@@ -164,7 +168,11 @@ void main() {
     // Checked, accepted, counted — and the card has closed behind it, naming
     // the key by what a signing device knows it as.
     expect(_provided(t), startsWith('1 of '));
-    expect(find.textContaining("f0b68896 · m/48'/1'/0'/2'"), findsOneWidget);
+    expect(find.text('f0b68896'), findsOneWidget);
+    expect(
+      find.textContaining("Pasted or scanned · m/48'/1'/0'/2'"),
+      findsOneWidget,
+    );
     expect(
       find.text('Cosigner xpub'),
       findsOneWidget,

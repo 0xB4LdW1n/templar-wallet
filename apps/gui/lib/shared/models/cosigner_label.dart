@@ -68,22 +68,20 @@ class CosignerLabel {
     Object? iconId = _sentinel,
     Object? colorValue = _sentinel,
     Object? hardware = _sentinel,
-  }) =>
-      CosignerLabel(
-        id: id,
-        name: name == _sentinel ? this.name : name as String?,
-        iconId: iconId == _sentinel ? this.iconId : iconId as String?,
-        colorValue:
-            colorValue == _sentinel ? this.colorValue : colorValue as int?,
-        hardware: hardware == _sentinel ? this.hardware : hardware as bool?,
-      );
+  }) => CosignerLabel(
+    id: id,
+    name: name == _sentinel ? this.name : name as String?,
+    iconId: iconId == _sentinel ? this.iconId : iconId as String?,
+    colorValue: colorValue == _sentinel ? this.colorValue : colorValue as int?,
+    hardware: hardware == _sentinel ? this.hardware : hardware as bool?,
+  );
 
   Map<String, dynamic> toJson() => {
-        if (name != null && name!.trim().isNotEmpty) 'name': name!.trim(),
-        if (iconId != null) 'icon': iconId,
-        if (colorValue != null) 'color': colorValue,
-        if (hardware != null) 'hw': hardware,
-      };
+    if (name != null && name!.trim().isNotEmpty) 'name': name!.trim(),
+    if (iconId != null) 'icon': iconId,
+    if (colorValue != null) 'color': colorValue,
+    if (hardware != null) 'hw': hardware,
+  };
 
   factory CosignerLabel.fromJson(String id, Map<String, dynamic> j) =>
       CosignerLabel(
@@ -138,30 +136,29 @@ String pathOf(String cosignerKey) {
 /// pressure. Ids are stored, so entries may be added but never renamed.
 const Map<String, IconData> cosignerIcons = {
   'shield': Icons.shield_outlined,
-  'phone': Icons.smartphone_rounded,
-  'laptop': Icons.laptop_mac_rounded,
-  'desktop': Icons.desktop_windows_rounded,
-  'usb': Icons.usb_rounded,
-  'qr': Icons.qr_code_2_rounded,
-  'key': Icons.vpn_key_rounded,
-  'safe': Icons.lock_rounded,
-  'bank': Icons.account_balance_rounded,
-  'home': Icons.home_rounded,
-  'work': Icons.work_outline_rounded,
-  'person': Icons.person_outline_rounded,
-  'group': Icons.groups_rounded,
-  'star': Icons.star_outline_rounded,
+  'phone': Icons.smartphone_outlined,
+  'laptop': Icons.laptop_mac_outlined,
+  'desktop': Icons.desktop_windows_outlined,
+  'usb': Icons.usb_outlined,
+  'qr': Icons.qr_code_2_outlined,
+  'key': Icons.vpn_key_outlined,
+  'safe': Icons.lock_outlined,
+  'bank': Icons.account_balance_outlined,
+  'home': Icons.home_outlined,
+  'work': Icons.work_outline,
+  'person': Icons.person_outline,
+  'group': Icons.groups_outlined,
+  'star': Icons.star_outline,
   'paper': Icons.description_outlined,
   'cloud': Icons.cloud_outlined,
 };
 
 /// Drawn for a co-signer with no icon of its own, and for an id that is no
 /// longer in the catalogue.
-const IconData defaultCosignerIcon = Icons.vpn_key_rounded;
+const IconData defaultCosignerIcon = Icons.vpn_key_outlined;
 
-/// Colours a co-signer can be given. Chosen to stay legible on both the light
-/// and the dark surface, and to be distinguishable from each other at the
-/// 28 dp the ring draws them at.
+/// Colours a co-signer can be given. User data: drawn at full strength only
+/// as the dot beside a key's name, and toned down on a ring's arc.
 const List<int> cosignerColors = [
   0xFFB3261E, // crimson — the app's own accent family
   0xFFD97706, // amber

@@ -79,7 +79,7 @@ void main() {
     expect(find.text('Somewhere else — just watch it'), findsOneWidget);
     // Neither the network nor where the keys live is on this screen: the
     // network sat below the fold here until the owner moved it (2026-09-08).
-    expect(find.text('NETWORK'), findsNothing);
+    expect(find.text('Network'), findsNothing);
     expect(find.text('On this computer'), findsNothing);
   });
 
@@ -93,7 +93,7 @@ void main() {
     expect(find.text('On a hardware wallet'), findsOneWidget);
 
     // Back to the start, pick multisig instead: the keys question is gone.
-    await t.tap(find.byIcon(Icons.arrow_back));
+    await t.tap(find.byTooltip('Back'));
     await t.pumpAndSettle();
     await _tapCard(t, 'Several keys must agree (multisig)');
     await _continue(t);
@@ -101,7 +101,7 @@ void main() {
     expect(find.text('Which coins?'), findsOneWidget);
     expect(newWalletDraft.structure, WalletStructure.multisig);
     // The network is stated here, under the coins — not asked as a step.
-    expect(find.text('NETWORK'), findsOneWidget);
+    expect(find.text('Network'), findsOneWidget);
     expect(find.text('Testnet'), findsOneWidget);
     expect(find.text('Mainnet'), findsOneWidget);
   });
@@ -115,20 +115,23 @@ void main() {
     expect(newWalletDraft.kind, WalletKind.watchOnly);
   });
 
-  testWidgets('the back arrow keeps its place on step 1', (t) async {
+  testWidgets('the counter starts on the title edge; the title never moves', (
+    t,
+  ) async {
     await _pump(t);
 
-    // The slot is rendered on step 1 — inert, but occupying its own width, so
-    // the title beside it does not slide when a real Back appears on step 2.
-    expect(find.byIcon(Icons.arrow_back), findsOneWidget);
+    // Step 1 has nowhere to go back to: no arrow, and the counter sits on the
+    // title's own left edge instead of a slot away from it.
+    expect(find.byTooltip('Back'), findsNothing);
     final titleX = t.getTopLeft(find.text('What kind of wallet?')).dx;
-    final arrowX = t.getTopLeft(find.byIcon(Icons.arrow_back)).dx;
+    expect(t.getTopLeft(find.textContaining('Step 1 of')).dx, titleX);
 
     await _tapCard(t, 'One key');
     await _continue(t);
 
+    // From step 2 on the arrow takes that edge and the title stays put.
     expect(t.getTopLeft(find.text('Where do your keys live?')).dx, titleX);
-    expect(t.getTopLeft(find.byIcon(Icons.arrow_back)).dx, arrowX);
+    expect(t.getTopLeft(find.byTooltip('Back')).dx, titleX);
   });
 
   testWidgets('the header reserves one height for every question', (t) async {
@@ -168,9 +171,9 @@ void main() {
 
     // Walk back and switch to multisig: the flow is a question shorter, and
     // the wizard must not be left pointing past its end.
-    await t.tap(find.byIcon(Icons.arrow_back));
+    await t.tap(find.byTooltip('Back'));
     await t.pumpAndSettle();
-    await t.tap(find.byIcon(Icons.arrow_back));
+    await t.tap(find.byTooltip('Back'));
     await t.pumpAndSettle();
     await _tapCard(t, 'Several keys must agree (multisig)');
     expect(t.takeException(), isNull);

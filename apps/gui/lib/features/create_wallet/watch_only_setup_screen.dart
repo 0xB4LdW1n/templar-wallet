@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -7,12 +8,12 @@ import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/cards.dart';
 import '../../shared/widgets/scan_button.dart';
 import '../../shared/widgets/step_flow_scaffold.dart';
 import '../../shared/widgets/step_header.dart';
 import '../../shared/widgets/wallet_created_view.dart';
-import '../../theme/app_colors.dart';
+import '../../services/file_export.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'models/new_wallet_draft.dart';
@@ -131,9 +132,7 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
   Future<void> _deriveCt() async {
     final btc = _btcController.text.trim();
     if (btc.isEmpty) {
-      setState(
-        () => _deriveError = 'Fill the Bitcoin key or descriptor first.',
-      );
+      setState(() => _deriveError = 'Fill the Bitcoin key or descriptor first');
       return;
     }
     setState(() {
@@ -179,11 +178,11 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
       // The cosigner route hands over to the four multisig coordinator steps;
       // counting them here keeps the bar from lurching on the handover.
       totalSteps: widget.baseStep + (_fromCosigners ? 4 : 2),
-      title: _step == 1 ? 'Watch-only Wallet' : 'Wallet created',
+      title: _step == 1 ? 'Watch-only wallet' : 'Wallet created',
       subtitle: _step == 1 ? _detailsSubtitle : null,
       headerVariants: const [
-        StepHeaderVariant('Watch-only Wallet', _pasteSubtitle),
-        StepHeaderVariant('Watch-only Wallet', _cosignerSubtitle),
+        StepHeaderVariant('Watch-only wallet', _pasteSubtitle),
+        StepHeaderVariant('Watch-only wallet', _cosignerSubtitle),
         StepHeaderVariant('Wallet created'),
       ],
       onBack: _step == 1 ? _exitToWizard : null,
@@ -215,14 +214,14 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
         children: [
           ChoiceTile(
             label: 'Paste a key or descriptor',
-            icon: Icons.content_paste_rounded,
+            icon: Icons.content_paste_outlined,
             selected: !_fromCosigners,
             onSelected: () =>
                 setState(() => newWalletDraft.watchOnlyFromCosigners = false),
           ),
           ChoiceTile(
             label: 'Build from cosigner keys',
-            icon: Icons.group_rounded,
+            icon: Icons.group_outlined,
             selected: _fromCosigners,
             onSelected: () =>
                 setState(() => newWalletDraft.watchOnlyFromCosigners = true),
@@ -251,13 +250,16 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
         Text(
           'Already have the finished descriptor? Choose "Paste a key or '
           'descriptor" above — it is one field and one step.',
-          style: AppTypography.caption,
+          style: AppTypography.caption.copyWith(
+            color: AppScheme.of(context).inkSecondary,
+          ),
         ),
       ],
     );
   }
 
   Widget _detailsBody() {
+    final s = AppScheme.of(context);
     if (_creating) {
       return Center(
         child: Column(
@@ -265,13 +267,16 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
           children: [
             const CircularProgressIndicator(),
             const SizedBox(height: AppSpacing.md),
-            Text('Creating watch-only wallet…', style: AppTypography.body),
+            Text(
+              'Creating watch-only wallet…',
+              style: AppTypography.body.copyWith(color: s.inkSecondary),
+            ),
           ],
         ),
       );
     }
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _sourcePicker(),
         const InfoBanner(
@@ -283,118 +288,58 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
         const SizedBox(height: AppSpacing.xl),
 
         // ── Name ───────────────────────────────────────────────────────
-        FormCard(
-          title: 'Wallet name',
-          child: TextField(
-            controller: _nameController,
-            onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(labelText: 'Name'),
-          ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _FieldLabel('Wallet name'),
+            TextField(
+              controller: _nameController,
+              onChanged: (_) => setState(() {}),
+            ),
+          ],
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.xl),
 
         // ── Bitcoin key / descriptor ───────────────────────────────────
-        FormCard(
-          title: 'Bitcoin key or descriptor',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _btcController,
-                      maxLines: 3,
-                      onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(
-                        hintText: 'tpub… or wpkh(tpub…/<0;1>/*)',
-                        alignLabelWithHint: true,
-                      ),
-                      style: AppTypography.monoSmall,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  ScanIconButton(
-                    controller: _btcController,
-                    title: 'Scan Bitcoin xpub / descriptor',
-                    tooltip: 'Scan QR (Jade: QR mode → Xpub export)',
-                    onScanned: (_) => setState(() {}),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Paste an extended public key (xpub/tpub) — wrapped as native '
-                'SegWit — or a full output descriptor. The QR button reads a '
-                'signer\'s xpub export (BC-UR or plain text).',
-                style: AppTypography.caption,
-              ),
-            ],
-          ),
+        _KeyField(
+          label: 'Bitcoin key or descriptor',
+          controller: _btcController,
+          hint: 'tpub… or wpkh(tpub…/<0;1>/*)',
+          scanTitle: 'Scan Bitcoin xpub / descriptor',
+          scanTooltip: 'Scan QR (Jade: QR mode → Xpub export)',
+          onChanged: () => setState(() {}),
+          help:
+              'An extended public key (xpub/tpub), wrapped as native SegWit, '
+              'or a full output descriptor. The scanner reads a signer\'s '
+              'xpub export (BC-UR or plain text).',
         ),
 
         // ── Liquid CT descriptor (conditional) ─────────────────────────
         if (_liquid) ...[
-          const SizedBox(height: AppSpacing.lg),
-          FormCard(
-            title: 'Liquid CT descriptor',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _ctController,
-                        maxLines: 3,
-                        onChanged: (_) => setState(() {}),
-                        decoration: const InputDecoration(
-                          hintText: 'ct(slip77(…),elwpkh(…))',
-                          alignLabelWithHint: true,
-                        ),
-                        style: AppTypography.monoSmall,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    ScanIconButton(
-                      controller: _ctController,
-                      title: 'Scan Liquid CT descriptor',
-                      onScanned: (_) => setState(() {}),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.auto_fix_high_rounded, size: 16),
-                    label: Text(
-                      _deriving
-                          ? 'Deriving…'
-                          : 'Derive from the Bitcoin descriptor',
-                    ),
-                    onPressed: _deriving ? null : _deriveCt,
-                  ),
-                ),
-                Text(
-                  'A confidential Liquid descriptor including the blinding key '
-                  '— e.g. ct(slip77(<key>),elwpkh(<xpub>/<0;1>/*)). Derive uses '
-                  'ELIP151 (this app\'s convention); wallets with a seed-derived '
-                  'SLIP77 key need their own exported descriptor.',
-                  style: AppTypography.caption,
-                ),
-                if (_deriveError != null) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    _deriveError!,
-                    style: AppTypography.caption.copyWith(
-                      color: AppColors.danger,
-                    ),
-                  ),
-                ],
-              ],
+          const SizedBox(height: AppSpacing.xl),
+          _KeyField(
+            label: 'Liquid CT descriptor',
+            controller: _ctController,
+            hint: 'ct(slip77(…),elwpkh(…))',
+            scanTitle: 'Scan Liquid CT descriptor',
+            scanTooltip: 'Scan QR',
+            onChanged: () => setState(() {}),
+            error: _deriveError,
+            help:
+                'A confidential Liquid descriptor including the blinding key '
+                '— e.g. ct(slip77(<key>),elwpkh(<xpub>/<0;1>/*)). Derive uses '
+                'ELIP151 (this app\'s convention); wallets with a seed-derived '
+                'SLIP77 key need their own exported descriptor.',
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: GhostButton(
+              label: _deriving
+                  ? 'Deriving…'
+                  : 'Derive from the Bitcoin descriptor',
+              icon: Icons.auto_fix_high_outlined,
+              onPressed: _deriving ? null : _deriveCt,
             ),
           ),
         ],
@@ -445,7 +390,7 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
           ),
           const SizedBox(width: AppSpacing.md),
           PrimaryButton(
-            label: 'Open Wallet',
+            label: 'Open wallet',
             onPressed: () => context.go(AppRoutes.dashboard),
           ),
         ],
@@ -454,20 +399,146 @@ class _WatchOnlySetupScreenState extends State<WatchOnlySetupScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        GhostButton(label: 'Back', onPressed: _exitToWizard),
+        GhostButton(
+          label: 'Back',
+          icon: Icons.arrow_back,
+          onPressed: _exitToWizard,
+        ),
         const SizedBox(width: AppSpacing.md),
         if (_fromCosigners)
-          PrimaryButton(
-            label: 'Continue',
-            icon: Icons.group_rounded,
-            onPressed: widget.onUseCosignerKeys,
-          )
+          PrimaryButton(label: 'Continue', onPressed: widget.onUseCosignerKeys)
         else
           PrimaryButton(
-            label: 'Create Wallet',
-            icon: Icons.visibility_outlined,
+            label: 'Create wallet',
             onPressed: _canCreate ? _create : null,
           ),
+      ],
+    );
+  }
+}
+
+/// A field's label: an eyebrow above it, never floating inside.
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Text(
+        text,
+        style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+      ),
+    );
+  }
+}
+
+/// A public key or descriptor: a multi-line mono field, its label above and
+/// the three ways to fill it — paste, scan, a text file — as icon buttons at
+/// the label's end. A problem with the value is said under the field.
+class _KeyField extends StatelessWidget {
+  const _KeyField({
+    required this.label,
+    required this.controller,
+    required this.hint,
+    required this.scanTitle,
+    required this.scanTooltip,
+    required this.onChanged,
+    required this.help,
+    this.error,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final String hint;
+  final String scanTitle;
+  final String scanTooltip;
+  final VoidCallback onChanged;
+  final String help;
+  final String? error;
+
+  Future<void> _paste() async {
+    final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text?.trim();
+    if (text == null || text.isEmpty) return;
+    controller.text = text;
+    onChanged();
+  }
+
+  Future<void> _openFile(BuildContext context) async {
+    try {
+      final file = await FileExport.pickFile(
+        label: 'Key or descriptor',
+        extensions: const ['txt'],
+      );
+      if (file == null) return;
+      final text = (await file.readAsString()).trim();
+      if (text.isEmpty) return;
+      controller.text = text;
+      onChanged();
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not read the file: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    final iconSize = phone ? 22.0 : AppSpacing.icon;
+    final err = error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            // The icon buttons set this row's height; the label sits on
+            // its centre line instead of carrying its own gap.
+            Expanded(
+              child: Text(
+                label,
+                style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Paste',
+              iconSize: iconSize,
+              icon: const Icon(Icons.content_paste_outlined),
+              onPressed: _paste,
+            ),
+            ScanIconButton(
+              controller: controller,
+              title: scanTitle,
+              tooltip: scanTooltip,
+              onScanned: (_) => onChanged(),
+            ),
+            IconButton(
+              tooltip: 'Open a text file',
+              iconSize: iconSize,
+              icon: const Icon(Icons.file_open_outlined),
+              onPressed: () => _openFile(context),
+            ),
+          ],
+        ),
+        TextField(
+          controller: controller,
+          minLines: 3,
+          maxLines: 5,
+          autocorrect: false,
+          enableSuggestions: false,
+          onChanged: (_) => onChanged(),
+          decoration: InputDecoration(hintText: hint, errorText: err),
+          style: AppTypography.mono.copyWith(color: s.ink),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          help,
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+        ),
       ],
     );
   }

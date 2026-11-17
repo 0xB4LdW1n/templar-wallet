@@ -2,8 +2,10 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import '../../bridge/bridge_provider.dart';
-import '../../shared/widgets/glass_dialog.dart';
-import '../../theme/app_colors.dart';
+import '../../shared/widgets/app_dialog.dart';
+import '../../shared/widgets/banners.dart';
+import '../../shared/widgets/buttons.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 
@@ -60,23 +62,22 @@ class _VaultSetupSheetState extends State<VaultSetupSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return GlassDialog(
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    return PromptDialog(
       title: 'Encrypt wallet storage',
       icon: Icons.shield_outlined,
       actions: [
-        TextButton(
+        GhostButton(
+          label: 'Cancel',
           onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          isFullWidth: phone,
         ),
-        FilledButton(
+        PrimaryButton(
+          label: 'Encrypt',
+          isLoading: _busy,
           onPressed: _busy ? null : _submit,
-          child: _busy
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Encrypt'),
+          isFullWidth: phone,
         ),
       ],
       child: Column(
@@ -90,29 +91,16 @@ class _VaultSetupSheetState extends State<VaultSetupSheet> {
             'overwritten and deleted as part of this — though a '
             '${Platform.isAndroid ? 'cloud backup' : 'Time Machine snapshot'} '
             'or a copy made earlier is beyond Templar\'s reach.',
-            style: AppTypography.caption,
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
           ),
-          const SizedBox(height: AppSpacing.md),
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: AppColors.danger.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-              border: Border.all(
-                color: AppColors.danger.withValues(alpha: 0.4),
-              ),
-            ),
-            child: Text(
-              'If you lose this passphrase, the wallets stored in this app '
-              'cannot be recovered without their seed-phrase backups.',
-              style: AppTypography.bodySmall.copyWith(
-                color: AppColors.danger,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+          const SizedBox(height: AppSpacing.lg),
+          const WarningBanner(
+            message:
+                'If you lose this passphrase, the wallets stored in this app '
+                'cannot be recovered without their seed-phrase backups.',
           ),
-          const SizedBox(height: AppSpacing.md),
-          GlassPasswordField(
+          const SizedBox(height: AppSpacing.lg),
+          PasswordField(
             controller: _passCtrl,
             label: 'Passphrase',
             autofocus: true,
@@ -120,8 +108,8 @@ class _VaultSetupSheetState extends State<VaultSetupSheet> {
               if (_error != null) setState(() => _error = null);
             },
           ),
-          const SizedBox(height: AppSpacing.md),
-          GlassPasswordField(
+          const SizedBox(height: AppSpacing.lg),
+          PasswordField(
             controller: _confirmCtrl,
             label: 'Confirm passphrase',
             errorText: _error,

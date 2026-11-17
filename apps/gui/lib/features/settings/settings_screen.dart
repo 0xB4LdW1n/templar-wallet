@@ -19,20 +19,22 @@ import '../../services/cosigner_label_store.dart';
 import '../../services/wallet_customization_store.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/cards.dart';
-import '../../shared/widgets/code_box.dart';
 import '../../shared/widgets/cosigner_label_editor.dart';
 import '../../shared/widgets/cosigner_ring.dart';
-import '../../shared/widgets/glass_dialog.dart';
+import '../../shared/widgets/app_dialog.dart';
+import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/list_rows.dart';
 import '../../shared/widgets/page_header.dart';
+import '../../shared/widgets/seal_mark.dart';
 import '../../shared/widgets/segmented_switch.dart';
 import 'backup_verify_section.dart';
 import 'biometric_unlock_tile.dart';
 import 'liquid_network_switch.dart';
 import 'protocol_section.dart';
 import 'seed_phrase_section.dart';
+import 'settings_kit.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
@@ -42,7 +44,9 @@ import 'package:url_launcher/url_launcher.dart';
 /// phone that is what makes a section a sub-page, with the shell's back
 /// arrow and the system back both returning to the settings list.
 enum SettingsSection {
-  network('Network & Sync', Icons.wifi_outlined, AppRoutes.settingsNetwork),
+  network('Network', Icons.wifi_outlined, AppRoutes.settingsNetwork),
+  // The icon is the fallback only: Templar Protocol wears the brand's cross
+  // ([glyph]), which no icon font carries.
   protocol('Templar Protocol', Icons.link_outlined, AppRoutes.settingsProtocol),
   security('Security', Icons.lock_outline, AppRoutes.settingsSecurity),
   appearance(
@@ -50,7 +54,7 @@ enum SettingsSection {
     Icons.palette_outlined,
     AppRoutes.settingsAppearance,
   ),
-  advanced('Advanced', Icons.tune_rounded, AppRoutes.settingsAdvanced),
+  advanced('Advanced', Icons.tune_outlined, AppRoutes.settingsAdvanced),
   about('About', Icons.info_outline, AppRoutes.settingsAbout);
 
   const SettingsSection(this.label, this.icon, this.route);
@@ -58,7 +62,20 @@ enum SettingsSection {
   final String label;
   final IconData icon;
   final String route;
+
+  /// The section's glyph at [size] in [color]: its icon, or — for Templar
+  /// Protocol — the Templar cross, drawn in the row's ink like any icon.
+  Widget glyph(double size, Color color) => this == SettingsSection.protocol
+      ? CrossGlyph(size: size, color: color)
+      : Icon(icon, size: size, color: color);
 }
+
+/// The section pane's measure: settings rows wider than this stop scanning
+/// as one line of label, description and control.
+const double _kPaneMaxWidth = 720;
+
+/// The desktop rail beside the section pane.
+const double _kRailWidth = 200;
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, this.section});
@@ -72,7 +89,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  /// Desktop: the pane on show. The menu switches it locally; a section
+  /// Desktop: the pane on show. The rail switches it locally; a section
   /// route only picks the one to start on.
   late SettingsSection _section = widget.section ?? SettingsSection.network;
 
@@ -85,11 +102,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    // Phones: the settings root is a list of sections (one row each, icon
-    // plate, name, what is inside), and a section is a page of its own under
-    // the shell's "‹ Section" header. Desktop keeps its two panes whatever
-    // the window size.
+    final s = AppScheme.of(context);
+    // Phones: the settings root is a list of sections, and a section is a
+    // page of its own under the shell's "‹ Section" header. Desktop keeps
+    // its two panes whatever the window size.
     if (AppLayout.isPhone(context)) {
       final section = widget.section;
       if (section == null) return const _SettingsHome();
@@ -98,91 +114,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // background and the SafeArea (a nested Scaffold would show every
       // SnackBar twice).
       return ColoredBox(
-        color: isDark ? AppColors.backgroundDark : AppColors.backgroundLight,
+        color: s.canvas,
         child: ListView(
-          // Foot room: the last thing on a section page (the danger card,
-          // the source-code row) otherwise ends flush against the system
-          // navigation bar, with nothing to say the page stopped.
+          // Foot room: the last thing on a section page otherwise ends flush
+          // against the system navigation bar.
           padding: EdgeInsets.fromLTRB(p, p, p, p + AppSpacing.xxl),
           children: [_contentOf(section)],
         ),
       );
     }
+    final p = AppSpacing.pagePadding(context);
     return Scaffold(
-      backgroundColor: isDark
-          ? AppColors.backgroundDark
-          : AppColors.backgroundLight,
+      backgroundColor: s.canvas,
       body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Subsection menu
-          SizedBox(
-            width: 200,
-            child: Container(
-              color: isDark ? AppColors.surfaceDark : AppColors.surfaceLight,
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-                    child: Text('Settings', style: AppTypography.sectionTitle),
+          // The rail: quiet, the main sidebar's row grammar, the page's name
+          // at its head. The selected section is a surface step, never red.
+          Container(
+            width: _kRailWidth,
+            decoration: BoxDecoration(
+              color: s.canvas,
+              border: Border(right: BorderSide(color: s.edge)),
+            ),
+            padding: EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              p,
+              AppSpacing.md,
+              AppSpacing.lg,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(
+                    left: AppSpacing.md,
+                    bottom: AppSpacing.xl,
                   ),
-                  for (final s in SettingsSection.values)
-                    _sectionTile(s, isDark),
-                ],
-              ),
+                  child: Text(
+                    'Settings',
+                    style: AppTypography.pageTitle.copyWith(color: s.ink),
+                  ),
+                ),
+                for (final section in SettingsSection.values)
+                  _RailRow(
+                    section: section,
+                    selected: section == _section,
+                    onTap: () => setState(() => _section = section),
+                  ),
+              ],
             ),
           ),
-          const VerticalDivider(width: 1),
-          // Content
+          // The pane starts straight with its groups: the rail already says
+          // which section this is.
           Expanded(
             child: ListView(
-              padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-              children: [_contentOf(_section)],
+              padding: EdgeInsets.all(p),
+              children: [
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: _kPaneMaxWidth),
+                    child: _contentOf(_section),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  /// One entry of the desktop menu column.
-  Widget _sectionTile(SettingsSection s, bool isDark) {
-    final isActive = s == _section;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-      child: InkWell(
-        onTap: () => setState(() => _section = s),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
-          ),
-          decoration: BoxDecoration(
-            color: isActive
-                ? AppColors.accent.withValues(alpha: isDark ? 0.16 : 0.12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-          ),
-          child: Row(
-            children: [
-              Icon(s.icon, size: 16, color: isActive ? AppColors.accent : null),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  s.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.navItem.copyWith(
-                    color: isActive ? AppColors.accent : null,
-                    fontWeight: isActive ? FontWeight.w600 : null,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -197,13 +196,122 @@ class _SettingsScreenState extends State<SettingsScreen> {
   };
 }
 
+/// One entry of the desktop rail: 36 tall, 2 apart, an 18 px outlined glyph
+/// and the label — the main sidebar's row, one level down.
+class _RailRow extends StatefulWidget {
+  const _RailRow({
+    required this.section,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final SettingsSection section;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_RailRow> createState() => _RailRowState();
+}
+
+class _RailRowState extends State<_RailRow> {
+  bool _hover = false;
+  bool _focus = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final active = widget.selected;
+    final ink = active || _hover ? s.ink : s.inkSecondary;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Semantics(
+        button: true,
+        selected: active,
+        label: widget.section.label,
+        excludeSemantics: true,
+        child: FocusableActionDetector(
+          mouseCursor: SystemMouseCursors.click,
+          onShowHoverHighlight: (v) => setState(() => _hover = v),
+          onShowFocusHighlight: (v) => setState(() => _focus = v),
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                widget.onTap();
+                return null;
+              },
+            ),
+          },
+          child: GestureDetector(
+            onTap: widget.onTap,
+            behavior: HitTestBehavior.opaque,
+            child: AnimatedContainer(
+              duration: AppMotion.of(context, AppMotion.instant),
+              curve: AppMotion.settle,
+              height: AppSpacing.navRowHeight,
+              decoration: BoxDecoration(
+                color: active
+                    ? s.thumb
+                    : _hover
+                    ? s.hover
+                    : s.hover.withValues(alpha: 0),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              ),
+              foregroundDecoration: _focus
+                  ? BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                      border: Border.all(color: s.focus, width: 2),
+                    )
+                  : null,
+              child: Stack(
+                alignment: AlignmentDirectional.centerStart,
+                children: [
+                  CurrentMark(active: active),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                    ),
+                    child: Row(
+                      children: [
+                        // The section on show wears the accent on its glyph,
+                        // as the sidebar's current row does.
+                        widget.section.glyph(
+                          AppSpacing.navIcon,
+                          active ? s.accentGlyph : ink,
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Text(
+                            widget.section.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.navItem.copyWith(
+                              color: ink,
+                              fontWeight: active
+                                  ? FontWeight.w500
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Phone: the settings list ──────────────────────────────────────────────────
 //
 // Groups, not one long card. Each group is a subject — what protects the
 // wallet, how it looks, what it talks to — and inside it the switches a user
 // actually flips sit inline, while the rows that need a whole page carry a
 // chevron to one. Wallet info is the first row: it is the wallet's public
-// face and used to cost a carousel slot of its own.
+// face and has no tab of its own.
 
 class _SettingsHome extends StatefulWidget {
   const _SettingsHome();
@@ -292,16 +400,12 @@ class _SettingsHomeState extends State<_SettingsHome> {
       child: ListView(
         padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
         children: [
-          const PageHeader(
-            title: 'Settings',
-            subtitle: 'Wallet controls and optional tools',
-          ),
-          const ListSectionLabel(label: 'Wallet'),
-          ListCard(
+          const PageHeader(title: 'Settings'),
+          SettingsGroup(
+            label: 'Wallet',
             children: [
               ListRow(
-                icon: Icons.key_rounded,
-                tint: s.accent,
+                icon: Icons.key_outlined,
                 title: 'Wallet info',
                 subtitle: 'Keys, descriptors, export',
                 chevron: true,
@@ -309,80 +413,66 @@ class _SettingsHomeState extends State<_SettingsHome> {
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.lg),
-          const ListSectionLabel(label: 'Security'),
-          ListCard(
+          const SettingsGap(),
+          SettingsGroup(
+            label: 'Security',
             children: [
               if (_hasBiometrics) const BiometricUnlockTile(compact: true),
               const AutoLockRow(),
               ListRow(
-                icon: Icons.lock_rounded,
-                tint: s.success,
-                title: 'Vault & backup',
+                icon: Icons.lock_outline,
+                title: 'Vault and backup',
                 subtitle: 'Passphrase, backup check, seed',
                 chevron: true,
                 onTap: () => context.go(SettingsSection.security.route),
               ),
               if (_vaultUnlocked)
                 ListRow(
-                  icon: Icons.lock_clock_rounded,
-                  tint: s.success,
+                  icon: Icons.lock_clock_outlined,
                   title: 'Lock now',
                   subtitle: 'Ask for the passphrase again',
                   onTap: _lock,
                 ),
             ],
           ),
-          const SizedBox(height: AppSpacing.lg),
-          const ListSectionLabel(label: 'Appearance'),
-          ListCard(
+          const SettingsGap(),
+          // There is no "Reduce effects" row: the app has no blur for it to
+          // switch off, and a switch that changes nothing is a lie. The
+          // preference and its setter stay in AppState.
+          SettingsGroup(
+            label: 'Appearance',
             children: [
               ListRow(
-                icon: Icons.palette_rounded,
-                tint: s.bitcoin,
-                title: 'Theme & units',
+                icon: Icons.palette_outlined,
+                title: 'Theme and units',
                 subtitle:
                     '$theme · ${st.fiatCurrency} · '
                     '${st.useSats ? 'sats' : 'BTC'}',
                 chevron: true,
                 onTap: () => context.go(SettingsSection.appearance.route),
               ),
-              ListRow(
-                icon: Icons.blur_on_rounded,
-                tint: s.bitcoin,
-                title: 'Reduce effects',
-                subtitle: 'Solid panels, no blur',
-                trailing: ListSwitch(
-                  value: st.reduceEffects,
-                  onChanged: st.setReduceEffects,
-                  semanticLabel: 'Reduce effects',
-                ),
-              ),
             ],
           ),
-          const SizedBox(height: AppSpacing.lg),
-          const ListSectionLabel(label: 'Network'),
-          ListCard(
+          const SettingsGap(),
+          SettingsGroup(
+            label: 'Network',
             children: [
               ListRow(
-                icon: Icons.wifi_rounded,
-                tint: s.liquid,
-                title: 'Nodes & explorers',
+                icon: Icons.wifi_outlined,
+                title: 'Nodes and explorers',
                 subtitle: 'Liquid $liquidNet · Bitcoin Electrum',
                 chevron: true,
                 onTap: () => context.go(SettingsSection.network.route),
               ),
               ListRow(
-                icon: Icons.link_rounded,
-                tint: s.liquid,
+                glyph: (size, color) => CrossGlyph(size: size, color: color),
                 title: 'Templar Protocol',
                 subtitle: _protocolSubtitle(st),
                 chevron: true,
                 onTap: () => context.go(SettingsSection.protocol.route),
               ),
               ListRow(
-                icon: Icons.sync_rounded,
-                tint: s.liquid,
+                icon: Icons.sync_outlined,
                 title: 'Auto-sync',
                 subtitle: 'Sync this wallet when the app opens',
                 trailing: ListSwitch(
@@ -393,13 +483,12 @@ class _SettingsHomeState extends State<_SettingsHome> {
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.lg),
-          const ListSectionLabel(label: 'Advanced'),
-          ListCard(
+          const SettingsGap(),
+          SettingsGroup(
+            label: 'Advanced',
             children: [
               ListRow(
-                icon: Icons.tune_rounded,
-                tint: s.inkSecondary,
+                icon: Icons.tune_outlined,
                 title: 'Optional features',
                 subtitle: _advancedSummary(st),
                 chevron: true,
@@ -407,13 +496,12 @@ class _SettingsHomeState extends State<_SettingsHome> {
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.lg),
-          const ListSectionLabel(label: 'About'),
-          ListCard(
+          const SettingsGap(),
+          SettingsGroup(
+            label: 'About',
             children: [
               ListRow(
-                icon: Icons.info_rounded,
-                tint: s.inkSecondary,
+                icon: Icons.info_outline,
                 title: 'Templar Wallet',
                 subtitle: 'v$kAppVersion · Testnet',
                 chevron: true,
@@ -422,35 +510,6 @@ class _SettingsHomeState extends State<_SettingsHome> {
             ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// The footnote under a phone list group — the paragraph a one-line [ListRow]
-/// subtitle cannot hold, and the reason a group can become rows at all.
-///
-/// Lives here (and, in copy, in the two section widgets) because it belongs
-/// in list_rows.dart, which is owned elsewhere this pass.
-class _SettingsNote extends StatelessWidget {
-  const _SettingsNote({required this.text, this.color});
-  final String text;
-
-  /// Overrides the ink where the note is a state and not a description.
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, AppSpacing.sm, 2, 0),
-      child: Text(
-        text,
-        style: AppTypography.caption.copyWith(
-          fontSize: 12.5,
-          color: color ?? s.inkSecondary,
-          height: 1.35,
-        ),
       ),
     );
   }
@@ -475,73 +534,56 @@ class _AdvancedSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
     final state = context.watch<AppState>();
-    final phone = AppLayout.isPhone(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return SettingsGroup(
+      label: 'Features',
+      note:
+          'Off by default. Enabling a feature reveals its screens only; it '
+          'does not share keys, sign, broadcast, or move funds.',
       children: [
-        if (!phone)
-          const PageHeader(
-            title: 'Advanced',
-            subtitle: 'Optional wallet features',
+        ListRow(
+          key: const Key('advanced-liquiddex'),
+          icon: Icons.swap_horiz_outlined,
+          title: 'LiquiDEX',
+          subtitle: 'Atomic swaps between Liquid assets',
+          trailing: ListSwitch(
+            value: state.liquidDexEnabled,
+            onChanged: state.setLiquidDexEnabled,
+            semanticLabel: 'Show LiquiDEX',
           ),
-        const ListSectionLabel(label: 'Features'),
-        ListCard(
-          children: [
-            ListRow(
-              key: const Key('advanced-liquiddex'),
-              icon: Icons.swap_horiz_rounded,
-              tint: s.liquid,
-              title: 'LiquiDEX',
-              subtitle: 'Atomic swaps between Liquid assets',
-              trailing: ListSwitch(
-                value: state.liquidDexEnabled,
-                onChanged: state.setLiquidDexEnabled,
-                semanticLabel: 'Show LiquiDEX',
-              ),
-            ),
-            ListRow(
-              key: const Key('advanced-peg'),
-              icon: Icons.swap_vert_rounded,
-              tint: s.bitcoin,
-              title: 'Peg',
-              subtitle: 'Move value between Bitcoin and Liquid',
-              trailing: ListSwitch(
-                value: state.pegEnabled,
-                onChanged: state.setPegEnabled,
-                semanticLabel: 'Show Peg',
-              ),
-            ),
-            ListRow(
-              key: const Key('advanced-loans'),
-              icon: Icons.handshake_outlined,
-              tint: s.liquid,
-              title: 'Loans',
-              subtitle: 'Templar Protocol positions and requests',
-              trailing: ListSwitch(
-                value: state.loansEnabled,
-                onChanged: state.setLoansEnabled,
-                semanticLabel: 'Show Loans',
-              ),
-            ),
-          ],
         ),
-        const _SettingsNote(
-          text:
-              'Off by default. Enabling a feature reveals its screens only; '
-              'it does not share keys, sign, broadcast, or move funds.',
+        ListRow(
+          key: const Key('advanced-peg'),
+          icon: Icons.swap_vert_outlined,
+          title: 'Peg',
+          subtitle: 'Move value between Bitcoin and Liquid',
+          trailing: ListSwitch(
+            value: state.pegEnabled,
+            onChanged: state.setPegEnabled,
+            semanticLabel: 'Show Peg',
+          ),
+        ),
+        ListRow(
+          key: const Key('advanced-loans'),
+          icon: Icons.handshake_outlined,
+          title: 'Loans',
+          subtitle: 'Templar Protocol positions and requests',
+          trailing: ListSwitch(
+            value: state.loansEnabled,
+            onChanged: state.setLoansEnabled,
+            semanticLabel: 'Show Loans',
+          ),
         ),
       ],
     );
   }
 }
 
-// ── Danger zone ───────────────────────────────────────────────────────────────
+// ── Delete wallet ─────────────────────────────────────────────────────────────
 //
-// Last thing on the page, and the only red surface in Settings. Deleting a
-// wallet is the one action here that can lose money, so it does not share a
-// card with anything else and it does not look like the rest of the app.
+// Last group on the Security page, on its own. Deleting a wallet is the one
+// action here that can lose money: it says so with its verb, its icon and the
+// danger ink on its button, and the paragraph under it says what is at stake.
 
 class _DangerZone extends StatelessWidget {
   const _DangerZone({required this.onDelete});
@@ -551,81 +593,29 @@ class _DangerZone extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
-    return Container(
-      width: double.infinity,
-      // A phone gives back the 8 dp of inset it cannot spare on a 347 dp
-      // column, and takes the phone card corner so this reads as the same
-      // material as the list cards above it — only red.
-      padding: EdgeInsets.all(phone ? AppSpacing.lg : AppSpacing.xl),
-      decoration: BoxDecoration(
-        color: AppColors.danger.withValues(alpha: s.isDark ? 0.09 : 0.05),
-        borderRadius: BorderRadius.circular(
-          phone ? AppSpacing.radiusLg : AppSpacing.radiusMd,
+    final button = DangerButton(
+      label: 'Delete wallet',
+      icon: Icons.delete_outline,
+      onPressed: onDelete,
+      isFullWidth: phone,
+    );
+    return SettingsGroup(
+      label: 'Danger zone',
+      note:
+          'Removes the wallet and its keys from this app. There is no undo '
+          'and no copy anywhere else. If you do not hold a written backup of '
+          'the recovery phrase, every coin in it becomes unspendable — by you '
+          'and by everyone.',
+      footer: phone ? button : null,
+      children: [
+        SettingsRow(
+          icon: Icons.delete_outline,
+          tint: s.danger,
+          title: 'Delete this wallet',
+          subtitle: 'Removes the wallet and its keys from this app',
+          trailing: phone ? null : button,
         ),
-        border: Border.all(color: AppColors.danger.withValues(alpha: 0.55)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.warning_amber_rounded,
-                color: AppColors.danger,
-                size: 20,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Text(
-                'DANGER ZONE',
-                style: AppTypography.navSection.copyWith(
-                  color: AppColors.danger,
-                  letterSpacing: 1.4,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            'Delete this wallet',
-            style: AppTypography.sectionTitle.copyWith(color: AppColors.danger),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            'Removes the wallet and its keys from this app. There is no undo '
-            'and no copy anywhere else. If you do not hold a written backup of '
-            'the recovery phrase, every coin in it becomes unspendable — by '
-            'you and by everyone.',
-            style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          // Phone: the shared DangerButton is this same red slab at the
-          // phone's 54 dp / radius 16, full width so the one irreversible
-          // action on the page is one unmissable bar. Desktop keeps its own
-          // inline Material button, verbatim.
-          if (phone)
-            DangerButton(
-              label: 'Delete wallet',
-              icon: Icons.delete_forever_outlined,
-              onPressed: onDelete,
-              isFullWidth: true,
-            )
-          else
-            FilledButton.icon(
-              onPressed: onDelete,
-              icon: const Icon(Icons.delete_forever_outlined, size: 18),
-              label: const Text('Delete wallet'),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.danger,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.xl,
-                  vertical: AppSpacing.md,
-                ),
-              ),
-            ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -679,61 +669,43 @@ class _DeleteWalletDialogState extends State<_DeleteWalletDialog> {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
     return AppDialog(
-      title: Row(
-        children: [
-          const Icon(Icons.warning_amber_rounded, color: AppColors.danger),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              'Delete "${widget.walletName}"?',
-              style: AppTypography.sectionTitle.copyWith(
-                color: AppColors.danger,
-              ),
-            ),
-          ),
-        ],
+      icon: Icon(
+        Icons.warning_amber_outlined,
+        color: s.danger,
+        size: AppSpacing.icon,
+      ),
+      title: Text(
+        'Delete "${widget.walletName}"?',
+        style: AppTypography.sectionTitle.copyWith(color: s.ink),
       ),
       content: SizedBox(
-        width: AppLayout.isPhone(context) ? double.infinity : 460,
+        width: phone ? double.infinity : 460,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppSpacing.md),
-              decoration: BoxDecoration(
-                color: AppColors.danger.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                border: Border.all(
-                  color: AppColors.danger.withValues(alpha: 0.45),
-                ),
-              ),
-              child: Text(
-                'This deletes the only copy of this wallet on this '
-                '${Platform.isAndroid ? 'device' : 'computer'}. '
-                'Without a written backup of the recovery phrase, the funds '
-                'are gone permanently — nobody, including Templar, can bring '
-                'them back.',
-                style: AppTypography.body.copyWith(
-                  color: AppColors.danger,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+            DangerBanner(
+              message:
+                  'This deletes the only copy of this wallet on this '
+                  '${Platform.isAndroid ? 'device' : 'computer'}. '
+                  'Without a written backup of the recovery phrase, the funds '
+                  'are gone permanently — nobody, including Templar, can bring '
+                  'them back.',
             ),
             const SizedBox(height: AppSpacing.lg),
-            // The pause. A draining bar reads as "wait", where a plain
+            // The pause. A filling ring reads as "wait", where a plain
             // disabled button reads as "broken".
             if (_waiting) ...[
               Row(
                 children: [
                   SizedBox(
-                    width: 16,
-                    height: 16,
+                    width: AppSpacing.iconSmall,
+                    height: AppSpacing.iconSmall,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
                       value: (_waitSeconds - _remaining) / _waitSeconds,
-                      color: AppColors.danger,
+                      color: s.inkSecondary,
+                      backgroundColor: s.edge,
                     ),
                   ),
                   const SizedBox(width: AppSpacing.md),
@@ -750,8 +722,8 @@ class _DeleteWalletDialogState extends State<_DeleteWalletDialog> {
               ),
             ] else ...[
               Text(
-                'Type $_phrase to confirm.',
-                style: AppTypography.bodySmall.copyWith(color: s.ink),
+                'Type $_phrase to confirm',
+                style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
               ),
               const SizedBox(height: AppSpacing.sm),
               TextField(
@@ -763,26 +735,6 @@ class _DeleteWalletDialogState extends State<_DeleteWalletDialog> {
                 decoration: InputDecoration(
                   hintText: _phrase,
                   hintStyle: AppTypography.mono.copyWith(color: s.inkFaint),
-                  // The red ring IS the warning here, so it stays on a phone
-                  // — but at the phone field's own radius and hairline, or it
-                  // fights the 14-radius fill the theme paints underneath.
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(
-                      phone ? AppSpacing.radiusLg : AppSpacing.radiusSm,
-                    ),
-                    borderSide: BorderSide(
-                      color: AppColors.danger.withValues(alpha: 0.45),
-                    ),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(
-                      phone ? AppSpacing.radiusLg : AppSpacing.radiusSm,
-                    ),
-                    borderSide: BorderSide(
-                      color: AppColors.danger,
-                      width: phone ? 1.5 : 2,
-                    ),
-                  ),
                 ),
                 onChanged: (_) => setState(() {}),
                 onSubmitted: (_) {
@@ -795,40 +747,21 @@ class _DeleteWalletDialogState extends State<_DeleteWalletDialog> {
       ),
       // In a sheet the actions land in an end-aligned Wrap: full width, they
       // stack as two bars instead of two right-hugging chips.
-      actions: phone
-          ? [
-              GhostButton(
-                label: 'Cancel',
-                onPressed: () => Navigator.of(context).pop(false),
-                isFullWidth: true,
-              ),
-              DangerButton(
-                label: 'Delete wallet',
-                onPressed: (!_waiting && _phraseOk)
-                    ? () => Navigator.of(context).pop(true)
-                    : null,
-                isFullWidth: true,
-              ),
-            ]
-          : [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: (!_waiting && _phraseOk)
-                    ? () => Navigator.of(context).pop(true)
-                    : null,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.danger,
-                  disabledBackgroundColor: AppColors.danger.withValues(
-                    alpha: 0.25,
-                  ),
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Delete wallet'),
-              ),
-            ],
+      actions: [
+        GhostButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.of(context).pop(false),
+          isFullWidth: phone,
+        ),
+        DangerButton(
+          label: 'Delete wallet',
+          icon: Icons.delete_outline,
+          onPressed: (!_waiting && _phraseOk)
+              ? () => Navigator.of(context).pop(true)
+              : null,
+          isFullWidth: phone,
+        ),
+      ],
     );
   }
 }
@@ -865,45 +798,29 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
-    return GlassDialog(
+    return PromptDialog(
       title: 'Wallet password',
       icon: Icons.lock_outline,
-      actions: phone
-          ? [
-              GhostButton(
-                label: 'Cancel',
-                onPressed: () => Navigator.of(context).pop(),
-                isFullWidth: true,
-              ),
-              PrimaryButton(
-                label: 'Set',
-                onPressed: _submit,
-                isFullWidth: true,
-              ),
-            ]
-          : [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(onPressed: _submit, child: const Text('Set')),
-            ],
+      actions: [
+        GhostButton(
+          label: 'Cancel',
+          onPressed: () => Navigator.of(context).pop(),
+          isFullWidth: phone,
+        ),
+        PrimaryButton(label: 'Set', onPressed: _submit, isFullWidth: phone),
+      ],
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // caption hard-codes a light-mode ink; on the phone's dark panel it
-          // is barely there, so the phone arm takes the scheme's own.
           Text(
-            'Leave blank to remove the password.',
-            style: AppTypography.caption.copyWith(
-              color: phone ? s.inkSecondary : null,
-            ),
+            'Leave blank to remove the password',
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
           ),
-          const SizedBox(height: AppSpacing.md),
-          GlassPasswordField(controller: _ctrl, label: 'New password'),
-          const SizedBox(height: AppSpacing.md),
-          GlassPasswordField(
+          const SizedBox(height: AppSpacing.lg),
+          PasswordField(controller: _ctrl, label: 'New password'),
+          const SizedBox(height: AppSpacing.lg),
+          PasswordField(
             controller: _confirmCtrl,
             label: 'Confirm password',
             errorText: _error,
@@ -918,6 +835,11 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   }
 }
 
+// ── Network ───────────────────────────────────────────────────────────────────
+
+/// Which explorer row is open for editing.
+enum _ExplorerEdit { none, bitcoin, liquid }
+
 class _NetworkSection extends StatefulWidget {
   @override
   State<_NetworkSection> createState() => _NetworkSectionState();
@@ -926,6 +848,7 @@ class _NetworkSection extends StatefulWidget {
 class _NetworkSectionState extends State<_NetworkSection> {
   late TextEditingController _btcExplorer;
   late TextEditingController _liquidExplorer;
+  _ExplorerEdit _editing = _ExplorerEdit.none;
 
   @override
   void initState() {
@@ -946,6 +869,7 @@ class _NetworkSectionState extends State<_NetworkSection> {
     final state = context.read<AppState>();
     state.setBtcExplorerUrl(_btcExplorer.text.trim());
     state.setLiquidExplorerUrl(_liquidExplorer.text.trim());
+    setState(() => _editing = _ExplorerEdit.none);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Explorer URLs saved'),
@@ -954,128 +878,171 @@ class _NetworkSectionState extends State<_NetworkSection> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
+  /// Leaves the row as it was: the field goes back to the saved value.
+  void _cancelEdit(AppState state) {
+    _btcExplorer.text = state.btcExplorerUrl;
+    _liquidExplorer.text = state.liquidExplorerUrl;
+    setState(() => _editing = _ExplorerEdit.none);
+  }
+
+  /// One explorer: its saved value in mono with an Edit control, or — while
+  /// it is being edited — the field and its Save.
+  Widget _explorerRow({
+    required AppState state,
+    required _ExplorerEdit which,
+    required String title,
+    required String value,
+    required String hint,
+    required TextEditingController ctrl,
+  }) {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
+    if (_editing != which) {
+      return SettingsRow(
+        icon: Icons.explore_outlined,
+        title: title,
+        subtitle: value.isEmpty ? hint : value,
+        mono: true,
+        trailing: GhostButton(
+          label: 'Edit',
+          icon: Icons.edit_outlined,
+          onPressed: () => setState(() => _editing = which),
+        ),
+      );
+    }
+    final actions = [
+      GhostButton(label: 'Cancel', onPressed: () => _cancelEdit(state)),
+      const SizedBox(width: AppSpacing.sm),
+      SecondaryButton(
+        label: 'Save',
+        icon: Icons.check_outlined,
+        onPressed: _saveExplorers,
+      ),
+    ];
+    return SettingsBlock(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          TextField(
+            controller: ctrl,
+            autofocus: true,
+            style: AppTypography.mono.copyWith(color: s.ink),
+            decoration: InputDecoration(hintText: hint),
+            onSubmitted: (_) => _saveExplorers(),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (phone)
+            Row(children: actions)
+          else
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: actions),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final phone = AppLayout.isPhone(context);
+    final state = context.watch<AppState>();
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (!phone) const PageHeader(title: 'Network & Sync'),
         // The phone settings root already carries this exact switch as a
         // list row, one tap away — drawing it here too puts the same control
-        // on screen twice in two different shapes.
+        // on screen twice.
         if (!phone) ...[
-          Consumer<AppState>(
-            builder: (context, state, _) => FormCard(
-              title: 'Sync',
-              child: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Auto-sync on startup'),
-                subtitle: Text(
-                  'Automatically sync the active wallet when the app opens.',
-                  style: AppTypography.caption,
-                ),
-                value: state.autoSync,
-                onChanged: state.setAutoSync,
-                activeThumbColor: AppColors.accent,
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-        ],
-        const _LiquidNetworkCard(),
-        const SizedBox(height: AppSpacing.lg),
-        Consumer<AppState>(
-          builder: (context, state, _) => FormCard(
-            title: 'Nodes',
-            subtitle:
-                'Bitcoin is fixed in this build. Liquid follows the network '
-                'above; override the endpoints with TEMPLAR_LIQUID_ELECTRUM_URL '
-                'or TEMPLAR_ELEMENTS_RPC_URL.',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CopyRow(
-                  label: 'Bitcoin Electrum',
-                  value: 'ssl://electrum.blockstream.info:60002',
-                ),
-                const Divider(height: 1),
-                CopyRow(
-                  label: 'Liquid chain',
-                  value:
-                      state.liquidNetwork?.backendDescription ??
-                      'electrum ssl://elements-testnet.blockstream.info:50002',
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        FormCard(
-          title: 'Block Explorers',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          SettingsGroup(
+            label: 'Sync',
             children: [
-              Text(
-                'Used for "View on Explorer" links in transaction history.',
-                style: AppTypography.caption.copyWith(
-                  color: phone ? s.inkSecondary : null,
+              ListRow(
+                icon: Icons.sync_outlined,
+                title: 'Auto-sync on startup',
+                subtitle: 'Sync the active wallet when the app opens',
+                trailing: ListSwitch(
+                  value: state.autoSync,
+                  onChanged: state.setAutoSync,
+                  semanticLabel: 'Auto-sync on startup',
                 ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              TextField(
-                controller: _btcExplorer,
-                decoration: InputDecoration(
-                  labelText: 'Bitcoin Explorer',
-                  hintText: 'https://mempool.space/testnet',
-                  // A 16 px glyph drawn for a 40 dp desktop field reads as
-                  // debris inside the phone's 56 dp filled box, and costs it
-                  // 40 dp of a 347 dp line the label already names.
-                  prefixIcon: phone
-                      ? null
-                      : const Icon(Icons.explore_outlined, size: 16),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              TextField(
-                controller: _liquidExplorer,
-                decoration: InputDecoration(
-                  labelText: 'Liquid Explorer',
-                  hintText: 'https://blockstream.info/liquidtestnet',
-                  prefixIcon: phone
-                      ? null
-                      : const Icon(Icons.explore_outlined, size: 16),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              PrimaryButton(
-                label: 'Save',
-                icon: Icons.save_outlined,
-                onPressed: _saveExplorers,
-                isFullWidth: phone,
               ),
             ],
           ),
+          const SettingsGap(),
+        ],
+        const _LiquidNetworkCard(),
+        const SettingsGap(),
+        SettingsGroup(
+          label: 'Nodes',
+          note:
+              'Bitcoin is fixed in this build. Liquid follows the network '
+              'above; override the endpoints with TEMPLAR_LIQUID_ELECTRUM_URL '
+              'or TEMPLAR_ELEMENTS_RPC_URL.',
+          children: [
+            const SettingsRow(
+              icon: Icons.dns_outlined,
+              title: 'Bitcoin Electrum',
+              subtitle: 'ssl://electrum.blockstream.info:60002',
+              mono: true,
+              wrap: true,
+              trailing: SettingsCopyButton(
+                value: 'ssl://electrum.blockstream.info:60002',
+              ),
+            ),
+            SettingsRow(
+              icon: Icons.dns_outlined,
+              title: 'Liquid chain',
+              subtitle:
+                  state.liquidNetwork?.backendDescription ??
+                  'electrum ssl://elements-testnet.blockstream.info:50002',
+              mono: true,
+              wrap: true,
+              trailing: SettingsCopyButton(
+                value:
+                    state.liquidNetwork?.backendDescription ??
+                    'electrum ssl://elements-testnet.blockstream.info:50002',
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: AppSpacing.lg),
-        FormCard(
-          title: 'Templar Protocol',
-          subtitle:
-              'Templar Protocol sites hand loan requests to this wallet through '
-              'templar:// links, on the Liquid network set above. The paste box, '
-              'the connected sites and what was signed live in their own '
-              'section.',
-          child: SecondaryButton(
-            label: 'Open Templar Protocol',
-            icon: Icons.link,
-            onPressed: () => context.go(AppRoutes.settingsProtocol),
-            isFullWidth: phone,
-          ),
+        const SettingsGap(),
+        SettingsGroup(
+          label: 'Block explorers',
+          note: 'Used for "View on Explorer" links in transaction history',
+          blocks: _editing != _ExplorerEdit.none,
+          children: [
+            _explorerRow(
+              state: state,
+              which: _ExplorerEdit.bitcoin,
+              title: 'Bitcoin explorer',
+              value: state.btcExplorerUrl,
+              hint: 'https://mempool.space/testnet',
+              ctrl: _btcExplorer,
+            ),
+            _explorerRow(
+              state: state,
+              which: _ExplorerEdit.liquid,
+              title: 'Liquid explorer',
+              value: state.liquidExplorerUrl,
+              hint: 'https://blockstream.info/liquidtestnet',
+              ctrl: _liquidExplorer,
+            ),
+          ],
         ),
-        const SizedBox(height: AppSpacing.lg),
-        const InfoBanner(
-          message: 'Tor support is coming soon and is not yet implemented.',
+        const SettingsGap(),
+        const SettingsGroup(
+          label: 'Privacy',
+          children: [
+            ListRow(
+              icon: Icons.shield_outlined,
+              title: 'Tor',
+              subtitle: 'Not yet implemented',
+              trailing: QuietTag(label: 'Coming soon'),
+            ),
+          ],
         ),
       ],
     );
@@ -1181,106 +1148,119 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
     final phone = AppLayout.isPhone(context);
     final info = _info;
     final locked = info?.envLocked ?? false;
-    return FormCard(
-      title: 'Liquid network',
-      subtitle:
-          'Testnet is the public Liquid test network. Regtest is a local '
-          'elementsd (what the Templar Protocol runs locally): instant blocks, free coins.',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_error != null) ...[
-            DangerBanner(message: _error!),
-            const SizedBox(height: AppSpacing.lg),
-          ],
-          if (info == null && _error == null)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(AppSpacing.lg),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
+    final track = SegmentedSwitch<String>(
+      options: const [
+        SegOption(value: 'testnet', label: 'Testnet'),
+        SegOption(value: 'regtest', label: 'Regtest'),
+      ],
+      selected: _choice,
+      onChanged: _busy ? (_) {} : (v) => setState(() => _choice = v),
+      expand: phone,
+    );
+
+    final children = <Widget>[
+      if (_error != null) SettingsBlock(child: DangerBanner(message: _error!)),
+      if (info == null && _error == null)
+        const SettingsBlock(
+          child: Center(
+            child: SizedBox(
+              width: AppSpacing.lg,
+              height: AppSpacing.lg,
+              child: CircularProgressIndicator(strokeWidth: 2),
             ),
-          if (info != null) ...[
-            Text(
-              'Now: ${info.shortName} · ${info.backendDescription}',
-              style: AppTypography.caption.copyWith(
-                color: phone ? s.inkSecondary : null,
-              ),
+          ),
+        ),
+      if (info != null) ...[
+        SettingsRow(
+          icon: Icons.water_drop_outlined,
+          title: 'Network',
+          subtitle: 'Now ${info.shortName}',
+          // A ~200 px track beside its row on desktop; a phone gives the
+          // choice the card's whole width, in a block of its own below.
+          trailing: locked
+              ? const QuietTag(label: 'Fixed')
+              : (phone ? null : track),
+        ),
+        if (locked)
+          const SettingsBlock(
+            child: InfoBanner(
+              message:
+                  'Fixed by TEMPLAR_LIQUID_NETWORK for this session. '
+                  'Unset the variable to change it here.',
             ),
-            const SizedBox(height: AppSpacing.md),
-            if (locked)
-              const InfoBanner(
-                message:
-                    'Fixed by TEMPLAR_LIQUID_NETWORK for this session. '
-                    'Unset the variable to change it here.',
-              )
-            else ...[
-              SegmentedSwitch<String>(
-                options: const [
-                  SegOption(
-                    value: 'testnet',
-                    label: 'Testnet',
-                    icon: Icons.public,
+          )
+        else ...[
+          if (phone) SettingsBlock(child: track),
+          if (_choice == 'regtest')
+            SettingsBlock(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Regtest LBTC asset id',
+                    style: AppTypography.eyebrow.copyWith(
+                      color: s.inkSecondary,
+                    ),
                   ),
-                  SegOption(
-                    value: 'regtest',
-                    label: 'Regtest',
-                    icon: Icons.dns_outlined,
+                  const SizedBox(height: AppSpacing.sm),
+                  TextField(
+                    controller: _policyAsset,
+                    enabled: !_busy,
+                    onChanged: (_) => setState(() {}),
+                    style: AppTypography.mono.copyWith(color: s.ink),
+                    decoration: InputDecoration(
+                      hintText: info.regtestDefaultPolicyAsset,
+                      helperText:
+                          'Policy asset of your node. The stock liquidregtest '
+                          'id is prefilled; elements-cli dumpassetlabels '
+                          'prints yours.',
+                      helperMaxLines: 3,
+                    ),
                   ),
                 ],
-                selected: _choice,
-                onChanged: _busy ? (_) {} : (v) => setState(() => _choice = v),
-                // A ~200 dp track floating in a full-width card is the
-                // clearest tell of a shrunken desktop form; on a phone the
-                // choice spans the card it belongs to.
-                expand: phone,
               ),
-              if (_choice == 'regtest') ...[
-                const SizedBox(height: AppSpacing.lg),
-                TextField(
-                  controller: _policyAsset,
-                  enabled: !_busy,
-                  onChanged: (_) => setState(() {}),
-                  style: AppTypography.mono,
-                  decoration: InputDecoration(
-                    labelText: 'Regtest LBTC asset id',
-                    hintText: info.regtestDefaultPolicyAsset,
-                    helperText:
-                        'Policy asset of your node. The stock liquidregtest id '
-                        'is prefilled; elements-cli dumpassetlabels prints yours.',
-                    // 64 hex characters in mono on a 347 dp line need every
-                    // pixel; the desktop's 16 px tag glyph stays there.
-                    prefixIcon: phone ? null : const Icon(Icons.tag, size: 16),
+            ),
+          if (_dirty || _busy)
+            SettingsBlock(
+              child: Column(
+                crossAxisAlignment: phone
+                    ? CrossAxisAlignment.stretch
+                    : CrossAxisAlignment.end,
+                children: [
+                  const WarningBanner(
+                    message:
+                        'Switching closes the open wallet. Reopen it and sync — '
+                        'until then no Liquid balance is shown for the new '
+                        'network.',
                   ),
-                ),
-              ],
-              if (_dirty) ...[
-                const SizedBox(height: AppSpacing.lg),
-                const WarningBanner(
-                  message:
-                      'Switching closes the open wallet. Reopen it and sync — '
-                      'until then no Liquid balance is shown for the new network.',
-                ),
-              ],
-              const SizedBox(height: AppSpacing.lg),
-              PrimaryButton(
-                label: 'Apply',
-                icon: Icons.swap_horiz,
-                isLoading: _busy,
-                onPressed: _dirty && !_busy ? _apply : null,
-                isFullWidth: phone,
+                  const SizedBox(height: AppSpacing.md),
+                  SecondaryButton(
+                    label: 'Apply',
+                    icon: Icons.swap_horiz_outlined,
+                    isLoading: _busy,
+                    onPressed: _dirty && !_busy ? _apply : null,
+                    isFullWidth: phone,
+                  ),
+                ],
               ),
-            ],
-          ],
+            ),
         ],
-      ),
+      ],
+    ];
+
+    return SettingsGroup(
+      label: 'Liquid network',
+      blocks: true,
+      note:
+          'Testnet is the public Liquid test network. Regtest is a local '
+          'elementsd (what the Templar Protocol runs locally): instant '
+          'blocks, free coins.',
+      children: children,
     );
   }
 }
+
+// ── Security ──────────────────────────────────────────────────────────────────
 
 class _SecuritySection extends StatefulWidget {
   @override
@@ -1370,12 +1350,9 @@ class _SecuritySectionState extends State<_SecuritySection> {
       context.go(AppRoutes.walletPicker);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not delete wallet: $e'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not delete wallet: $e')));
       }
     }
   }
@@ -1392,7 +1369,7 @@ class _SecuritySectionState extends State<_SecuritySection> {
       final v = await walletBridge.vaultStatus();
       if (mounted) setState(() => _vault = v);
     } catch (_) {
-      // Card shows an unavailable hint when the status can't be read.
+      // The group shows an unavailable state when the status can't be read.
     }
   }
 
@@ -1425,21 +1402,26 @@ class _SecuritySectionState extends State<_SecuritySection> {
     );
   }
 
-  Widget get _vaultCard {
+  /// Encryption: one row stating the vault's state, the one control that
+  /// acts on it, and the full paragraph under the card. While storage is
+  /// unencrypted, "Set passphrase" is the page's one filled control: it is
+  /// the thing this page needs the user to do.
+  Widget get _vaultGroup {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
     final vault = _vault;
     final String statusText;
     final Widget? action;
-    // The phone draws the same four states as one row: the glyph already on
-    // the button for that state, a one-line reading of it, and the tap that
-    // acts on it. Nothing new is invented — only re-arranged.
     final IconData rowIcon;
     final String rowState;
+    final Color? dot;
     final VoidCallback? rowTap;
     if (vault == null) {
-      statusText = 'Encryption status unavailable.';
+      statusText = 'Encryption status unavailable';
       action = null;
       rowIcon = Icons.help_outline;
       rowState = 'Status unavailable';
+      dot = null;
       rowTap = null;
     } else if (!vault.initialized) {
       statusText =
@@ -1454,9 +1436,11 @@ class _SecuritySectionState extends State<_SecuritySection> {
         label: 'Set passphrase',
         icon: Icons.shield_outlined,
         onPressed: _setupVault,
+        isFullWidth: phone,
       );
       rowIcon = Icons.shield_outlined;
       rowState = 'Not encrypted — set a passphrase';
+      dot = s.warning;
       rowTap = _setupVault;
     } else if (vault.unlocked) {
       statusText =
@@ -1469,60 +1453,38 @@ class _SecuritySectionState extends State<_SecuritySection> {
       );
       rowIcon = Icons.lock_outline;
       rowState = 'Encrypted · unlocked this session';
+      dot = s.success;
       rowTap = _lockNow;
     } else {
-      statusText = 'Wallet storage is encrypted and locked.';
-      action = PrimaryButton(
+      statusText = 'Wallet storage is encrypted and locked';
+      action = SecondaryButton(
         label: 'Unlock',
         icon: Icons.lock_open_outlined,
         onPressed: _pushUnlock,
       );
       rowIcon = Icons.lock_open_outlined;
       rowState = 'Encrypted · locked';
+      dot = s.success;
       rowTap = _pushUnlock;
     }
-    if (AppLayout.isPhone(context)) {
-      final s = AppScheme.of(context);
-      final tint = vault == null
-          ? s.inkFaint
-          : vault.initialized
-          ? s.success
-          : s.warning;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const ListSectionLabel(label: 'Encryption'),
-          ListCard(
-            children: [
-              ListRow(
-                icon: rowIcon,
-                tint: tint,
-                title: 'Wallet storage',
-                subtitle: rowState,
-                subtitleColor: tint,
-                chevron: rowTap != null,
-                onTap: rowTap,
-              ),
-            ],
-          ),
-          // The full warning is what tells the user what is at stake; a row
-          // subtitle is one line, so it goes under the group.
-          _SettingsNote(text: statusText),
-        ],
-      );
-    }
-    return SectionCard(
-      title: 'Encrypt wallet storage',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(statusText, style: AppTypography.caption),
-          if (action != null) ...[
-            const SizedBox(height: AppSpacing.lg),
-            action,
-          ],
-        ],
-      ),
+    final unencrypted = vault != null && !vault.initialized;
+    return SettingsGroup(
+      label: 'Encryption',
+      note: statusText,
+      // Phone: the row itself is the way in, except while unencrypted —
+      // then the one thing this page asks for is a full-width button too.
+      footer: phone && unencrypted ? action : null,
+      children: [
+        SettingsRow(
+          icon: rowIcon,
+          title: 'Wallet storage',
+          subtitle: rowState,
+          dot: dot,
+          chevron: phone && rowTap != null,
+          onTap: phone ? rowTap : null,
+          trailing: phone ? null : action,
+        ),
+      ],
     );
   }
 
@@ -1550,153 +1512,124 @@ class _SecuritySectionState extends State<_SecuritySection> {
     }
   }
 
+  Widget get _passwordGroup {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    final custom = _custom;
+    final walletId = context.read<AppState>().activeWalletId;
+    if (walletId == null || custom == null) {
+      return const SettingsGroup(
+        label: 'Wallet password',
+        blocks: true,
+        children: [
+          SettingsBlock(
+            child: InfoBanner(
+              message:
+                  'No wallet open. Open a wallet from the wallet picker first.',
+            ),
+          ),
+        ],
+      );
+    }
+    final isSet = custom.passwordHash != null;
+    return SettingsGroup(
+      label: 'Wallet password',
+      note: isSet
+          ? 'Entering this wallet requires the password'
+          : 'Anyone with access to the app can open this wallet',
+      children: [
+        SettingsRow(
+          icon: Icons.password_outlined,
+          title: 'Password',
+          subtitle: isSet ? 'Set' : 'Not set',
+          dot: isSet ? s.success : null,
+          chevron: phone,
+          onTap: phone ? _setPassword : null,
+          trailing: phone
+              ? null
+              : SecondaryButton(
+                  label: isSet ? 'Change or remove' : 'Set password',
+                  onPressed: _setPassword,
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget get _storageGroup {
+    final s = AppScheme.of(context);
+    final error = _dataDirError;
+    return SettingsGroup(
+      label: 'Storage',
+      children: [
+        SettingsRow(
+          icon: Icons.folder_outlined,
+          title: 'Wallet data directory',
+          subtitle: error ?? (_dataDir.isEmpty ? '…' : _dataDir),
+          subtitleColor: error != null ? s.danger : null,
+          mono: error == null,
+          wrap: true,
+          trailing: error != null
+              ? null
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SettingsCopyButton(value: _dataDir, tooltip: 'Copy path'),
+                    // No file manager handles a file:// directory on Android.
+                    if (!Platform.isAndroid) ...[
+                      const SizedBox(width: AppSpacing.xs),
+                      SecondaryButton(
+                        label: 'Open',
+                        icon: Icons.folder_open_outlined,
+                        onPressed: _dataDir.isEmpty ? null : _openDir,
+                      ),
+                    ],
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final walletId = context.watch<AppState>().activeWalletId;
-    final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
-    // Security and Advanced used to be two menu entries, which split one
-    // subject in half: the vault passphrase lived in one and the seed it
-    // protects in the other. They are the same conversation, so they are one
-    // page now, ordered from "protects everything" down to "destroys
-    // everything".
+    // One page, ordered from "protects everything" down to "destroys
+    // everything": the vault, how it opens, the backup, the seed, the
+    // wallet's own password, where it all lives, and deleting it.
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (!phone) const PageHeader(title: 'Security'),
-        _vaultCard,
+        _vaultGroup,
         // Fingerprint (Touch ID on a Mac) in place of the passphrase at
-        // launch. The card brings its own top spacing so it can vanish on
+        // launch. The group brings its own top gap so it can vanish on
         // devices without a sensor without leaving a double gap.
         //
         // On a phone the settings root already shows the compact skin of this
-        // very tile, so drawing the full card here put the same switch on
-        // screen twice, one tap apart.
+        // very switch, and the auto-lock row beside it.
         if (BiometricUnlockService.platformSupported && !phone)
           const BiometricUnlockTile(),
         if (!phone) ...[
-          const SizedBox(height: AppSpacing.lg),
-          const ListCard(children: [AutoLockRow()]),
+          const SettingsGap(),
+          const SettingsGroup(label: 'Session', children: [AutoLockRow()]),
         ],
-        const SizedBox(height: AppSpacing.lg),
+        const SettingsGap(),
         // Verifying a paper backup needs no secret and applies to every wallet
         // type — including the hardware and air-gap ones the seed tools below
         // can never touch.
         if (walletId != null) ...[
           BackupVerifyCard(walletId: walletId),
-          const SizedBox(height: AppSpacing.lg),
+          const SettingsGap(),
         ],
         // Seed tools — software wallets only; HW/air-gap keep keys off-device.
         if (walletId != null && _hasSeed) ...[
           SeedPhraseCard(walletId: walletId),
-          const SizedBox(height: AppSpacing.lg),
+          const SettingsGap(),
         ],
-        if (walletId == null || _custom == null)
-          const SectionCard(
-            title: 'Wallet password',
-            child: InfoBanner(
-              message:
-                  'No wallet open. Open a wallet from the wallet picker first.',
-            ),
-          )
-        // A state and one way into it — the phone's list grammar, with the
-        // button's own glyph on the row and its sentence under the group.
-        else if (phone)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const ListSectionLabel(label: 'Wallet password'),
-              ListCard(
-                children: [
-                  ListRow(
-                    icon: Icons.lock_outline,
-                    tint: _custom!.passwordHash != null
-                        ? s.success
-                        : s.inkFaint,
-                    title: 'Password',
-                    subtitle: _custom!.passwordHash != null ? 'Set' : 'Not set',
-                    subtitleColor: _custom!.passwordHash != null
-                        ? s.success
-                        : null,
-                    chevron: true,
-                    onTap: _setPassword,
-                  ),
-                ],
-              ),
-              _SettingsNote(
-                text: _custom!.passwordHash != null
-                    ? 'Entering this wallet requires the password.'
-                    : 'Anyone with access to the app can open this wallet.',
-              ),
-            ],
-          )
-        else
-          SectionCard(
-            title: 'Wallet password',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _custom!.passwordHash != null
-                      ? 'Password is set. Entering this wallet requires the password.'
-                      : 'No password set. Anyone with access to the app can open this wallet.',
-                  style: AppTypography.caption,
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                SecondaryButton(
-                  label: _custom!.passwordHash != null
-                      ? 'Change / remove password'
-                      : 'Set password',
-                  icon: Icons.lock_outline,
-                  onPressed: _setPassword,
-                ),
-              ],
-            ),
-          ),
-        const SizedBox(height: AppSpacing.lg),
-        SectionCard(
-          title: 'Storage',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Phone: CopyRow is the same label-over-value pair, but with
-              // the path collapsed to one line and a 48 dp copy button — the
-              // only way to get the path off an Android device, where the
-              // "Open directory" button below never appears.
-              if (phone && _dataDirError == null)
-                CopyRow(
-                  label: 'Wallet data directory',
-                  value: _dataDir.isEmpty ? '…' : _dataDir,
-                  singleLine: true,
-                )
-              else ...[
-                Text('Wallet data directory', style: AppTypography.label),
-                const SizedBox(height: AppSpacing.xs),
-                if (_dataDirError != null)
-                  Text(
-                    _dataDirError!,
-                    style: AppTypography.caption.copyWith(
-                      color: AppColors.danger,
-                    ),
-                  )
-                else
-                  SelectableText(
-                    _dataDir.isEmpty ? '…' : _dataDir,
-                    style: AppTypography.mono,
-                  ),
-              ],
-              // No file manager handles a file:// directory on Android.
-              if (!Platform.isAndroid) ...[
-                const SizedBox(height: AppSpacing.md),
-                SecondaryButton(
-                  label: 'Open directory',
-                  icon: Icons.folder_open_outlined,
-                  onPressed: _dataDir.isEmpty ? null : _openDir,
-                ),
-              ],
-            ],
-          ),
-        ),
+        _passwordGroup,
+        const SettingsGap(),
+        _storageGroup,
         if (walletId != null) ...[
           const SizedBox(height: AppSpacing.xxl),
           _DangerZone(onDelete: _deleteWallet),
@@ -1705,6 +1638,8 @@ class _SecuritySectionState extends State<_SecuritySection> {
     );
   }
 }
+
+// ── Appearance ────────────────────────────────────────────────────────────────
 
 class _AppearanceSection extends StatefulWidget {
   @override
@@ -1730,7 +1665,7 @@ class _AppearanceSectionState extends State<_AppearanceSection> {
     _loadCosigners();
   }
 
-  /// Keys plus labels. A singlesig wallet has none and the card stays away.
+  /// Keys plus labels. A singlesig wallet has none and the group stays away.
   Future<void> _loadCosigners() async {
     final walletId = context.read<AppState>().activeWalletId;
     if (walletId == null) return;
@@ -1846,171 +1781,129 @@ class _AppearanceSectionState extends State<_AppearanceSection> {
   /// Lives beside the wallet's own name and colour because it is the same
   /// kind of setting: local, cosmetic, and changeable at any time. The keys
   /// themselves are on Wallet info, where they cannot be edited by accident.
-  Widget get _cosignerLabelsCard => FormCard(
-    title: 'Cosigner labels',
-    subtitle: _requiredSigs == null
-        ? 'Name each key of this shared wallet.'
-        : 'Name each key of this $_requiredSigs-of-${_cosigners.length} '
-              'wallet. Names are kept on this device only.',
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget get _cosignerLabelsGroup {
+    final s = AppScheme.of(context);
+    return SettingsGroup(
+      label: 'Cosigner labels',
+      note: _requiredSigs == null
+          ? 'Name each key of this shared wallet. Names are kept on this '
+                'device only.'
+          : 'Name each key of this $_requiredSigs-of-${_cosigners.length} '
+                'wallet. Names are kept on this device only.',
       children: [
         for (final entry in _cosigners)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: InkWell(
-              onTap: () => _editCosigner(entry),
-              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: AppSpacing.sm,
-                  horizontal: AppSpacing.sm,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: (entry.label.color ?? AppColors.accent)
-                            .withValues(alpha: 0.14),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: entry.label.color ?? AppColors.accent,
-                        ),
-                      ),
-                      child: Icon(
-                        entry.label.icon,
-                        size: 16,
-                        color: entry.label.color ?? AppColors.accent,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            entry.name,
-                            style: AppTypography.body.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            entry.isLocal
-                                ? '${entry.fingerprint} · this device'
-                                : entry.fingerprint,
-                            style: AppTypography.caption,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Icon(Icons.edit_outlined, size: 16),
-                  ],
-                ),
-              ),
+          SettingsRow(
+            icon: entry.label.icon,
+            title: entry.name,
+            subtitle: entry.isLocal
+                ? '${entry.fingerprint} · this device'
+                : entry.fingerprint,
+            mono: true,
+            trailing: Icon(
+              Icons.edit_outlined,
+              size: AppSpacing.iconSmall,
+              color: s.inkSecondary,
             ),
+            onTap: () => _editCosigner(entry),
           ),
       ],
-    ),
-  );
+    );
+  }
 
-  Widget get _walletCustomizationCard => FormCard(
-    title: 'Customize active wallet',
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  /// The wallet's display name and its accent colour.
+  Widget get _walletGroup {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    final saveButton = SecondaryButton(
+      label: _saving ? 'Saving…' : 'Save',
+      onPressed: _saving ? null : _saveName,
+      isFullWidth: phone,
+    );
+    final field = TextField(
+      controller: _nameCtrl,
+      decoration: const InputDecoration(hintText: 'Wallet name'),
+      onSubmitted: (_) {
+        if (!_saving) _saveName();
+      },
+    );
+    return SettingsGroup(
+      label: 'Active wallet',
+      blocks: true,
+      note:
+          'The accent tints this wallet everywhere: its mark in the wallet '
+          'list, the sidebar, and every accent inside it.',
       children: [
-        // Name
-        Text('Display name', style: AppTypography.label),
-        const SizedBox(height: AppSpacing.sm),
-        // Phone: a 54 dp Save slab beside the field leaves the name about
-        // 190 dp of a 347 dp line, so the two stack instead and each
-        // takes the whole width.
-        if (AppLayout.isPhone(context)) ...[
-          TextField(
-            controller: _nameCtrl,
-            decoration: const InputDecoration(hintText: 'Wallet name'),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          PrimaryButton(
-            label: _saving ? 'Saving…' : 'Save',
-            icon: Icons.save_outlined,
-            onPressed: _saving ? null : _saveName,
-            isFullWidth: true,
-          ),
-        ] else
-          Row(
+        SettingsBlock(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: TextField(
-                  controller: _nameCtrl,
-                  decoration: const InputDecoration(hintText: 'Wallet name'),
-                ),
+              Text(
+                'Display name',
+                style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
               ),
-              const SizedBox(width: AppSpacing.sm),
-              PrimaryButton(
-                label: _saving ? 'Saving…' : 'Save',
-                icon: Icons.save_outlined,
-                onPressed: _saving ? null : _saveName,
+              const SizedBox(height: AppSpacing.sm),
+              // Phone: a 54 dp Save beside the field leaves the name about
+              // 190 dp of a 347 dp line, so the two stack instead.
+              if (phone) ...[
+                field,
+                const SizedBox(height: AppSpacing.md),
+                saveButton,
+              ] else
+                Row(
+                  children: [
+                    Expanded(child: field),
+                    const SizedBox(width: AppSpacing.sm),
+                    saveButton,
+                  ],
+                ),
+              if (_saveError != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  _saveError!,
+                  style: AppTypography.caption.copyWith(color: s.danger),
+                ),
+              ],
+            ],
+          ),
+        ),
+        SettingsBlock(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Accent color',
+                style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Wrap(
+                spacing: phone ? 0 : AppSpacing.sm,
+                runSpacing: phone ? 0 : AppSpacing.sm,
+                children: [
+                  for (
+                    var i = 0;
+                    i < WalletCustomizationStore.palette.length;
+                    i++
+                  )
+                    _Swatch(
+                      color: WalletCustomizationStore.palette[i],
+                      index: i,
+                      // No colour picked yet is the brand crimson, the
+                      // first swatch: it is the one in use, and it says so.
+                      selected:
+                          (_custom!.accentColor ??
+                              AppColors.accentDefault.toARGB32()) ==
+                          WalletCustomizationStore.palette[i].toARGB32(),
+                      onTap: () =>
+                          _saveColor(WalletCustomizationStore.palette[i]),
+                    ),
+                ],
               ),
             ],
           ),
-        if (_saveError != null) ...[
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            _saveError!,
-            style: AppTypography.caption.copyWith(color: AppColors.danger),
-          ),
-        ],
-        const Divider(height: AppSpacing.xxl),
-
-        // Accent color — this IS the wallet's identity on the home
-        // gallery and in the sidebar, so it gets a line explaining that.
-        Text('Accent color', style: AppTypography.label),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          'Tints this wallet everywhere: its mark on the home gallery, '
-          'the sidebar, and every accent inside it.',
-          style: AppTypography.caption,
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
-          children: WalletCustomizationStore.palette.map((color) {
-            final selected = _custom!.accentColor == color.toARGB32();
-            return InkWell(
-              onTap: () => _saveColor(color),
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                width: AppLayout.isPhone(context) ? 44 : 36,
-                height: AppLayout.isPhone(context) ? 44 : 36,
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: selected ? Colors.white : Colors.transparent,
-                    width: 3,
-                  ),
-                  boxShadow: selected
-                      ? [
-                          BoxShadow(
-                            color: color.withValues(alpha: 0.5),
-                            blurRadius: 8,
-                          ),
-                        ]
-                      : null,
-                ),
-                child: selected
-                    ? const Icon(Icons.check, color: Colors.white, size: 16)
-                    : null,
-              ),
-            );
-          }).toList(),
         ),
       ],
-    ),
-  );
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2019,128 +1912,72 @@ class _AppearanceSectionState extends State<_AppearanceSection> {
     return Consumer<AppState>(
       builder: (context, state, _) {
         final phone = AppLayout.isPhone(context);
+        final themeTrack = SegmentedSwitch<ThemeMode>(
+          expand: phone,
+          options: const [
+            SegOption(value: ThemeMode.dark, label: 'Dark'),
+            SegOption(value: ThemeMode.light, label: 'Light'),
+            SegOption(value: ThemeMode.system, label: 'System'),
+          ],
+          selected: state.themeMode,
+          onChanged: state.setThemeMode,
+        );
+        final unitTrack = SegmentedSwitch<bool>(
+          options: const [
+            SegOption(value: false, label: 'BTC'),
+            SegOption(value: true, label: 'sats'),
+          ],
+          selected: state.useSats,
+          onChanged: (v) => state.setBitcoinUnit(v ? 'sat' : 'btc'),
+        );
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (!phone) const PageHeader(title: 'Appearance'),
-            if (hasWallet) ...[
-              _walletCustomizationCard,
-              const SizedBox(height: AppSpacing.lg),
-            ],
-            if (_cosigners.length > 1) ...[
-              _cosignerLabelsCard,
-              const SizedBox(height: AppSpacing.lg),
-            ],
-            FormCard(
-              title: 'Currency & Units',
-              subtitle: 'How balances and value estimates are displayed.',
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Fiat currency', style: AppTypography.label),
-                  const SizedBox(height: AppSpacing.sm),
-                  DropdownButtonFormField<String>(
-                    initialValue: state.fiatCurrency,
-                    items: [
-                      for (final e in PriceService.currencySymbols.entries)
-                        DropdownMenuItem(
-                          value: e.key,
-                          child: Text('${e.key}  (${e.value.trim()})'),
-                        ),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) state.setFiatCurrency(v);
-                    },
-                    decoration: InputDecoration(
-                      // 16 px inside a 56 dp filled field reads as debris.
-                      prefixIcon: phone
-                          ? null
-                          : const Icon(Icons.attach_money, size: 16),
-                    ),
+            SettingsGroup(
+              label: 'Theme',
+              blocks: phone,
+              children: [
+                // Phone: the track takes the card's width in a block of its
+                // own; three segments beside a row title do not fit 347 dp.
+                if (phone)
+                  SettingsBlock(child: themeTrack)
+                else
+                  SettingsRow(
+                    icon: Icons.contrast_outlined,
+                    title: 'Theme',
+                    subtitle: 'System follows the operating system',
+                    trailing: themeTrack,
                   ),
-                  const Divider(height: AppSpacing.xxl),
-                  Text('Bitcoin unit', style: AppTypography.label),
-                  const SizedBox(height: AppSpacing.sm),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Display amounts in sats'),
-                    subtitle: Text(
-                      state.useSats
-                          ? 'Showing sats (1 BTC = 100,000,000 sats).'
-                          : 'Showing BTC.',
-                      style: AppTypography.caption,
-                    ),
-                    value: state.useSats,
-                    onChanged: (v) => state.setBitcoinUnit(v ? 'sat' : 'btc'),
-                    activeThumbColor: AppColors.accent,
-                  ),
-                ],
-              ),
+              ],
             ),
-            const SizedBox(height: AppSpacing.lg),
-            FormCard(
-              title: 'Theme',
-              // Phone: one full-width track — the same control the network
-              // card two pages away uses — instead of three stacked radio
-              // rows and ~90 dp of a page the user is scrolling. Labels only:
-              // the desktop radios carry no glyphs, so none are invented.
-              child: phone
-                  ? SegmentedSwitch<ThemeMode>(
-                      expand: true,
-                      options: const [
-                        SegOption(value: ThemeMode.dark, label: 'Dark'),
-                        SegOption(value: ThemeMode.light, label: 'Light'),
-                        SegOption(value: ThemeMode.system, label: 'System'),
-                      ],
-                      selected: state.themeMode,
-                      onChanged: state.setThemeMode,
-                    )
-                  : RadioGroup<ThemeMode>(
-                      groupValue: state.themeMode,
-                      onChanged: (v) {
-                        if (v != null) state.setThemeMode(v);
-                      },
-                      child: const Column(
-                        children: [
-                          RadioListTile<ThemeMode>(
-                            title: Text('Dark'),
-                            value: ThemeMode.dark,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                          RadioListTile<ThemeMode>(
-                            title: Text('Light'),
-                            value: ThemeMode.light,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                          RadioListTile<ThemeMode>(
-                            title: Text('System'),
-                            value: ThemeMode.system,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        ],
-                      ),
-                    ),
-            ),
-            // The phone settings root already carries "Reduce effects" as a
-            // list row; the same switch twice, in two shapes, is worse than
-            // one of them living a tap away.
-            if (!phone) ...[
-              const SizedBox(height: AppSpacing.lg),
-              FormCard(
-                title: 'Effects',
-                child: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Reduce visual effects'),
-                  subtitle: Text(
-                    'Disables frosted-glass blur and heavy effects for better '
-                    'performance on low-end hardware.',
-                    style: AppTypography.caption,
+            const SettingsGap(),
+            SettingsGroup(
+              label: 'Currency and units',
+              note: 'How balances and value estimates are displayed',
+              children: [
+                SettingsRow(
+                  icon: Icons.payments_outlined,
+                  title: 'Fiat currency',
+                  subtitle: 'For value estimates',
+                  trailing: _CurrencyMenu(
+                    value: state.fiatCurrency,
+                    onChanged: state.setFiatCurrency,
                   ),
-                  value: state.reduceEffects,
-                  onChanged: state.setReduceEffects,
-                  activeThumbColor: AppColors.accent,
                 ),
-              ),
+                SettingsRow(
+                  icon: Icons.currency_bitcoin_outlined,
+                  title: 'Bitcoin unit',
+                  subtitle: state.useSats
+                      ? '1 BTC = 100,000,000 sats'
+                      : 'Amounts in BTC',
+                  trailing: unitTrack,
+                ),
+              ],
+            ),
+            if (hasWallet) ...[const SettingsGap(), _walletGroup],
+            if (_cosigners.length > 1) ...[
+              const SettingsGap(),
+              _cosignerLabelsGroup,
             ],
           ],
         );
@@ -2148,6 +1985,124 @@ class _AppearanceSectionState extends State<_AppearanceSection> {
     );
   }
 }
+
+/// The fiat currency, as the row's quiet value with a menu behind it.
+class _CurrencyMenu extends StatelessWidget {
+  const _CurrencyMenu({required this.value, required this.onChanged});
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        value: value,
+        isDense: true,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        dropdownColor: s.panel,
+        icon: Icon(
+          Icons.expand_more_outlined,
+          size: AppSpacing.icon,
+          color: s.inkSecondary,
+        ),
+        style: AppTypography.body.copyWith(color: s.ink),
+        items: [
+          for (final e in PriceService.currencySymbols.entries)
+            DropdownMenuItem(
+              value: e.key,
+              child: Text('${e.key}  (${e.value.trim()})'),
+            ),
+        ],
+        onChanged: (v) {
+          if (v != null) onChanged(v);
+        },
+      ),
+    );
+  }
+}
+
+/// One accent swatch: 24 px of the colour; chosen, a 2 px ink ring with a
+/// 2 px gap. The colour is the wallet's identity, so it is data, not chrome.
+class _Swatch extends StatefulWidget {
+  const _Swatch({
+    required this.color,
+    required this.index,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Color color;
+  final int index;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_Swatch> createState() => _SwatchState();
+}
+
+class _SwatchState extends State<_Swatch> {
+  bool _focus = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    // Touch keeps its 48 dp floor around the same 24 px mark.
+    final cell = phone ? AppLayout.minTouchTarget : AppSpacing.xxl;
+    final ring = widget.selected
+        ? s.ink
+        : _focus
+        ? s.focus
+        : Colors.transparent;
+    return Semantics(
+      button: true,
+      selected: widget.selected,
+      label: 'Accent color ${widget.index + 1}',
+      excludeSemantics: true,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onTap();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          onTap: widget.onTap,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            width: cell,
+            height: cell,
+            child: Center(
+              child: Container(
+                width: AppSpacing.xxl,
+                height: AppSpacing.xxl,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: ring, width: 2),
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: widget.color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── About ─────────────────────────────────────────────────────────────────────
 
 class _AboutSection extends StatefulWidget {
   @override
@@ -2183,81 +2138,56 @@ class _AboutSectionState extends State<_AboutSection> {
     }
   }
 
-  /// The engine line, in both skins' words.
-  String get _engineLine => _engineUnreachable
-      ? 'Engine unreachable — the native wallet library did not respond. '
-            'Wallet operations will not work.'
-      : 'Engine (wallet-ffi): '
-            '${_engineVersion != null ? 'v$_engineVersion' : '…'}';
-
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    // Phone: two facts and one link, which is a list — the same two rows the
-    // settings root draws About with, and the same two glyphs already used
-    // here (info for the app, code for the repository).
-    if (AppLayout.isPhone(context)) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const ListSectionLabel(label: 'App'),
-          ListCard(
-            children: [
-              ListRow(
-                icon: Icons.info_rounded,
-                tint: s.inkSecondary,
-                title: 'Templar Wallet',
-                subtitle: 'v$kAppVersion · Testnet',
-              ),
-              ListRow(
-                icon: Icons.code,
-                tint: s.inkSecondary,
-                title: 'Source code',
-                subtitle: 'github.com/0xB4LdW1n/TemplarWallet',
-                chevron: true,
-                onTap: _openSource,
-              ),
-            ],
-          ),
-          _SettingsNote(
-            text: _engineLine,
-            color: _engineUnreachable ? s.danger : null,
-          ),
-        ],
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final engine = _engineVersion;
+    return SettingsGroup(
+      label: 'Templar Wallet',
+      note: _engineUnreachable
+          ? 'Engine unreachable — the native wallet library did not respond. '
+                'Wallet operations will not work.'
+          : null,
+      noteColor: s.danger,
       children: [
-        const PageHeader(title: 'About'),
-        SectionCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Templar Wallet', style: AppTypography.sectionTitle),
-              const SizedBox(height: AppSpacing.xs),
-              Text('v$kAppVersion — Testnet', style: AppTypography.caption),
-              const SizedBox(height: AppSpacing.xs),
-              if (_engineUnreachable)
-                Text(
-                  'Engine unreachable — the native wallet library did not '
-                  'respond. Wallet operations will not work.',
-                  style: AppTypography.caption.copyWith(
-                    color: AppColors.danger,
-                  ),
-                )
-              else
-                Text(
-                  'Engine (wallet-ffi): ${_engineVersion != null ? 'v$_engineVersion' : '…'}',
-                  style: AppTypography.caption,
-                ),
-              const SizedBox(height: AppSpacing.xl),
-              GhostButton(
-                label: 'Source code',
-                icon: Icons.code,
-                onPressed: _openSource,
-              ),
-            ],
+        const SettingsRow(
+          icon: Icons.info_outline,
+          title: 'Version',
+          subtitle: 'Testnet build',
+          trailing: SettingsValue('v$kAppVersion', mono: true),
+        ),
+        SettingsRow(
+          icon: Icons.memory_outlined,
+          title: 'Engine (wallet-ffi)',
+          subtitle: _engineUnreachable
+              ? 'Unreachable'
+              : 'Native wallet library',
+          dot: _engineUnreachable ? s.danger : null,
+          trailing: _engineUnreachable
+              ? null
+              : SettingsValue(engine != null ? 'v$engine' : '…', mono: true),
+        ),
+        SettingsRow(
+          icon: Icons.code_outlined,
+          title: 'Source code',
+          subtitle: 'github.com/0xB4LdW1n/TemplarWallet',
+          mono: true,
+          trailing: Icon(
+            Icons.open_in_new_outlined,
+            size: AppSpacing.iconSmall,
+            color: s.inkFaint,
+          ),
+          onTap: _openSource,
+        ),
+        SettingsRow(
+          icon: Icons.description_outlined,
+          title: 'Open-source licenses',
+          subtitle: 'The packages this app is built from',
+          chevron: true,
+          onTap: () => showLicensePage(
+            context: context,
+            applicationName: 'Templar Wallet',
+            applicationVersion: 'v$kAppVersion',
           ),
         ),
       ],

@@ -9,27 +9,39 @@ import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'buttons.dart';
 import 'code_box.dart';
-import 'glass_dialog.dart';
-import 'hybrid_kit.dart';
+import 'app_dialog.dart';
+import 'live_edge.dart';
+import 'seal_mark.dart';
 import 'tx_recap.dart';
 
-/// Post-broadcast confirmation: instead of a bare txid, recap everything
-/// that was just signed and sent — every recipient with its amount (and
-/// asset, on Liquid), the fee, the total, and the txid with copy + explorer.
+/// The moment a transaction is signed and broadcast: the seal stamps, and
+/// the recap of what was sent sits above the txid (copy + explorer).
 /// Shared by the software, hardware, and air-gap send paths.
+///
+/// The seal is the right mark here and only here: this dialog opens after a
+/// signature has landed. A multisig send still collecting signatures never
+/// reaches it — that outcome is the co-signer hand-off, with its own tally.
+///
+/// [onViewInActivity] is where "View in activity" goes: the caller leaves
+/// for Activity with this transaction's detail open. Null hides the button.
 Future<void> showTxSuccessDialog(
   BuildContext context, {
   required String txid,
   required TxPreview preview,
   required String ticker,
+  VoidCallback? onViewInActivity,
 }) {
   // Dialog on desktop, bottom sheet on a phone. Not dismissible from
   // outside: the txid is the one thing the user must not lose by accident.
   return showAppDialog<void>(
     context,
     barrierDismissible: false,
-    builder: (_) =>
-        _TxSuccessDialog(txid: txid, preview: preview, ticker: ticker),
+    builder: (_) => _TxSuccessDialog(
+      txid: txid,
+      preview: preview,
+      ticker: ticker,
+      onViewInActivity: onViewInActivity,
+    ),
   );
 }
 
@@ -38,11 +50,13 @@ class _TxSuccessDialog extends StatelessWidget {
     required this.txid,
     required this.preview,
     required this.ticker,
+    this.onViewInActivity,
   });
 
   final String txid;
   final TxPreview preview;
   final String ticker;
+  final VoidCallback? onViewInActivity;
 
   bool get _isLiquid => preview.chain == 'liquid';
 
@@ -62,65 +76,63 @@ class _TxSuccessDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
-    final badge = phone ? 56.0 : 64.0;
 
     final body = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Pop(
-          child: Center(
-            child: Container(
-              width: badge,
-              height: badge,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: s.success,
-                boxShadow: [
-                  BoxShadow(
-                    color: s.success.withValues(alpha: 0.3),
-                    blurRadius: 22,
-                  ),
-                ],
-              ),
-              child: Icon(
-                Icons.check_rounded,
-                color: Colors.white,
-                size: phone ? 30 : 34,
-              ),
-            ),
+        // Stamps itself on mount.
+        const Center(
+          child: SealMark(
+            stamped: true,
+            size: 48,
+            semanticLabel: 'Signed and sent',
           ),
         ),
-        SizedBox(height: phone ? AppSpacing.md : AppSpacing.lg),
-        Reveal(
-          delay: 1,
-          child: Text(
-            'Transaction sent',
-            textAlign: TextAlign.center,
-            style: AppTypography.pageTitleOf(context),
-          ),
+        const SizedBox(height: AppSpacing.lg),
+        Text(
+          'Sent',
+          textAlign: TextAlign.center,
+          style: AppTypography.sectionTitle.copyWith(color: s.ink),
         ),
         const SizedBox(height: AppSpacing.xs),
-        Reveal(
-          delay: 2,
-          child: Text(
-            'Broadcast to the ${_isLiquid ? 'Liquid' : 'Bitcoin'} testnet.',
-            textAlign: TextAlign.center,
-            style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
-          ),
+        Text(
+          'Broadcast to the ${_isLiquid ? 'Liquid' : 'Bitcoin'} testnet',
+          textAlign: TextAlign.center,
+          style: AppTypography.bodyOf(context).copyWith(color: s.inkSecondary),
         ),
         SizedBox(height: phone ? AppSpacing.lg : AppSpacing.xl),
-        Reveal(
-          delay: 3,
-          child: TxRecapPanel(preview: preview, ticker: ticker),
-        ),
+        TxRecapPanel(preview: preview, ticker: ticker),
         const SizedBox(height: AppSpacing.md),
-        Reveal(
-          delay: 5,
-          child: CodeBox(value: txid, label: 'TxID'),
-        ),
+        CodeBox(value: txid, label: 'TxID'),
       ],
     );
+
+    final explorer = GhostButton(
+      label: 'View in explorer',
+      icon: Icons.open_in_new_outlined,
+      isFullWidth: phone,
+      onPressed: () => _openExplorer(context),
+    );
+    final done = PrimaryButton(
+      label: 'Done',
+      isFullWidth: phone,
+      onPressed: () => Navigator.of(context).pop(),
+    );
+    // Beside the explorer: the same transaction in this wallet's own
+    // record, its detail open.
+    final toActivity = onViewInActivity;
+    final activity = toActivity == null
+        ? null
+        : SecondaryButton(
+            label: 'View in activity',
+            icon: Icons.history_outlined,
+            isFullWidth: phone,
+            onPressed: () {
+              Navigator.of(context).pop();
+              toActivity();
+            },
+          );
 
     final actions = phone
         ? <Widget>[
@@ -128,34 +140,23 @@ class _TxSuccessDialog extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                PrimaryButton(
-                  label: 'Done',
-                  isFullWidth: true,
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
+                done,
+                if (activity != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  activity,
+                ],
                 const SizedBox(height: AppSpacing.sm),
-                SecondaryButton(
-                  label: 'View on explorer',
-                  icon: Icons.open_in_new_rounded,
-                  isFullWidth: true,
-                  onPressed: () => _openExplorer(context),
-                ),
+                explorer,
               ],
             ),
           ]
-        : <Widget>[
-            SecondaryButton(
-              label: 'View on explorer',
-              icon: Icons.open_in_new_rounded,
-              onPressed: () => _openExplorer(context),
-            ),
-            PrimaryButton(
-              label: 'Done',
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ];
+        : <Widget>[explorer, ?activity, done];
 
     return AppDialog(
+      // It landed: the dialog's edge draws itself closed in the success
+      // green as the seal stamps (design.md, "Motion").
+      edge: LiveEdgeMode.done,
+      edgeColor: s.success,
       // The sheet scrolls its own content; the desktop dialog needs a width
       // and a scroll view of its own.
       content: phone

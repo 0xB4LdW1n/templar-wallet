@@ -145,7 +145,10 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: AppRoutes.history,
-          builder: (_, _) => const HistoryScreen(),
+          // `?tx=<txid>` opens that transaction's detail once it is listed
+          // ("View in activity", after a send).
+          builder: (_, s) =>
+              HistoryScreen(openTxid: s.uri.queryParameters['tx']),
         ),
         GoRoute(path: AppRoutes.utxos, builder: (_, _) => const UtxoScreen()),
         GoRoute(

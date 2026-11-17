@@ -9,33 +9,31 @@ import 'package:flutter/material.dart';
 /// reduced-motion setting collapses animation app-wide.
 abstract final class AppMotion {
   // ── Durations ───────────────────────────────────────────────────────────────
-  /// Hover / pressed feedback, color shifts. Never delays the user.
-  static const Duration instant = Duration(milliseconds: 90);
+  /// Hover / pressed feedback, colour shifts. Never delays the user.
+  static const Duration instant = Duration(milliseconds: 120);
 
   /// Selection changes, toggles, small reveals.
   static const Duration quick = Duration(milliseconds: 160);
 
-  /// Panel / card transitions, expansion.
-  static const Duration standard = Duration(milliseconds: 240);
+  /// Menus, popovers, expansion.
+  static const Duration standard = Duration(milliseconds: 220);
 
-  /// Hero reveals (balance), modal entrances.
-  static const Duration emphasized = Duration(milliseconds: 420);
+  /// Things that enter: a sheet, a dialog, the chart drawing itself.
+  static const Duration emphasized = Duration(milliseconds: 360);
 
-  /// One-off choreography (first-run, success moments).
-  static const Duration grand = Duration(milliseconds: 700);
+  /// The one long move: the chart's first draw.
+  static const Duration grand = Duration(milliseconds: 500);
 
-  // ── Easing — the "liquid" family ────────────────────────────────────────────
-  /// Default for everything that moves: fast start, soft settle.
-  static const Curve settle = Curves.easeOutCubic;
+  // ── Easing ──────────────────────────────────────────────────────────────────
+  /// The one curve: fast start, soft settle, no overshoot. Nothing in the
+  /// app bounces.
+  static const Curve settle = Cubic(0.22, 1, 0.36, 1);
 
-  /// Entering elements (slides in with weight).
-  static const Curve enter = Curves.easeOutQuart;
+  /// Entering elements. Same curve.
+  static const Curve enter = settle;
 
-  /// Exiting elements (gets out of the way fast).
+  /// Exiting elements get out of the way fast.
   static const Curve exit = Curves.easeInCubic;
-
-  /// Springy emphasis for delight moments only — never on data.
-  static const Curve spring = Curves.easeOutBack;
 
   // ── Reduced-motion gate ─────────────────────────────────────────────────────
   /// True when the OS asks for reduced motion.

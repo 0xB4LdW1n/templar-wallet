@@ -12,7 +12,6 @@ import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
 import '../../shared/widgets/app_password_gate.dart';
-import '../../shared/widgets/badges.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/cards.dart';
@@ -20,10 +19,10 @@ import '../../shared/widgets/code_box.dart';
 import '../../shared/widgets/expander.dart';
 import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/list_rows.dart';
-import '../../shared/widgets/page_header.dart';
+import '../../shared/widgets/seal_mark.dart';
 import '../../services/protocol_portfolio_service.dart';
 import '../../services/protocol_store.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
@@ -487,7 +486,7 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
           '"${w.name}" (it can then see this wallet\'s Liquid balance and '
           'history), its loan escrow key, and a receive address'
           '${proves ? ', and will sign a proof of that key — a check that never moves funds — so the site recognises it again' : ''}. '
-          'No secret leaves this computer.',
+          'No secret leaves this device.',
     );
     if (!ok || !mounted) return;
     // v1.1 (§9.3): the proof rides in the callback. Built by the engine from
@@ -756,7 +755,7 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     );
   }
 
-  /// Settings › Network & Sync. It lives inside the wallet shell, so with no
+  /// Settings › Network. It lives inside the wallet shell, so with no
   /// wallet open the router would bounce to the picker without a word —
   /// say so instead of appearing to ignore the tap.
   void _openNetworkSettings() {
@@ -766,7 +765,7 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Open a wallet first, then Settings › Network & Sync.'),
+        content: Text('Open a wallet first, then Settings › Network.'),
         duration: Duration(seconds: 5),
       ),
     );
@@ -793,70 +792,100 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
   @override
   Widget build(BuildContext context) {
     final req = _request;
+    final phone = AppLayout.isPhone(context);
+    final loanRef = req?.loanRef ?? '';
     final title = switch (_link?.action) {
       ProtocolAction.connect => 'Connect wallet',
-      ProtocolAction.sign => req?.actionLabel ?? 'Sign request',
+      ProtocolAction.sign =>
+        req == null
+            ? 'Sign request'
+            : loanRef.isNotEmpty && !req.isProof
+            ? '${req.actionLabel} · $loanRef'
+            : req.actionLabel,
       null => 'Templar Protocol',
     };
-    final subtitle = req != null
-        ? '${req.site} · ${_link?.origin ?? req.callback.host} · ${protocolNetworkLabel(req.network)}'
-        : 'A site is asking this wallet to take part in a loan.';
+    final inReview = _phase == _Phase.review;
     final canChangeWallet =
         _wallet != null &&
         _wallets.length > 1 &&
         (_phase == _Phase.review || _phase == _Phase.error) &&
         !_busy;
+    final gate = inReview ? _reviewGate() : null;
+    // On a phone the decision stays in reach: the statement and the two
+    // buttons ride at the foot of the screen while the review scrolls.
+    final pinGate = phone && gate != null;
 
     return Scaffold(
       body: PageBackground.flat(
-        child: Center(
+        child: Align(
+          alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 980),
+            constraints: const BoxConstraints(
+              maxWidth: AppSpacing.formMaxWidth + 2 * AppSpacing.xxl,
+            ),
             child: ListView(
               padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
               children: [
-                PageHeader(
+                ProtocolRequestHeading(
                   title: title,
-                  subtitle: subtitle,
+                  site: req?.site,
+                  network: req?.network,
+                  origin: req == null
+                      ? null
+                      : (_link?.origin ?? req.callback.origin),
+                  walletName: (inReview || _phase == _Phase.done)
+                      ? _wallet?.name
+                      : null,
                   actions: [
                     if (canChangeWallet)
                       GhostButton(
                         key: const Key('protocol-change-wallet'),
                         label: 'Change wallet',
-                        icon: Icons.swap_horiz_rounded,
                         onPressed: _changeWallet,
                       ),
-                    GhostButton(
-                      label: _phase == _Phase.done
-                          ? 'Close'
-                          : _link?.action == ProtocolAction.sign
-                          ? 'Cancel signing request'
-                          : 'Cancel',
-                      icon: Icons.close,
-                      onPressed: _busy
-                          ? null
-                          : _phase == _Phase.done
-                          ? _leave
-                          : _cancelRequest,
-                    ),
+                    // In the review the way out sits beside the signing
+                    // button instead.
+                    if (!inReview)
+                      GhostButton(
+                        label: _phase == _Phase.done
+                            ? 'Close'
+                            : _link?.action == ProtocolAction.sign
+                            ? 'Cancel signing request'
+                            : 'Cancel',
+                        onPressed: _busy
+                            ? null
+                            : _phase == _Phase.done
+                            ? _leave
+                            : _cancelRequest,
+                      ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.lg),
                 _body(),
+                if (gate != null && !pinGate) ...[
+                  const SizedBox(height: AppSpacing.xl),
+                  gate,
+                ],
               ],
             ),
           ),
         ),
       ),
+      bottomNavigationBar: pinGate ? _PinnedGate(child: gate) : null,
     );
   }
 
   Widget _body() => switch (_phase) {
     _Phase.paste => ProtocolPasteCard(onOpen: _start),
-    _Phase.loading => Center(
-      child: Padding(
-        padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-        child: const CircularProgressIndicator(),
+    _Phase.loading => Padding(
+      padding: const EdgeInsets.all(AppSpacing.xxl),
+      child: Center(
+        child: SizedBox.square(
+          dimension: AppSpacing.xl,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: AppScheme.of(context).inkSecondary,
+          ),
+        ),
       ),
     ),
     _Phase.locked => _LockedCard(
@@ -912,8 +941,59 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     ),
   };
 
+  /// The consent step of whichever review is showing. Built apart from the
+  /// review so a phone can pin it under the scrolling page; what it asks and
+  /// what it enables are unchanged by where it sits.
+  Widget _reviewGate() {
+    final req = _request!;
+    final w = _wallet!;
+    if (_isConnect) {
+      return ProtocolConfirmGate(
+        statement:
+            'I want ${req.site} to watch "${w.name}" and to use its escrow key in my loans',
+        buttonLabel: 'Connect',
+        busy: _busy,
+        onConfirm: _confirmConnect,
+        cancelLabel: 'Decline',
+        onCancel: _cancelRequest,
+      );
+    }
+    if (req.isProof) {
+      final origin = _link?.origin ?? req.callback.origin;
+      return ProtocolConfirmGate(
+        key: const Key('protocol-proof-gate'),
+        statement:
+            'I understand this signature proves my loan key to $origin and moves no funds',
+        buttonLabel: 'Sign the proof for ${req.site}',
+        busy: _busy,
+        enabled: _proofVerdict?.isCheck == true,
+        disabledReason:
+            "Signing is blocked: this is not the check of the request's challenge",
+        onConfirm: _confirmSign,
+        cancelLabel: 'Cancel request',
+        onCancel: _cancelRequest,
+      );
+    }
+    final ours = _inspection!.ourInputs;
+    final agreement = _agreement!;
+    return ProtocolConfirmGate(
+      statement:
+          'I reviewed the amounts computed by this wallet, the covenant effect and the fee',
+      buttonLabel: 'Sign ${req.actionLabel.toLowerCase()}',
+      busy: _busy,
+      enabled: ours.isNotEmpty && agreement.canSign,
+      disabledReason: ours.isEmpty
+          ? 'Nothing here is for this wallet to sign'
+          : 'Signing is blocked: the site and the wallet do not agree',
+      onConfirm: _confirmSign,
+      cancelLabel: 'Cancel request',
+      onCancel: _cancelRequest,
+    );
+  }
+
   // ── Connect review ─────────────────────────────────────────────────────────
 
+  /// What the site will learn, as the rows it will receive, then what stays.
   Widget _connectReview() {
     final req = _request!;
     final w = _wallet!;
@@ -921,48 +1001,33 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _ActionHeader(
-          icon: Icons.link_rounded,
-          tint: s.liquid,
-          title: 'Share a view of "${w.name}" with ${req.site}',
-          subtitle:
-              'The site will see this wallet\'s Liquid balance and history and '
-              'build loan transactions for it. It cannot spend: every signature '
-              'happens here, after you confirm.',
-          chips: [
-            TagChip(label: protocolNetworkLabel(req.network), color: s.liquid),
-            TagChip(
-              label: w.isHardwareWallet ? 'Jade' : 'software seed',
-              color: s.inkSecondary,
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        _ShareFlow(site: req.site, walletName: w.name),
-        const SizedBox(height: AppSpacing.lg),
         FormCard(
-          title: 'Shared with ${req.site}',
+          title: 'What ${req.site} will learn',
+          subtitle:
+              'It will see this wallet\'s Liquid balance and history and '
+              'build loan transactions for it. It cannot spend: every '
+              'signature happens here, after you confirm.',
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               CopyRow(
                 label: 'Wallet',
                 value: 'Templar — ${w.name}',
                 mono: false,
               ),
-              const Divider(height: 1),
+              Divider(height: 1, color: s.edge),
               CopyRow(
                 label: 'Signer',
                 value: w.isHardwareWallet ? 'jade' : 'software',
                 mono: false,
               ),
-              const Divider(height: 1),
+              Divider(height: 1, color: s.edge),
               CopyRow(
                 label: 'Network',
                 value: protocolNetworkLabel(req.network),
                 mono: false,
               ),
-              const Divider(height: 1),
+              Divider(height: 1, color: s.edge),
               CopyRow(label: 'Receive address', value: _receiveAddress ?? ''),
               const SizedBox(height: AppSpacing.lg),
               CodeBox(
@@ -976,8 +1041,16 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
                     : 'Escrow key (m/2121\'/1\'/0\')',
                 value: _escrowXpub ?? '',
               ),
+              const SizedBox(height: AppSpacing.lg),
+              CopyRow(label: 'Sent to', value: req.callback.toString()),
             ],
           ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Text(
+          'Stays here: the seed of "${w.name}" and every private key. The '
+          'escrow key is its own account below the seed, used only in loans.',
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
         ),
         if (req.challenge != null) ...[
           const SizedBox(height: AppSpacing.lg),
@@ -999,24 +1072,10 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
                       'through a signing request instead.',
           ),
         ],
-        const SizedBox(height: AppSpacing.lg),
-        FormCard(
-          title: 'Sent to',
-          child: CopyRow(label: 'Callback', value: req.callback.toString()),
-        ),
-        const SizedBox(height: AppSpacing.xl),
         if (_error != null) ...[
-          DangerBanner(message: _error!),
           const SizedBox(height: AppSpacing.lg),
+          DangerBanner(message: _error!),
         ],
-        ProtocolConfirmGate(
-          statement:
-              'I want ${req.site} to watch "${w.name}" and to use its escrow key in my loans.',
-          buttonLabel: 'Share with ${req.site}',
-          icon: Icons.link,
-          busy: _busy,
-          onConfirm: _confirmConnect,
-        ),
       ],
     );
   }
@@ -1042,20 +1101,11 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _ActionHeader(
-          icon: Icons.verified_user_outlined,
-          tint: v.isCheck ? s.liquid : s.danger,
-          title: 'Prove that "${w.name}" holds its loan key',
-          subtitle:
-              'A signature on a check that can never be broadcast: it spends '
-              'no coin and pays nobody. $kProtocolProofStatement.',
-          chips: [
-            TagChip(label: 'proof of key', color: s.liquid),
-            TagChip(
-              label: protocolNetworkLabel(req.network),
-              color: s.inkSecondary,
-            ),
-          ],
+        Text(
+          'Prove that "${w.name}" holds its loan key. A signature on a check '
+          'that can never be broadcast: it spends no coin and pays nobody. '
+          '$kProtocolProofStatement.',
+          style: AppTypography.bodyOf(context).copyWith(color: s.inkSecondary),
         ),
         const SizedBox(height: AppSpacing.lg),
         if (!v.isCheck)
@@ -1091,7 +1141,7 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
         ExpanderCard(
           key: const Key('protocol-technical-details'),
           title: 'Technical details',
-          subtitle: 'The request, and the wallet\'s raw reading of the check.',
+          subtitle: 'The request, and the wallet\'s raw reading of the check',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1113,24 +1163,14 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
           'and the check is not kept once this screen closes.',
           style: AppTypography.caption.copyWith(color: s.inkSecondary),
         ),
-        const SizedBox(height: AppSpacing.md),
-        ProtocolConfirmGate(
-          key: const Key('protocol-proof-gate'),
-          statement:
-              'I understand this signature proves my loan key to $origin and moves no funds.',
-          buttonLabel: 'Sign the proof for ${req.site}',
-          busy: _busy,
-          enabled: v.isCheck,
-          onConfirm: _confirmSign,
-        ),
       ],
     );
   }
 
-  /// Every other action: what this does to the wallet (the net change the
-  /// engine computed), where the money goes (the outputs, as a flow), what
-  /// the site says it is (its own lines, to compare), and the raw reading
-  /// under a fold. One column, read top to bottom.
+  /// Every other action: what this does to the wallet (the engine's own
+  /// reading, compared with the site's figures), then the evidence — ids,
+  /// every input and output, the site's own lines, the escrow — under a
+  /// fold. One column, read top to bottom.
   Widget _signReview() {
     final req = _request!;
     if (req.isProof) return _proofReview();
@@ -1138,29 +1178,10 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
     final i = _inspection!;
     final ours = i.ourInputs;
     final s = AppScheme.of(context);
-    final role = req.summary?.role ?? '';
-    final loanRef = req.loanRef ?? '';
     final agreement = _agreement!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _ActionHeader(
-          icon: _actionIcon(req.action),
-          tint: s.accent,
-          title: req.actionLabel,
-          subtitle: [
-            if (loanRef.isNotEmpty) 'Loan $loanRef',
-            if (role.isNotEmpty) 'you are the $role',
-            'signed with "${w.name}"',
-          ].join(' · '),
-          chips: [
-            TagChip(label: req.site, color: s.accent),
-            TagChip(label: protocolNetworkLabel(req.network), color: s.liquid),
-            if (i.touchesEscrow)
-              TagChip(label: 'loan escrow', color: s.warning),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.lg),
         if (ours.isEmpty)
           WarningBanner(
             title: 'Nothing here is for this wallet to sign',
@@ -1170,11 +1191,7 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
                 'took part in the loan is a different one — pick it with '
                 '"Change wallet" above.',
             action: _wallets.length > 1
-                ? GhostButton(
-                    label: 'Change wallet',
-                    icon: Icons.swap_horiz_rounded,
-                    onPressed: _changeWallet,
-                  )
+                ? GhostButton(label: 'Change wallet', onPressed: _changeWallet)
                 : null,
           )
         else
@@ -1189,7 +1206,7 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
           title: 'Technical details',
           subtitle:
               'Request ids, every input and output as the wallet reads them, '
-              'the escrow contract.',
+              'the escrow contract',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1204,7 +1221,7 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
                 const SizedBox(height: AppSpacing.lg),
                 Text(
                   'Escrow contract named by the site',
-                  style: AppTypography.sectionTitle,
+                  style: AppTypography.sectionTitle.copyWith(color: s.ink),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 CopyRow(label: 'Address', value: req.escrow!.address),
@@ -1226,179 +1243,38 @@ class _ProtocolRequestScreenState extends State<ProtocolRequestScreen> {
           'and the transaction is not kept once this screen closes.',
           style: AppTypography.caption.copyWith(color: s.inkSecondary),
         ),
-        const SizedBox(height: AppSpacing.md),
-        ProtocolConfirmGate(
-          statement:
-              'I reviewed what I send, receive, keep locked, the covenant effect and the fee.',
-          buttonLabel: 'Sign ${req.actionLabel.toLowerCase()}',
-          busy: _busy,
-          enabled: ours.isNotEmpty && agreement.canSign,
-          onConfirm: _confirmSign,
-        ),
       ],
     );
   }
 }
 
-IconData _actionIcon(String? action) => switch (action) {
-  'origination' => Icons.handshake_outlined,
-  'payment_preparation' => Icons.account_balance_wallet_outlined,
-  'repayment' => Icons.payments_outlined,
-  'installment' => Icons.event_repeat_rounded,
-  'payment_claim' => Icons.savings_outlined,
-  'renewal' => Icons.autorenew_rounded,
-  'default' => Icons.gavel_outlined,
-  'collateral_claim' => Icons.lock_open_rounded,
-  'liquidation' => Icons.gavel_outlined,
-  'swap' => Icons.swap_horiz_rounded,
-  'proof' => Icons.verified_user_outlined,
-  _ => Icons.draw_outlined,
-};
-
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
-/// The one-glance head of a review: a big glyph for what this is, the title,
-/// one sentence, and the chips that place it (site, network, role).
-class _ActionHeader extends StatelessWidget {
-  const _ActionHeader({
-    required this.icon,
-    required this.tint,
-    required this.title,
-    required this.subtitle,
-    this.chips = const [],
-  });
-  final IconData icon;
-  final Color tint;
-  final String title;
-  final String subtitle;
-  final List<Widget> chips;
+/// The consent step pinned under a phone's review: the card surface with a
+/// hairline above, clear of the system's gesture bar.
+class _PinnedGate extends StatelessWidget {
+  const _PinnedGate({required this.child});
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final phone = AppLayout.isPhone(context);
-    return FormCard(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListIconTile(icon: icon, tint: tint, size: phone ? 48 : 56),
-          const SizedBox(width: AppSpacing.lg),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTypography.sectionTitleOf(
-                    context,
-                  ).copyWith(color: s.ink),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  subtitle,
-                  style: AppTypography.bodySmall.copyWith(
-                    color: s.inkSecondary,
-                  ),
-                ),
-                if (chips.isNotEmpty) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  Wrap(
-                    spacing: AppSpacing.xs,
-                    runSpacing: AppSpacing.xs,
-                    children: chips,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: s.panel,
+        border: Border(top: BorderSide(color: s.edge)),
       ),
-    );
-  }
-}
-
-/// Connect, as a picture: what goes to the site and what stays here.
-class _ShareFlow extends StatelessWidget {
-  const _ShareFlow({required this.site, required this.walletName});
-  final String site;
-  final String walletName;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    Widget tile(IconData icon, Color tint, String title, String body) =>
-        Expanded(
-          child: DataWell(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ListIconTile(icon: icon, tint: tint, size: 32),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  title,
-                  style: AppTypography.body.copyWith(
-                    color: s.ink,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  body,
-                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
-                ),
-              ],
-            ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.sm,
+            AppSpacing.lg,
+            AppSpacing.lg,
           ),
-        );
-    final arrow = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-      child: Icon(Icons.arrow_forward_rounded, color: s.inkFaint),
-    );
-    return FormCard(
-      title: 'What leaves this computer, and what never does',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              tile(
-                Icons.visibility_outlined,
-                s.liquid,
-                'A view',
-                'Watch-only descriptor, loan key, one address → $site',
-              ),
-              arrow,
-              tile(
-                Icons.language_rounded,
-                s.accent,
-                site,
-                'Sees balances and history; builds each loan transaction',
-              ),
-              arrow,
-              tile(
-                Icons.draw_outlined,
-                s.liquid,
-                'Your signature',
-                'Every step comes back here to be read and signed by you',
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            children: [
-              Icon(Icons.lock_outline_rounded, size: 16, color: s.success),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Text(
-                  'Stays here: the seed of "$walletName" and every private key. '
-                  'The escrow key is its own account below the seed, used only in loans.',
-                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
-                ),
-              ),
-            ],
-          ),
-        ],
+          child: child,
+        ),
       ),
     );
   }
@@ -1406,7 +1282,7 @@ class _ShareFlow extends StatelessWidget {
 
 /// What the signature does to this wallet, in one figure per asset: the net
 /// change the engine computed from its own unblinding — the one number a
-/// PSET cannot misstate. Green comes in, amber goes out.
+/// PSET cannot misstate. What arrives carries a plus in the success ink.
 class _NetChangeCard extends StatelessWidget {
   const _NetChangeCard({required this.inspection, required this.walletName});
   final PsetInspection inspection;
@@ -1416,10 +1292,13 @@ class _NetChangeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final lines = inspection.netChangeLines;
+    final faint = AppTypography.caption.copyWith(color: s.inkFaint);
+    final have = inspection.sigsHave;
+    final need = inspection.sigsNeeded;
     return FormCard(
       title: 'What changes for "$walletName"',
       subtitle:
-          'Read by the wallet from the transaction itself, not from the site.',
+          'Read by the wallet from the transaction itself, not from the site',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1433,45 +1312,57 @@ class _NetChangeCard extends StatelessWidget {
               ),
             ),
           if (lines.isEmpty)
-            Row(
-              children: [
-                ListIconTile(
-                  icon: Icons.remove_rounded,
-                  tint: s.inkFaint,
-                  size: 36,
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Text(
-                    'Nothing of this wallet\'s moves. The signature only unlocks the '
-                    'escrow for the other party, or proves a key.',
-                    style: AppTypography.body.copyWith(color: s.inkSecondary),
-                  ),
-                ),
-              ],
+            Text(
+              'Nothing of this wallet\'s moves. The signature only unlocks the '
+              'escrow for the other party, or proves a key.',
+              style: AppTypography.bodyOf(
+                context,
+              ).copyWith(color: s.inkSecondary),
             )
           else
             for (var i = 0; i < lines.length; i++) ...[
               if (i > 0) Divider(height: AppSpacing.lg, color: s.edge),
-              _NetChangeRow(line: lines[i]),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      lines[i].isIncoming
+                          ? 'Comes into this wallet'
+                          : 'Leaves this wallet',
+                      style: AppTypography.bodyOf(
+                        context,
+                      ).copyWith(color: s.inkSecondary),
+                    ),
+                  ),
+                  ProtocolFigure(
+                    _signedAmount(lines[i]),
+                    color: lines[i].isIncoming ? s.success : s.ink,
+                  ),
+                ],
+              ),
             ],
+          const SizedBox(height: AppSpacing.lg),
+          Divider(height: 1, color: s.edge),
           const SizedBox(height: AppSpacing.md),
-          Row(
+          Wrap(
+            spacing: AppSpacing.lg,
+            runSpacing: AppSpacing.sm,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Icon(
-                Icons.local_gas_station_outlined,
-                size: 14,
-                color: s.inkFaint,
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                'Network fee ${inspection.feeDisplay}',
-                style: AppTypography.caption.copyWith(color: s.inkFaint),
-              ),
-              const Spacer(),
-              Text(
-                '${inspection.sigsHave} of ${inspection.sigsNeeded} signatures on the least-signed input',
-                style: AppTypography.caption.copyWith(color: s.inkFaint),
+              Text('Network fee ${inspection.feeDisplay}', style: faint),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Signatures are counted here, so the seal counts them.
+                  if (need > 0 && need <= 5) ...[
+                    SealTally(signed: have, required: need, size: 16),
+                    const SizedBox(width: AppSpacing.sm),
+                  ],
+                  Text(
+                    '$have of $need signatures on the least-signed input',
+                    style: faint,
+                  ),
+                ],
               ),
             ],
           ),
@@ -1481,44 +1372,17 @@ class _NetChangeCard extends StatelessWidget {
   }
 }
 
-class _NetChangeRow extends StatelessWidget {
-  const _NetChangeRow({required this.line});
-  final PsetNetChange line;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final incoming = line.isIncoming;
-    final tint = incoming ? s.success : s.warning;
-    return Row(
-      children: [
-        ListIconTile(
-          icon: incoming ? Icons.south_west_rounded : Icons.north_east_rounded,
-          tint: tint,
-          size: 36,
-        ),
-        const SizedBox(width: AppSpacing.md),
-        Expanded(
-          child: Text(
-            incoming ? 'Comes into this wallet' : 'Leaves this wallet',
-            style: AppTypography.body.copyWith(color: s.inkSecondary),
-          ),
-        ),
-        Text(
-          line.displayAmount,
-          style: AppTypography.numericLarge.copyWith(
-            color: tint,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
-  }
+String _signedAmount(PsetNetChange line) {
+  final bare = line.displayAmount.trim().replaceFirst(
+    RegExp(r'^[+\-−]\s*'),
+    '',
+  );
+  return '${line.isIncoming ? '+' : '−'}$bare';
 }
 
-/// Where every coin goes, as a flow: what feeds the transaction on top,
-/// then one row per output with a glyph for its destination — back to this
-/// wallet, into the loan escrow, to the other party, the network fee.
+/// Where every coin goes: what feeds the transaction, then one row per
+/// output with the wallet's word for its destination — back to this wallet,
+/// into the loan escrow, to the other party, the network fee.
 class _FlowCard extends StatelessWidget {
   const _FlowCard({required this.inspection});
   final PsetInspection inspection;
@@ -1530,100 +1394,32 @@ class _FlowCard extends StatelessWidget {
     final ownCoins = i.inputs.where((x) => x.isOurs && !x.isScriptHash).length;
     final ownEscrow = i.inputs.where((x) => x.isOurs && x.isScriptHash).length;
     final others = i.inputs.where((x) => !x.isOurs).length;
-    final sources = <Widget>[
-      if (ownCoins > 0)
-        _SourceChip(
-          icon: Icons.account_balance_wallet_outlined,
-          tint: s.liquid,
-          label: '$ownCoins of your coin${ownCoins == 1 ? '' : 's'}',
-        ),
-      if (ownEscrow > 0)
-        _SourceChip(
-          icon: Icons.lock_open_rounded,
-          tint: s.accent,
-          label: 'the loan escrow · your key',
-        ),
-      if (others > 0)
-        _SourceChip(
-          icon: Icons.person_outline_rounded,
-          tint: s.inkSecondary,
-          label: '$others input${others == 1 ? '' : 's'} from others',
-        ),
+    final sources = <String>[
+      if (ownCoins > 0) '$ownCoins of your coin${ownCoins == 1 ? '' : 's'}',
+      if (ownEscrow > 0) 'the loan escrow · your key',
+      if (others > 0) '$others input${others == 1 ? '' : 's'} from others',
     ];
+    final eyebrow = AppTypography.eyebrow.copyWith(color: s.inkFaint);
     return FormCard(
       title: 'Where the money goes',
-      subtitle: 'Every output of the transaction, classified by the wallet.',
+      subtitle: 'Every output of the transaction, classified by the wallet',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'FROM',
-            style: AppTypography.navSection.copyWith(
-              color: s.inkFaint,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
+          Text('From', style: eyebrow),
+          const SizedBox(height: AppSpacing.sm),
           Wrap(
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.xs,
-            children: sources,
+            children: [for (final src in sources) QuietTag(label: src)],
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-            child: Row(
-              children: [
-                const SizedBox(width: 10),
-                Icon(Icons.arrow_downward_rounded, size: 18, color: s.inkFaint),
-              ],
-            ),
-          ),
-          Text(
-            'TO',
-            style: AppTypography.navSection.copyWith(
-              color: s.inkFaint,
-              letterSpacing: 1.2,
-            ),
-          ),
+          const SizedBox(height: AppSpacing.lg),
+          Text('To', style: eyebrow),
           const SizedBox(height: AppSpacing.xs),
           for (var k = 0; k < i.outputs.length; k++) ...[
-            if (k > 0) Divider(height: AppSpacing.md, color: s.edge),
+            if (k > 0) Divider(height: 1, color: s.edge),
             _OutputRow(output: i.outputs[k]),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-class _SourceChip extends StatelessWidget {
-  const _SourceChip({
-    required this.icon,
-    required this.tint,
-    required this.label,
-  });
-  final IconData icon;
-  final Color tint;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm + 2,
-        vertical: 6,
-      ),
-      decoration: BoxDecoration(
-        color: s.panelInset,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm + 2),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: tint),
-          const SizedBox(width: 6),
-          Text(label, style: AppTypography.caption.copyWith(color: s.ink)),
         ],
       ),
     );
@@ -1638,50 +1434,46 @@ class _OutputRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final o = output;
-    final (icon, tint, label) = switch (o.kind) {
-      'own' => (
-        Icons.account_balance_wallet_outlined,
-        s.liquid,
-        'Back to this wallet',
-      ),
-      'escrow' => (
-        Icons.lock_outline_rounded,
-        s.accent,
-        'Into the loan escrow',
-      ),
-      'fee' => (Icons.local_gas_station_outlined, s.inkFaint, 'Network fee'),
-      _ => (Icons.person_outline_rounded, AppColors.warning, 'To someone else'),
+    final label = switch (o.kind) {
+      'own' => 'Back to this wallet',
+      'escrow' => 'Into the loan escrow',
+      'fee' => 'Network fee',
+      _ => 'To someone else',
     };
     final addr = o.address;
-    final amount = o.unverified
-        ? 'unverified'
-        : (o.displayAmount ??
-              (o.ticker != null ? 'blinded (${o.ticker})' : 'blinded'));
-    return Row(
-      children: [
-        ListIconTile(icon: icon, tint: tint, size: 36),
-        const SizedBox(width: AppSpacing.md),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: AppTypography.body.copyWith(color: s.ink)),
-              if (addr != null && addr.isNotEmpty)
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  _short(addr),
-                  style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
+                  label,
+                  style: AppTypography.bodyOf(context).copyWith(color: s.ink),
                 ),
-            ],
+                if (addr != null && addr.isNotEmpty)
+                  Text(
+                    _short(addr),
+                    style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
+                  ),
+              ],
+            ),
           ),
-        ),
-        Text(
-          amount,
-          style: AppTypography.numericSmall.copyWith(
-            color: o.unverified ? s.danger : s.ink,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
+          const SizedBox(width: AppSpacing.md),
+          if (o.unverified)
+            Text(
+              'unverified',
+              style: AppTypography.label.copyWith(color: s.danger),
+            )
+          else
+            ProtocolFigure(
+              o.displayAmount ??
+                  (o.ticker != null ? 'blinded (${o.ticker})' : 'blinded'),
+            ),
+        ],
+      ),
     );
   }
 
@@ -1692,6 +1484,7 @@ class _OutputRow extends StatelessWidget {
 /// The site's own description, to compare with the wallet's reading above
 /// — never instead of it.
 class _SiteSaysCard extends StatelessWidget {
+  // [compact] is kept for the call sites; there is one form now.
   const _SiteSaysCard({required this.request, this.compact = false});
   final ProtocolRequest request;
   final bool compact;
@@ -1700,80 +1493,48 @@ class _SiteSaysCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final summary = request.summary;
-    final body = summary == null || summary.lines.isEmpty
-        ? Text(
-            'The site sent no summary.',
-            style: AppTypography.caption.copyWith(color: s.inkSecondary),
-          )
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (summary.role.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: TagChip(
-                    label: 'Your role: ${summary.role}',
-                    color: s.accent,
-                  ),
-                ),
-              for (final line in summary.lines)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.chat_bubble_outline_rounded,
-                        size: 14,
-                        color: s.inkFaint,
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          line.label,
-                          style: AppTypography.bodySmall.copyWith(
-                            color: s.inkSecondary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Text(
-                        line.amount,
-                        style: AppTypography.numericSmall.copyWith(
-                          color: s.ink,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          );
-    if (compact) {
-      return Column(
+    Widget line(String k, String v, {bool amount = true}) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('What ${request.site} says', style: AppTypography.sectionTitle),
-          const SizedBox(height: AppSpacing.sm),
-          body,
-        ],
-      );
-    }
-    return RailPanel(
-      title: 'What ${request.site} says',
-      rail: s.accent,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          body,
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'The site\'s own words. Compare them with the two cards above: the '
-            'figures there come from the transaction, and the site cannot change them.',
-            style: AppTypography.caption.copyWith(color: s.inkFaint),
+          Expanded(
+            child: Text(
+              k,
+              style: AppTypography.bodyOf(
+                context,
+              ).copyWith(color: s.inkSecondary),
+            ),
           ),
+          const SizedBox(width: AppSpacing.md),
+          amount
+              ? ProtocolFigure(v)
+              : Text(
+                  v,
+                  style: AppTypography.bodyOf(context).copyWith(color: s.ink),
+                ),
         ],
       ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'What ${request.site} says',
+          style: AppTypography.sectionTitle.copyWith(color: s.ink),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        if (summary == null || summary.lines.isEmpty)
+          Text(
+            'The site sent no summary',
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
+          )
+        else ...[
+          if (summary.role.isNotEmpty)
+            line('Your role', summary.role, amount: false),
+          for (final l in summary.lines) line(l.label, l.amount),
+        ],
+      ],
     );
   }
 }
@@ -1823,15 +1584,23 @@ class _RawReading extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final i = inspection;
+    final eyebrow = AppTypography.eyebrow.copyWith(color: s.inkSecondary);
+    Widget head(String tag, String amount) => Row(
+      children: [
+        QuietTag(label: tag),
+        const Spacer(),
+        ProtocolFigure(amount),
+      ],
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('What "$walletName" reads', style: AppTypography.sectionTitle),
-        const SizedBox(height: AppSpacing.sm),
         Text(
-          'Inputs (${i.inputs.length})',
-          style: AppTypography.label.copyWith(color: s.inkSecondary),
+          'What "$walletName" reads',
+          style: AppTypography.sectionTitle.copyWith(color: s.ink),
         ),
+        const SizedBox(height: AppSpacing.md),
+        Text('Inputs (${i.inputs.length})', style: eyebrow),
         const SizedBox(height: AppSpacing.sm),
         for (final inp in i.inputs)
           Padding(
@@ -1840,30 +1609,16 @@ class _RawReading extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      TagChip(
-                        label: inp.isOurs
-                            ? (inp.isScriptHash
-                                  ? 'escrow · your key'
-                                  : 'your coin')
-                            : (inp.isScriptHash
-                                  ? 'contract · not yours'
-                                  : 'not yours'),
-                        color: inp.isOurs ? s.liquid : s.inkFaint,
-                      ),
-                      const Spacer(),
-                      Text(
-                        inp.displayAmount ??
-                            (inp.ticker != null
-                                ? 'blinded (${inp.ticker})'
-                                : 'blinded'),
-                        style: AppTypography.numericSmall.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: s.ink,
-                        ),
-                      ),
-                    ],
+                  head(
+                    inp.isOurs
+                        ? (inp.isScriptHash ? 'escrow · your key' : 'your coin')
+                        : (inp.isScriptHash
+                              ? 'contract · not yours'
+                              : 'not yours'),
+                    inp.displayAmount ??
+                        (inp.ticker != null
+                            ? 'blinded (${inp.ticker})'
+                            : 'blinded'),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   KvRow(label: 'Outpoint', value: inp.outpoint),
@@ -1876,10 +1631,7 @@ class _RawReading extends StatelessWidget {
             ),
           ),
         const SizedBox(height: AppSpacing.md),
-        Text(
-          'Outputs (${i.outputs.length})',
-          style: AppTypography.label.copyWith(color: s.inkSecondary),
-        ),
+        Text('Outputs (${i.outputs.length})', style: eyebrow),
         const SizedBox(height: AppSpacing.sm),
         for (final out in i.outputs)
           Padding(
@@ -1888,30 +1640,12 @@ class _RawReading extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      TagChip(
-                        label: out.kindLabel,
-                        color: out.isOwn
-                            ? s.liquid
-                            : out.isEscrow
-                            ? s.accent
-                            : out.isFee
-                            ? s.inkFaint
-                            : AppColors.warning,
-                      ),
-                      const Spacer(),
-                      Text(
-                        out.displayAmount ??
-                            (out.ticker != null
-                                ? 'blinded (${out.ticker})'
-                                : 'blinded'),
-                        style: AppTypography.numericSmall.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: s.ink,
-                        ),
-                      ),
-                    ],
+                  head(
+                    out.kindLabel,
+                    out.displayAmount ??
+                        (out.ticker != null
+                            ? 'blinded (${out.ticker})'
+                            : 'blinded'),
                   ),
                   if (out.address != null) ...[
                     const SizedBox(height: AppSpacing.xs),
@@ -1967,34 +1701,27 @@ class _ProofCard extends StatelessWidget {
       title: title,
       subtitle: body,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Icon(Icons.verified_user_outlined, size: 18, color: s.liquid),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  '$kProtocolProofStatement.',
-                  key: const Key('protocol-proof-statement'),
-                  style: AppTypography.body.copyWith(
-                    color: s.ink,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
+          Text(
+            '$kProtocolProofStatement.',
+            key: const Key('protocol-proof-statement'),
+            style: AppTypography.bodyOf(context).copyWith(color: s.ink),
           ),
           const SizedBox(height: AppSpacing.md),
-          KvRow(label: 'Site', value: origin, labelWidth: 96),
+          KvRow(label: 'Site', value: origin, divider: true),
           KvRow(
             label: 'Expires',
             value: '$expires · ${expiresAt.toLocal()}',
-            labelWidth: 96,
+            divider: true,
           ),
-          KvRow(label: 'Wallet', value: walletName, labelWidth: 96),
+          KvRow(
+            label: 'Wallet',
+            value: walletName,
+            divider: keyFingerprint.isNotEmpty,
+          ),
           if (keyFingerprint.isNotEmpty)
-            KvRow(label: 'Loan key', value: keyFingerprint, labelWidth: 96),
+            KvRow(label: 'Loan key', value: keyFingerprint),
           const SizedBox(height: AppSpacing.md),
           CodeBox(label: 'Challenge, as the site sent it', value: challenge),
         ],
@@ -2009,14 +1736,19 @@ class _LockedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final phone = AppLayout.isPhone(context);
     return FormCard(
       title: 'Wallet storage is locked',
       subtitle:
-          'Enter your app passphrase to read the request and choose a wallet.',
-      child: PrimaryButton(
-        label: 'Unlock',
-        icon: Icons.lock_open_outlined,
-        onPressed: onUnlock,
+          'Enter your app passphrase to read the request and choose a wallet',
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: PrimaryButton(
+          label: 'Unlock',
+          icon: Icons.lock_open_outlined,
+          onPressed: onUnlock,
+          isFullWidth: phone,
+        ),
       ),
     );
   }
@@ -2043,45 +1775,40 @@ class _ErrorCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final phone = AppLayout.isPhone(context);
-    final buttons = <Widget>[
-      if (onOpenSite != null)
-        PrimaryButton(
-          label: siteName == null ? 'Open the site' : 'Open $siteName',
-          icon: Icons.open_in_new,
-          onPressed: onOpenSite,
-          isFullWidth: phone,
-        ),
-      if (onRetry != null)
-        SecondaryButton(
-          label: 'Try again',
-          icon: Icons.refresh,
-          onPressed: onRetry,
-          isFullWidth: phone,
-        ),
-    ];
+    final open = onOpenSite == null
+        ? null
+        : PrimaryButton(
+            label: siteName == null ? 'Open the site' : 'Open $siteName',
+            icon: Icons.open_in_new_outlined,
+            onPressed: onOpenSite,
+            isFullWidth: phone,
+          );
+    final retry = onRetry == null
+        ? null
+        : SecondaryButton(
+            label: 'Try again',
+            onPressed: onRetry,
+            isFullWidth: phone,
+          );
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         DangerBanner(title: title, message: message),
-        if (buttons.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.lg),
-          if (phone)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final b in buttons) ...[
-                  b,
-                  if (b != buttons.last) const SizedBox(height: AppSpacing.md),
-                ],
-              ],
-            )
-          else
+        if (open != null || retry != null) ...[
+          SizedBox(height: phone ? AppSpacing.lg : AppSpacing.xl),
+          if (phone) ...[
+            ?open,
+            if (open != null && retry != null)
+              const SizedBox(height: AppSpacing.sm),
+            ?retry,
+          ] else
             Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                for (final b in buttons) ...[
-                  b,
-                  if (b != buttons.last) const SizedBox(width: AppSpacing.md),
-                ],
+                ?retry,
+                if (open != null && retry != null)
+                  const SizedBox(width: AppSpacing.sm),
+                ?open,
               ],
             ),
         ],
@@ -2151,13 +1878,15 @@ class _WalletChoice extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _ActionHeader(
-          icon: connect ? Icons.link_rounded : Icons.draw_outlined,
-          tint: s.liquid,
-          title: connect
+        Text(
+          connect
               ? 'Which wallet should $siteName know?'
               : 'Which wallet signs for $siteName?',
-          subtitle: connect
+          style: AppTypography.sectionTitle.copyWith(color: s.ink),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          connect
               ? 'The site will watch this wallet and use its loan key in your loans. '
                     'A software seed or a Jade, with Liquid enabled.'
               : hasConnected
@@ -2166,12 +1895,7 @@ class _WalletChoice extends StatelessWidget {
                     'you connected this site elsewhere.'
               : 'Pick the wallet whose key took part in this loan. This device has '
                     'not connected $siteName yet, so none is marked.',
-          chips: [
-            TagChip(
-              label: '${usable.length} usable',
-              color: usable.isEmpty ? s.danger : s.liquid,
-            ),
-          ],
+          style: AppTypography.bodyOf(context).copyWith(color: s.inkSecondary),
         ),
         const SizedBox(height: AppSpacing.lg),
         if (usable.isEmpty)
@@ -2194,15 +1918,8 @@ class _WalletChoice extends StatelessWidget {
             ],
           ),
         if (others.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.lg),
-          Text(
-            'NOT USABLE HERE',
-            style: AppTypography.navSection.copyWith(
-              color: s.inkFaint,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.xl),
+          const ListSectionLabel(label: 'Not usable here'),
           Opacity(
             opacity: 0.7,
             child: ListCard(
@@ -2210,9 +1927,8 @@ class _WalletChoice extends StatelessWidget {
                 for (final w in others)
                   ListRow(
                     icon: w.isHardwareWallet
-                        ? Icons.usb_rounded
+                        ? Icons.usb_outlined
                         : Icons.account_balance_wallet_outlined,
-                    tint: s.inkFaint,
                     title: w.name,
                     subtitle: '${w.displayType} · ${_whyNot(w)}',
                   ),
@@ -2225,7 +1941,7 @@ class _WalletChoice extends StatelessWidget {
   }
 }
 
-class _WalletRow extends StatelessWidget {
+class _WalletRow extends StatefulWidget {
   const _WalletRow({
     required this.wallet,
     required this.connected,
@@ -2240,29 +1956,40 @@ class _WalletRow extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_WalletRow> createState() => _WalletRowState();
+}
+
+class _WalletRowState extends State<_WalletRow> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final w = wallet;
-    final badges = <Widget>[
-      if (connected)
-        const StatusBadge(
-          label: 'Connected to this site',
-          variant: BadgeVariant.accent,
-          dot: true,
-        ),
-      if (preferred)
-        const StatusBadge(label: 'Preferred', variant: BadgeVariant.success),
-      if (open)
-        const StatusBadge(label: 'Open now', variant: BadgeVariant.neutral),
+    final w = widget.wallet;
+    final tags = <Widget>[
+      // A fact about this wallet and this site: the one tag with a dot.
+      if (widget.connected)
+        QuietTag(label: 'Connected to this site', dot: s.success),
+      if (widget.preferred) const QuietTag(label: 'Preferred'),
+      if (widget.open) const QuietTag(label: 'Open now'),
     ];
     return Semantics(
       button: true,
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
           key: Key('protocol-wallet-${w.id}'),
-          onTap: onTap,
-          child: Padding(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: AppMotion.of(context, AppMotion.instant),
+            curve: AppMotion.settle,
+            color: _hover ? s.hover : Colors.transparent,
+            constraints: const BoxConstraints(
+              minHeight: AppLayout.minTouchTarget,
+            ),
             padding: const EdgeInsets.symmetric(
               horizontal: kListPad,
               vertical: AppSpacing.md,
@@ -2271,9 +1998,8 @@ class _WalletRow extends StatelessWidget {
               children: [
                 ListIconTile(
                   icon: w.isHardwareWallet
-                      ? Icons.usb_rounded
-                      : Icons.key_rounded,
-                  tint: connected ? s.accent : s.liquid,
+                      ? Icons.usb_outlined
+                      : Icons.key_outlined,
                 ),
                 const SizedBox(width: kListGap),
                 Expanded(
@@ -2282,13 +2008,10 @@ class _WalletRow extends StatelessWidget {
                     children: [
                       Text(
                         w.name,
-                        style: AppTypography.body.copyWith(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: s.ink,
-                        ),
+                        style: AppTypography.bodyOf(
+                          context,
+                        ).copyWith(color: s.ink),
                       ),
-                      const SizedBox(height: 2),
                       Text(
                         '${w.displayType} · ${w.networksLabel}'
                         '${w.masterFingerprint != null ? ' · ${w.masterFingerprint}' : ''}',
@@ -2296,19 +2019,23 @@ class _WalletRow extends StatelessWidget {
                           color: s.inkSecondary,
                         ),
                       ),
-                      if (badges.isNotEmpty) ...[
+                      if (tags.isNotEmpty) ...[
                         const SizedBox(height: AppSpacing.xs),
                         Wrap(
                           spacing: AppSpacing.xs,
                           runSpacing: AppSpacing.xs,
-                          children: badges,
+                          children: tags,
                         ),
                       ],
                     ],
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
-                Icon(Icons.chevron_right_rounded, size: 22, color: s.inkFaint),
+                Icon(
+                  Icons.chevron_right_outlined,
+                  size: AppSpacing.icon,
+                  color: s.inkFaint,
+                ),
               ],
             ),
           ),
@@ -2318,6 +2045,9 @@ class _WalletRow extends StatelessWidget {
   }
 }
 
+/// The end of a request. A signing request ends on the seal — this wallet's
+/// signature has landed — and one line on what the site does next; a connect
+/// shares keys but signs no transaction, so it ends on a plain check.
 class _DoneCard extends StatelessWidget {
   const _DoneCard({
     required this.site,
@@ -2343,73 +2073,96 @@ class _DoneCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
-    final buttons = <Widget>[
-      if (next != null)
-        PrimaryButton(
-          label: 'Open in browser',
-          icon: Icons.open_in_new,
-          onPressed: onOpen,
-        ),
+    final primary = next == null
+        ? null
+        : PrimaryButton(
+            label: 'Return to $site',
+            icon: Icons.open_in_new_outlined,
+            onPressed: onOpen,
+            isFullWidth: phone,
+          );
+    final secondary = <Widget>[
       if (onOpenLoans != null)
         SecondaryButton(
           label: 'Open Loans',
-          icon: Icons.handshake_outlined,
           onPressed: onOpenLoans,
+          isFullWidth: phone,
         ),
-      SecondaryButton(label: 'Back to wallet', onPressed: onClose),
+      GhostButton(
+        label: 'Back to wallet',
+        onPressed: onClose,
+        isFullWidth: phone,
+      ),
     ];
-    final status = switch (action) {
-      'installment' =>
-        'Installment signature sent. The borrower payment is separate from the lender claim.',
-      'payment_claim' =>
-        'Payment-claim signature sent. The site must still broadcast and confirm it.',
-      'renewal' =>
-        'Covenant-renewal signature sent. This does not cancel the loan.',
-      'default' =>
-        'Default-settlement signature sent. Confirmation determines the collateral split.',
-      'collateral_claim' =>
-        'Collateral-remainder signature sent. The site must still broadcast and confirm it.',
-      _ =>
-        'The site accepted the signature. It has not reported whether counterpart signing, broadcast, mempool acceptance or confirmation comes next.',
-    };
+    final status = connect
+        ? '$site now watches this wallet and holds its escrow key. Every signing step for your loans will open here.'
+        : switch (action) {
+            'installment' =>
+              'Installment signature sent. The borrower payment is separate from the lender claim.',
+            'payment_claim' =>
+              'Payment-claim signature sent. The site must still broadcast and confirm it.',
+            'renewal' =>
+              'Covenant-renewal signature sent. This does not cancel the loan.',
+            'default' =>
+              'Default-settlement signature sent. Confirmation determines the collateral split.',
+            'collateral_claim' =>
+              'Collateral-remainder signature sent. The site must still broadcast and confirm it.',
+            _ =>
+              'The site accepted the signature. It has not reported whether counterpart signing, broadcast, mempool acceptance or confirmation comes next.',
+          };
     return FormCard(
-      title: connect ? 'Wallet connected' : 'Signature sent',
-      subtitle: connect
-          ? '$site now watches this wallet and holds its escrow key. Every signing step for your loans will open here.'
-          : status,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.check_circle_outline,
-                color: AppColors.success,
-                size: 22,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Text(
-                connect ? 'Connected' : 'Signature sent',
-                style: AppTypography.sectionTitle.copyWith(color: s.ink),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          if (phone)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          if (connect)
+            Row(
               children: [
-                for (var i = 0; i < buttons.length; i++) ...[
-                  if (i > 0) const SizedBox(height: AppSpacing.sm),
-                  buttons[i],
-                ],
+                Icon(
+                  Icons.check_circle_outlined,
+                  color: s.success,
+                  size: AppSpacing.icon,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  'Wallet connected',
+                  style: AppTypography.sectionTitle.copyWith(color: s.ink),
+                ),
               ],
             )
-          else
+          else ...[
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: SealMark(stamped: true, size: 48),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              'Signed',
+              style: AppTypography.sectionTitle.copyWith(color: s.ink),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            status,
+            style: AppTypography.bodyOf(
+              context,
+            ).copyWith(color: s.inkSecondary),
+          ),
+          SizedBox(height: phone ? AppSpacing.lg : AppSpacing.xl),
+          if (phone) ...[
+            if (primary != null) ...[
+              primary,
+              const SizedBox(height: AppSpacing.sm),
+            ],
+            for (var i = 0; i < secondary.length; i++) ...[
+              if (i > 0) const SizedBox(height: AppSpacing.sm),
+              secondary[i],
+            ],
+          ] else
             Wrap(
-              spacing: AppSpacing.md,
+              alignment: WrapAlignment.end,
+              spacing: AppSpacing.sm,
               runSpacing: AppSpacing.sm,
-              children: buttons,
+              children: [...secondary.reversed, ?primary],
             ),
         ],
       ),

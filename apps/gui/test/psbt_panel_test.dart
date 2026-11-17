@@ -1,9 +1,9 @@
 // The loaded-PSBT panel.
 //
-// Its signer chart is the same block the multisig hand-off sheets draw, so it
-// is asserted here against the counts a real inspection would carry: the ring
-// must never round a met quorum up to a full ring, and it must report what
-// the inspection said rather than what the ring shows.
+// Its signer list is the same block the multisig hand-off sheets draw, so it
+// is asserted here against the counts a real inspection would carry: a met
+// quorum must never stamp a key that has not signed, and the header must
+// report what the inspection said.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/features/psbt/cosign_view.dart';
 import 'package:templar_wallet/features/psbt/models/psbt_inspection.dart';
+import 'package:templar_wallet/shared/widgets/seal_mark.dart';
 import 'package:templar_wallet/shared/widgets/signer_donut.dart';
 
 /// A 2-of-3 with [signed] of the three signatures already collected.
@@ -91,61 +92,59 @@ Future<void> pumpPanel(
 void main() {
   setUpAll(() => GoogleFonts.config.allowRuntimeFetching = false);
 
-  testWidgets('charts the signers and counts them in the legend', (t) async {
+  testWidgets('lists the signers and counts them in the header', (t) async {
     await pumpPanel(t, inspection(signed: 1));
 
-    expect(find.byType(SignerDonut), findsOneWidget);
-    expect(find.text('1/3'), findsOneWidget);
-    expect(find.text('Signed (1)'), findsOneWidget);
-    expect(find.text('Not signed (2)'), findsOneWidget);
-    expect(
-      find.text(
-        '3 signers on this transaction · 1 of 2 required '
-        'signatures collected',
-      ),
-      findsOneWidget,
-    );
+    expect(find.byType(SignerList), findsOneWidget);
+    expect(find.text('Needs 1 more signature'), findsOneWidget);
+    expect(find.text('1 of 2 signatures'), findsOneWidget);
+    // One row per signer; a seal per row, and one per required signature
+    // in the tally beside the header.
+    expect(find.text('Signed'), findsOneWidget);
+    expect(find.text('Not signed'), findsNWidgets(2));
+    expect(find.byType(SealMark), findsNWidgets(3 + 2));
   });
 
-  testWidgets('an unsigned PSBT charts as all pending', (t) async {
+  testWidgets('an unsigned PSBT lists every signer as not signed', (t) async {
     await pumpPanel(t, inspection(signed: 0));
-    expect(find.text('0/3'), findsOneWidget);
-    expect(find.text('Signed (0)'), findsOneWidget);
-    expect(find.text('Not signed (3)'), findsOneWidget);
+    expect(find.text('Needs 2 more signatures'), findsOneWidget);
+    expect(find.text('0 of 2 signatures'), findsOneWidget);
+    expect(find.text('Signed'), findsNothing);
+    expect(find.text('Not signed'), findsNWidgets(3));
   });
 
-  testWidgets('a met quorum still shows the third signer as pending', (
+  testWidgets('a met quorum still shows the third signer as not signed', (
     t,
   ) async {
-    // 2-of-3 with two signatures: complete, but the ring is not full — the
-    // chart must not round that up.
+    // 2-of-3 with two signatures: complete, but the third key has not
+    // signed — the list must not round that up.
     await pumpPanel(t, inspection(signed: 2));
-    expect(find.text('2/3'), findsOneWidget);
-    expect(find.text('Not signed (1)'), findsOneWidget);
+    expect(find.text('Fully signed, ready to broadcast'), findsOneWidget);
+    expect(find.text('2 of 2 signatures'), findsOneWidget);
+    expect(find.text('Not signed'), findsOneWidget);
   });
 
   testWidgets('no threshold in the policy still reports what was collected', (
     t,
   ) async {
     await pumpPanel(t, inspection(signed: 1, required_: null));
-    expect(
-      find.text('3 signers on this transaction · 1 signature collected'),
-      findsOneWidget,
-    );
+    expect(find.text('1 signature collected'), findsOneWidget);
+    // No quorum stated: no row of seals for it either.
+    expect(find.byType(SealTally), findsNothing);
   });
 
   testWidgets('a loaded PSBT keeps its signing actions', (t) async {
     await pumpPanel(t, inspection(signed: 1));
 
-    expect(find.byType(SignerDonut), findsOneWidget);
-    expect(find.text('Sign & Export'), findsOneWidget);
+    expect(find.byType(SignerList), findsOneWidget);
+    expect(find.text('Sign'), findsOneWidget);
     expect(find.text('Sign with device'), findsOneWidget);
     expect(find.text('Decline'), findsOneWidget);
   });
 
   testWidgets('a complete quorum offers broadcast', (t) async {
     await pumpPanel(t, inspection(signed: 2));
-    expect(find.text('Finalize & Broadcast'), findsOneWidget);
+    expect(find.text('Finalize and broadcast'), findsOneWidget);
   });
 
   testWidgets(
@@ -154,15 +153,15 @@ void main() {
       // A co-signer on a phone: the session that started the transaction
       // broadcasts; this one signs and hands the copy back.
       await pumpPanel(t, inspection(signed: 2), allowBroadcast: false);
-      expect(find.text('Finalize & Broadcast'), findsNothing);
-      expect(find.text('Sign & Export'), findsOneWidget);
+      expect(find.text('Finalize and broadcast'), findsNothing);
+      expect(find.text('Sign'), findsOneWidget);
       await pumpPanel(
         t,
         inspection(signed: 2),
         signedPsbt: 'cHNidP8BAH0=',
         allowBroadcast: false,
       );
-      expect(find.text('Finalize & Broadcast'), findsNothing);
+      expect(find.text('Finalize and broadcast'), findsNothing);
       expect(find.textContaining('broadcast from there'), findsOneWidget);
     },
   );

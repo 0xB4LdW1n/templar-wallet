@@ -173,7 +173,7 @@ void main() {
       );
       expect(find.textContaining('Nothing here can revoke it'), findsOneWidget);
 
-      await t.tap(find.widgetWithText(PrimaryButton, 'Forget'));
+      await t.tap(find.widgetWithText(DangerButton, 'Forget'));
       await t.pumpAndSettle();
       expect(
         find.text('No site has been connected from this device.'),
@@ -201,13 +201,13 @@ void main() {
     await t.pumpAndSettle();
 
     expect(find.text('SQ-1 · Loan origination'), findsOneWidget);
-    // TagChip uppercases what it is given.
-    expect(find.text('SIGNED'), findsOneWidget);
-    expect(find.text('REFUSED BY YOU'), findsOneWidget);
+    // The outcome is a quiet tag in sentence case.
+    expect(find.text('Signed'), findsOneWidget);
+    expect(find.text('Refused by you'), findsOneWidget);
 
     await t.tap(find.byKey(const Key('protocol-clear-history')));
     await t.pumpAndSettle();
-    await t.tap(find.widgetWithText(PrimaryButton, 'Clear'));
+    await t.tap(find.widgetWithText(DangerButton, 'Clear'));
     await t.pumpAndSettle();
     expect(find.text('Nothing signed yet.'), findsOneWidget);
   });

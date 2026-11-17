@@ -1,14 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+
 import '../../app/app_state.dart';
 import '../../app/routes.dart';
 import '../../shared/widgets/app_logo.dart';
-import '../../shared/widgets/hybrid_kit.dart';
-import '../../theme/app_colors.dart';
+import '../../shared/widgets/buttons.dart';
+import '../../shared/widgets/seal_mark.dart';
 import '../../theme/app_motion.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import '../wallet_picker/entry_controls.dart';
+
+// First run, no wallets yet. The screen says what the product does in its
+// own nouns and then shows it: the left column is the headline and the two
+// ways in, the right half a still picture of the thing this wallet exists
+// for — a transaction collecting signatures under a policy. The picture is
+// drawn from the app's own pieces (the seal, the mono fingerprints) so it is
+// plainly this product and no other.
+
+const String _headline = 'Bitcoin and Liquid custody under Miniscript policies';
+const String _line =
+    'One key, several keys, a hardware device or an air-gapped signer. '
+    'Test networks only.';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -31,13 +46,10 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       if (mounted) app.setAccent(null);
     });
 
-    _c = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-
+    // The first time, the screen enters once (a fade, nothing moves); after
+    // that it is simply there.
+    _c = AnimationController(vsync: this, duration: AppMotion.emphasized);
     if (app.firstRunSeen) {
-      // Seen before: skip the staged reveal, render the screen immediately.
       _c.value = 1.0;
     } else {
       _c.forward();
@@ -48,7 +60,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // OS reduced motion: skip the choreography, land on the final frame.
     if (AppMotion.reduced(context) && _c.isAnimating) {
       _c.stop();
       _c.value = 1.0;
@@ -61,235 +72,368 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     super.dispose();
   }
 
-  Animation<double> _fade(double begin, double end) => CurvedAnimation(
-    parent: _c,
-    curve: Interval(begin, end, curve: Curves.easeOut),
-  );
+  void _create() => context.go(AppRoutes.walletType);
+  void _restore() => context.go(AppRoutes.importWallet);
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final logoIn = CurvedAnimation(
-      parent: _c,
-      curve: const Interval(0.0, 0.55, curve: Curves.easeOutBack),
-    );
-    final bodyIn = _fade(0.45, 1.0);
-
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
     return Scaffold(
-      body: PageBackground(
-        // Edge-to-edge on mobile: inert on desktop.
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
+      backgroundColor: s.canvas,
+      body: SafeArea(
+        child: FadeTransition(
+          opacity: CurvedAnimation(parent: _c, curve: AppMotion.settle),
+          child: phone
+              ? _PhoneLayout(onCreate: _create, onRestore: _restore)
+              : _DesktopLayout(onCreate: _create, onRestore: _restore),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Desktop: an asymmetric split ──────────────────────────────────────────────
+
+class _DesktopLayout extends StatelessWidget {
+  const _DesktopLayout({required this.onCreate, required this.onRestore});
+
+  final VoidCallback onCreate;
+  final VoidCallback onRestore;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final pad = AppSpacing.pagePadding(context);
+    return Stack(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _Scrollable(
                 child: Padding(
-                  padding: EdgeInsets.all(
-                    AppLayout.isPhone(context)
-                        ? AppSpacing.xl
-                        : AppSpacing.xxxl,
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.huge,
+                    AppSpacing.xxxl,
+                    AppSpacing.xxl,
+                    AppSpacing.xxxl,
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Logo — scales + fades in.
-                      ScaleTransition(
-                        scale: Tween(begin: 0.4, end: 1.0).animate(logoIn),
-                        child: FadeTransition(
-                          opacity: _fade(0.0, 0.45),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(24),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.accent.withValues(
-                                    alpha: 0.45,
-                                  ),
-                                  blurRadius: 36,
-                                  spreadRadius: 2,
-                                ),
-                              ],
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 440),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const AppLogo(size: 40),
+                          const SizedBox(height: AppSpacing.xxl),
+                          Text(
+                            _headline,
+                            style: AppTypography.displayTitle.copyWith(
+                              color: s.ink,
                             ),
-                            child: const AppLogo(size: 88, radius: 24),
                           ),
-                        ),
+                          const SizedBox(height: AppSpacing.md),
+                          Text(
+                            _line,
+                            style: AppTypography.bodyLarge.copyWith(
+                              color: s.inkSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xxl),
+                          Row(
+                            children: [
+                              PrimaryButton(
+                                label: 'Create wallet',
+                                onPressed: onCreate,
+                              ),
+                              const SizedBox(width: AppSpacing.md),
+                              SecondaryButton(
+                                label: 'Restore wallet',
+                                onPressed: onRestore,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AppSpacing.xl),
+                          const _TestnetNote(),
+                        ],
                       ),
-                      const SizedBox(height: AppSpacing.xl),
-                      FadeTransition(
-                        opacity: bodyIn,
-                        child: _GradientTitle('Templar Wallet'),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      FadeTransition(
-                        opacity: bodyIn,
-                        child: Column(
-                          children: [
-                            Text(
-                              'Bitcoin & Liquid Network custody\nwith Miniscript spending policies',
-                              textAlign: TextAlign.center,
-                              style: AppTypography.body.copyWith(
-                                color: isDark
-                                    ? AppColors.textSecondaryDark
-                                    : AppColors.textSecondary,
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.xxxl),
-                            ...[
-                              (
-                                Icons.security,
-                                'Singlesig, multisig, Miniscript policies',
-                              ),
-                              (
-                                Icons.water_drop_outlined,
-                                'Bitcoin + Liquid Network assets',
-                              ),
-                              (
-                                Icons.key_outlined,
-                                'Software & hardware wallet support',
-                              ),
-                            ].map(
-                              (item) => Padding(
-                                padding: const EdgeInsets.only(
-                                  bottom: AppSpacing.md,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 30,
-                                      height: 30,
-                                      alignment: Alignment.center,
-                                      decoration: BoxDecoration(
-                                        color: AppColors.accentLight,
-                                        borderRadius: BorderRadius.circular(
-                                          AppSpacing.radiusSm,
-                                        ),
-                                      ),
-                                      child: Icon(
-                                        item.$1,
-                                        size: 16,
-                                        color: AppColors.accent,
-                                      ),
-                                    ),
-                                    const SizedBox(width: AppSpacing.md),
-                                    Expanded(
-                                      child: Text(
-                                        item.$2,
-                                        style: AppTypography.body,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.xxxl),
-                            // Wizard entry: create or restore.
-                            SizedBox(
-                              width: double.infinity,
-                              child: _GradientButton(
-                                label: 'Create new wallet',
-                                icon: Icons.add,
-                                onPressed: () =>
-                                    context.go(AppRoutes.walletType),
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: () =>
-                                    context.go(AppRoutes.importWallet),
-                                icon: const Icon(Icons.restore, size: 18),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: AppSpacing.lg,
-                                  ),
-                                ),
-                                label: const Text(
-                                  'Restore an existing wallet',
-                                  style: TextStyle(fontSize: 16),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.xl),
-                            Text(
-                              'Testnet only · No mainnet funds',
-                              style: AppTypography.caption.copyWith(
-                                color: AppColors.textMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
+            Expanded(
+              child: _Scrollable(
+                child: Padding(
+                  padding: EdgeInsets.all(pad),
+                  child: const Center(child: _PolicyPreview()),
+                ),
+              ),
+            ),
+          ],
+        ),
+        Positioned(top: pad, right: pad, child: const ThemeToggleButton()),
+      ],
+    );
+  }
+}
+
+/// Centres its child vertically while it fits and scrolls once the window is
+/// shorter than the content.
+class _Scrollable extends StatelessWidget {
+  const _Scrollable({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: c.maxHeight),
+          child: Center(child: child),
         ),
       ),
     );
   }
 }
 
-/// Title rendered with the accent gradient — emotional brand moment.
-class _GradientTitle extends StatelessWidget {
-  const _GradientTitle(this.text);
-  final String text;
+// ── Phone: one column, the actions pinned to the thumb ────────────────────────
+
+class _PhoneLayout extends StatelessWidget {
+  const _PhoneLayout({required this.onCreate, required this.onRestore});
+
+  final VoidCallback onCreate;
+  final VoidCallback onRestore;
 
   @override
   Widget build(BuildContext context) {
-    return ShaderMask(
-      shaderCallback: (rect) => LinearGradient(
-        colors: [AppColors.accent, AppColors.accentMuted],
-      ).createShader(rect),
-      child: Text(
-        text,
-        style: AppTypography.pageTitle.copyWith(color: Colors.white),
-      ),
+    final s = AppScheme.of(context);
+    final pad = AppSpacing.pagePadding(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(pad, AppSpacing.sm, pad, pad),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [AppLogo(size: 40), Spacer(), ThemeToggleButton()],
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                Text(
+                  _headline,
+                  style: AppTypography.displayTitleOf(
+                    context,
+                  ).copyWith(color: s.ink),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  _line,
+                  style: AppTypography.bodyOf(
+                    context,
+                  ).copyWith(color: s.inkSecondary),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                const _PolicyPreview(compact: true),
+              ],
+            ),
+          ),
+        ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(pad, AppSpacing.sm, pad, pad),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Center(child: _TestnetNote()),
+              const SizedBox(height: AppSpacing.lg),
+              PrimaryButton(
+                label: 'Create wallet',
+                isFullWidth: true,
+                onPressed: onCreate,
+              ),
+              const SizedBox(height: AppSpacing.md),
+              SecondaryButton(
+                label: 'Restore wallet',
+                isFullWidth: true,
+                onPressed: onRestore,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
 
-/// Primary call-to-action with an accent gradient fill.
-class _GradientButton extends StatelessWidget {
-  const _GradientButton({
-    required this.label,
-    required this.icon,
-    required this.onPressed,
-  });
-  final String label;
-  final IconData icon;
-  final VoidCallback onPressed;
+/// The network, said once and quietly: a 6 px testnet dot and one line.
+class _TestnetNote extends StatelessWidget {
+  const _TestnetNote();
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AppColors.accent, AppColors.accentDark],
-        ),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.accent.withValues(alpha: 0.35),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
+    final s = AppScheme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: s.testnet,
+            borderRadius: BorderRadius.circular(999),
           ),
-        ],
-      ),
-      child: FilledButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 18),
-        style: FilledButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          foregroundColor: Colors.white,
-          shadowColor: Colors.transparent,
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
         ),
-        label: Text(
-          label,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        const SizedBox(width: AppSpacing.sm),
+        Text(
+          'Testnet only — no mainnet funds',
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+        ),
+      ],
+    );
+  }
+}
+
+// ── The picture ───────────────────────────────────────────────────────────────
+
+/// A still picture of a 2-of-3 transaction mid-signing, built from the
+/// app's components. Not a control: it is excluded from semantics and
+/// stands as one labelled image. This is the one place outside a signing
+/// flow where the seal appears, because it depicts one.
+///
+/// [compact] (phone) keeps the keys and the signature count and drops the
+/// transaction line, so the actions stay above the fold.
+class _PolicyPreview extends StatelessWidget {
+  const _PolicyPreview({this.compact = false});
+
+  final bool compact;
+
+  static const _keys = [
+    ('Laptop', 'a3f1c29e', true),
+    ('Jade', '5b7d0e44', true),
+    ('Air-gapped signer', 'c81f6a02', false),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final rowHeight = AppSpacing.xxxl;
+    return Semantics(
+      image: true,
+      label: 'Preview of a 2-of-3 multisig transaction',
+      child: ExcludeSemantics(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: compact ? double.infinity : 480,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.cardPadding),
+            decoration: BoxDecoration(
+              color: s.panel,
+              borderRadius: BorderRadius.circular(
+                compact ? AppSpacing.radiusLg : AppSpacing.radiusXl,
+              ),
+              border: Border.all(color: s.edge),
+              boxShadow: s.panelShadow,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Treasury 2-of-3',
+                  style: AppTypography.sectionTitle.copyWith(color: s.ink),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                for (final k in _keys)
+                  SizedBox(
+                    height: rowHeight,
+                    child: Row(
+                      children: [
+                        SealMark(stamped: k.$3),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Text(
+                            k.$1,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.body.copyWith(color: s.ink),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Text(
+                          k.$2,
+                          style: AppTypography.mono.copyWith(
+                            color: s.inkSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: AppSpacing.sm),
+                Divider(height: 1, thickness: 1, color: s.edge),
+                const SizedBox(height: AppSpacing.lg),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Signatures',
+                        style: AppTypography.label.copyWith(color: s.ink),
+                      ),
+                    ),
+                    const SealTally(signed: 2, required: 2, size: 16),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '2 of 3 keys · 2 signatures required',
+                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
+                ),
+                if (!compact) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.sm,
+                    ),
+                    decoration: BoxDecoration(
+                      color: s.well,
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                      border: Border.all(color: s.edge),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          '0.25000000 BTC',
+                          style: AppTypography.mono.copyWith(color: s.ink),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Icon(
+                          Icons.arrow_forward_outlined,
+                          size: AppSpacing.iconSmall,
+                          color: s.inkFaint,
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            'tb1q…7kxp',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.mono.copyWith(
+                              color: s.inkSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );

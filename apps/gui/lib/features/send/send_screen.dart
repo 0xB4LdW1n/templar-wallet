@@ -4,8 +4,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../app/app_state.dart';
+import '../../app/routes.dart';
 import '../../app/back_handler.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
@@ -19,6 +21,7 @@ import '../hardware/ledger_connect_dialog.dart';
 import '../hardware/ledger_signing_dialog.dart';
 import '../psbt/cosign_handoff.dart';
 import '../psbt/cosign_view.dart';
+import 'own_address_dialog.dart';
 import '../utxos/models/utxo.dart';
 import '../../services/asset_registry_service.dart';
 import '../../services/price_service.dart';
@@ -26,21 +29,20 @@ import '../../shared/widgets/asset_logo.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/cards.dart';
+import '../../shared/widgets/chain_switch.dart';
 import '../../shared/widgets/code_box.dart';
-import '../../shared/widgets/glass_dialog.dart';
-import '../../shared/widgets/hex_text.dart';
+import '../../shared/widgets/app_dialog.dart';
 import '../../shared/widgets/hybrid_kit.dart';
-import '../../shared/widgets/list_rows.dart';
+import '../../shared/widgets/live_edge.dart';
 import '../../shared/widgets/app_password_gate.dart';
 import '../../shared/widgets/page_header.dart';
 import '../../shared/widgets/psbt_sign_flow.dart';
-import '../../shared/widgets/scan_button.dart';
+import '../../shared/widgets/segmented_switch.dart';
 import '../../shared/widgets/tx_confirm_view.dart';
+import '../../shared/widgets/tx_flow.dart';
 import '../../shared/widgets/tx_success_view.dart';
 import '../../shared/widgets/ur_qr.dart';
-import '../receive/models/address_info.dart';
 import '../../shared/widgets/utxo_views.dart';
-import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
@@ -50,10 +52,16 @@ import '../../theme/app_typography.dart';
 /// PSBT someone else started and add this wallet's signature to it.
 enum _TxKind { standard, cosign }
 
-/// Wizard steps for a standard transaction.
-enum _WizStep { type, asset, inputs, outputs, fee, review }
+/// The two moments of a standard send: everything that describes the
+/// transaction on one page, then the built transaction to check and sign.
+///
+/// They replace a six-step wizard (Type, Network, Inputs, Outputs, Fee,
+/// Review) whose middle steps were mostly one default choice each. The
+/// checks those steps made before Review are all in [_SendScreenState
+/// ._canReview]; the bridge calls and their order are unchanged.
+enum _Stage { compose, review }
 
-/// One recipient row being edited in the Outputs step.
+/// One recipient being edited on Compose.
 class _OutputDraft {
   final addressCtrl = TextEditingController();
   final amountCtrl = TextEditingController();
@@ -113,34 +121,35 @@ class SendScreen extends StatefulWidget {
 class _SendScreenState extends State<SendScreen> {
   late final WalletBridge _bridge = widget.bridge ?? walletBridge;
 
-  late _TxKind? _kind = widget.startInCosign ? _TxKind.cosign : null;
-  _WizStep _step = _WizStep.type;
+  late _TxKind _kind = widget.startInCosign ? _TxKind.cosign : _TxKind.standard;
+  _Stage _stage = _Stage.compose;
 
-  /// Highest step the user has reached — earlier steps stay clickable.
-  int _maxReached = 0;
+  /// Cosign was opened from Compose's link (not the deep link), so back
+  /// returns to Compose instead of leaving the screen.
+  bool _cosignFromCompose = false;
 
-  /// Android back: step the wizard back before leaving the screen.
+  /// Android back and the phone header's arrow: Review → Compose → leave.
   late final BackHandlerCallback _systemBack = _handleSystemBack;
 
-  // Network step
+  // Network (the chain switch)
   List<AssetBalance> _assets = [];
   AssetBalance? _selectedAsset;
   bool _loadingAssets = true;
 
-  // Inputs step
+  // Coins
   bool _manualInputs = false;
   List<Utxo> _utxos = [];
   bool _loadingUtxos = false;
 
-  // Outputs step
+  // Recipients
   final List<_OutputDraft> _outputs = [_OutputDraft()];
 
-  // Fee step
+  // Fee
   String _feePreset = 'normal';
   final _customFeeCtrl = TextEditingController();
   static const _feeRates = {'slow': 1.0, 'normal': 3.0, 'fast': 8.0};
 
-  // Review step
+  // Review
   TxPreview? _preview;
   bool _previewing = false;
   bool _sending = false;
@@ -444,62 +453,70 @@ class _SendScreenState extends State<SendScreen> {
     return '$sats ${_selectedAsset != null ? AssetRegistryService.instance.displayTicker(_selectedAsset!) : ''}';
   }
 
-  // ── wizard navigation ───────────────────────────────────────────────────────
+  // ── navigation ──────────────────────────────────────────────────────────────
 
-  bool get _canContinue => switch (_step) {
-    _WizStep.type => _kind != null,
-    _WizStep.asset => _selectedAsset != null,
-    _WizStep.inputs => !_manualInputs || (_isBtc && _selectedUtxos.isNotEmpty),
-    _WizStep.outputs => _outputSpecs != null,
-    _WizStep.fee => _feeRate > 0,
-    _WizStep.review => _preview != null && !_previewing && !_sending,
-  };
+  /// Review opens exactly when the old wizard would have let the user reach
+  /// it — every one of its per-step checks, in one place: a chain is chosen
+  /// (Network), a manual coin selection is not empty (Inputs), every
+  /// recipient has an address and a positive amount or Max (Outputs), and
+  /// the fee rate is positive (Fee).
+  bool get _canReview =>
+      !_loadingAssets &&
+      _selectedAsset != null &&
+      (!_manualInputs || (_isBtc && _selectedUtxos.isNotEmpty)) &&
+      _outputSpecs != null &&
+      _feeRate > 0;
 
-  void _goTo(_WizStep step) {
+  /// The Review primary: a built preview, and nothing already in flight.
+  bool get _canSign => _preview != null && !_previewing && !_sending;
+
+  void _review() {
+    if (!_canReview) return;
     setState(() {
-      _step = step;
-      _maxReached = math.max(_maxReached, step.index);
+      _stage = _Stage.review;
       _error = null;
     });
-    if (step == _WizStep.inputs && _isBtc && _utxos.isEmpty) _loadUtxos();
-    if (step == _WizStep.review) _buildPreview();
+    _buildPreview();
   }
 
-  void _next() {
-    if (_step == _WizStep.review) return;
-    _goTo(_WizStep.values[_step.index + 1]);
-  }
-
-  void _back() {
-    if (_step == _WizStep.type) return;
+  void _backToCompose() {
     setState(() {
-      _step = _WizStep.values[_step.index - 1];
+      _stage = _Stage.compose;
       _error = null;
     });
   }
 
-  /// The system back while the wizard is past its first step: one step
-  /// back, exactly as the on-screen Back. Consumed but ignored mid-send,
-  /// when the on-screen Back is disabled too. On the first step the shell
-  /// takes over and returns to the Dashboard.
+  void _startCosign() => setState(() {
+    _kind = _TxKind.cosign;
+    _cosignFromCompose = true;
+  });
+
+  void _leaveCosign() => setState(() {
+    _kind = _TxKind.standard;
+    _cosignFromCompose = false;
+  });
+
+  /// The system back (and the phone header's arrow): Review steps back to
+  /// Compose, exactly as the on-screen Back; a cosign opened from Compose
+  /// returns to it. Consumed but ignored mid-send, when the on-screen Back is
+  /// disabled too. On Compose the shell takes over and leaves the screen.
   bool _handleSystemBack() {
     // A departing Send stays mounted for the page transition; its handler
     // must not swallow a press meant for the page that replaced it.
     if (!(ModalRoute.of(context)?.isCurrent ?? false)) return false;
-    if (_step == _WizStep.type) return false;
-    if (!_sending) _back();
+    if (_kind == _TxKind.cosign) {
+      if (!_cosignFromCompose) return false;
+      _leaveCosign();
+      return true;
+    }
+    if (_stage == _Stage.compose) return false;
+    if (!_sending) _backToCompose();
     return true;
-  }
-
-  void _selectKind(_TxKind kind) {
-    setState(() => _kind = kind);
-    if (kind == _TxKind.standard) _goTo(_WizStep.asset);
   }
 
   void _resetWizard() {
     setState(() {
-      _step = _WizStep.asset;
-      _maxReached = _WizStep.asset.index;
+      _stage = _Stage.compose;
       _manualInputs = false;
       for (final o in _outputs) {
         o.dispose();
@@ -557,16 +574,16 @@ class _SendScreenState extends State<SendScreen> {
   (String, String) get _signCopy => _isHardwareWallet
       ? (
           'Sign on device',
-          'Your hardware wallet will display the transaction and ask you to approve it.',
+          'Your hardware wallet will display the transaction and ask you to approve it',
         )
       : _isAirgapWallet
       ? (
           'Export PSBT',
-          'A PSBT is generated for your air-gap device; you scan the signed one back.',
+          'A PSBT is generated for your air-gap device; you scan the signed one back',
         )
       : _isMultisigWallet
       ? (
-          'Sign & continue',
+          'Sign and continue',
           'Signed with this wallet\'s key(s). If the policy needs more '
               'signatures, you\'ll export the PSBT to your co-signers '
               'instead of broadcasting.',
@@ -575,13 +592,13 @@ class _SendScreenState extends State<SendScreen> {
       // skips this dialog entirely for the two-phase review, and a
       // PSET has no QR form to review it with.
       : (
-          'Sign & send',
+          'Sign and send',
           'Signed with this wallet\'s key — you re-enter your app '
-              'password first — and broadcast immediately.',
+              'password first — and broadcast immediately',
         );
 
-  /// "Send" on the review step opens a last summary of exactly what will
-  /// happen. Nothing is signed until the user confirms there.
+  /// The Review primary opens a last summary of exactly what will happen.
+  /// Nothing is signed until the user confirms there.
   Future<void> _confirm() async {
     final specs = _outputSpecs;
     final asset = _selectedAsset;
@@ -635,13 +652,17 @@ class _SendScreenState extends State<SendScreen> {
     }
   }
 
-  /// Label of the wizard's own send button, so the review step says what the
-  /// next screen will be rather than promising a broadcast.
+  /// Label of Review's primary. A device or an air-gap signer is named, as
+  /// before; a multisig key only adds its signature (the co-signers finish),
+  /// so it says "Sign"; everything else signs behind the password gate and
+  /// broadcasts. A confirmation (or the PSBT review) still opens first.
   String get _sendButtonLabel => _isHardwareWallet
       ? 'Sign on device'
       : _isAirgapWallet
       ? 'Export PSBT'
-      : 'Review & sign';
+      : _isMultisigWallet
+      ? 'Sign'
+      : 'Sign and send';
 
   /// Software-key Bitcoin send, in two passes — the same flow the UTXO screen
   /// uses to consolidate.
@@ -672,11 +693,11 @@ class _SendScreenState extends State<SendScreen> {
         unsignedPsbt: unsigned,
         title: 'Review transaction',
         summary: specs.length == 1
-            ? 'One recipient.'
-            : '${specs.length} recipients in one transaction.',
+            ? 'One recipient'
+            : '${specs.length} recipients in one transaction',
       );
       // Backed out at the review or the password: nothing was signed, nothing
-      // was sent, and the wizard stays on the review step.
+      // was sent, and the screen stays on Review.
       if (txid == null || !mounted) return;
       _showSuccess(txid);
     } catch (e) {
@@ -863,12 +884,13 @@ class _SendScreenState extends State<SendScreen> {
       _showSuccess(txid);
     } else if (_pendingSignedPsbt != null) {
       // The device signed but the transaction never reached the network. Say
-      // so plainly and keep the PSBT: "Send" now retries the broadcast alone.
+      // so plainly and keep the PSBT: the primary now retries the broadcast
+      // alone.
       setState(
         () => _error =
             'The device signed, but broadcasting failed. Your transaction is '
-            'not on the network. Press Send again to retry the broadcast — you '
-            'will not have to approve on the device again.',
+            'not on the network. Press $_sendButtonLabel again to retry the '
+            'broadcast — you will not have to approve on the device again.',
       );
     }
   }
@@ -964,12 +986,12 @@ class _SendScreenState extends State<SendScreen> {
             'Partially signed — $quorum signatures collected. This '
             'wallet\'s key alone cannot satisfy the spending policy, so '
             'nothing was broadcast.',
-        exportEyebrow: 'HAND IT TO YOUR CO-SIGNERS',
+        exportEyebrow: 'Hand it to your co-signers',
         intro:
             'Send them this PSBT — by QR, clipboard or file. Each one '
             'loads it under Send › Cosign a transaction, signs, and returns '
             'it.',
-        returnEyebrow: 'COLLECT THE SIGNATURES',
+        returnEyebrow: 'Collect the signatures',
         returnLabel:
             'Paste each signed copy with the button above, or scan '
             'or load it here. Its signatures join the copy you hand out, and '
@@ -1133,6 +1155,11 @@ class _SendScreenState extends State<SendScreen> {
         txid: txid,
         preview: preview,
         ticker: _isBtc ? 'BTC' : 'LBTC',
+        // Activity opens this transaction's detail as soon as a sync lists
+        // it (the one started just above).
+        onViewInActivity: () {
+          if (mounted) context.go('${AppRoutes.history}?tx=$txid');
+        },
       );
     } else {
       // No preview available (should not happen) — minimal fallback.
@@ -1140,15 +1167,15 @@ class _SendScreenState extends State<SendScreen> {
       showAppDialog<void>(
         context,
         builder: (ctx) => AppDialog(
-          title: const Text('Transaction sent'),
+          title: const Text('Sent'),
           content: SizedBox(
             width: phone ? double.infinity : 480,
             child: CodeBox(value: txid, label: 'TxID'),
           ),
           actions: [
-            TextButton(
+            PrimaryButton(
+              label: 'Done',
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Done'),
             ),
           ],
         ),
@@ -1159,134 +1186,79 @@ class _SendScreenState extends State<SendScreen> {
 
   // ── build ───────────────────────────────────────────────────────────────────
 
-  static const _stepLabels = [
-    'Type',
-    'Network',
-    'Inputs',
-    'Outputs',
-    'Fee',
-    'Review',
-  ];
-
-  String get _stepSubtitle => switch (_step) {
-    _WizStep.type => 'What do you want to do?',
-    _WizStep.asset => 'Bitcoin or Liquid?',
-    _WizStep.inputs => 'Choose which coins to spend',
-    _WizStep.outputs => 'Who receives, and how much',
-    _WizStep.fee => 'Pick a fee rate',
-    _WizStep.review => 'Verify everything before signing',
-  };
+  /// One width for both stages, so the column never jumps between Compose
+  /// and Review. Wider than a plain form because the manual coin picker and
+  /// the review diagram both need room for two columns.
+  static const double _columnMaxWidth = 720;
 
   @override
   Widget build(BuildContext context) {
-    // The PSBT mode hosts its own view and skips the send wizard entirely.
-    final isPsbt = _kind == _TxKind.cosign;
-    // Phone: the Back / Continue row is pinned under the scrolling steps so
-    // it stays reachable with the keyboard up; desktop keeps it at the foot
-    // of the step. Gaps tighten a notch on the phone too.
     final phone = AppLayout.isPhone(context);
-    final pinNav = phone && !isPsbt && _step != _WizStep.type;
-    final gap = phone ? AppSpacing.lg : AppSpacing.xl;
+    final cosign = _kind == _TxKind.cosign;
+    final pad = AppSpacing.pagePadding(context);
+    final footer = cosign ? null : _footer(phone);
+    // Phone: the primary is pinned under the scrolling column so it stays
+    // reachable with the keyboard up; desktop keeps it at the column's foot.
+    final pinFooter = phone && footer != null;
+    final watchOnly =
+        context.watch<AppState>().isActiveWalletHardware &&
+        context.watch<AppState>().hwWatchOnly;
 
-    final page = ListView(
-      padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-      children: [
-        // Phone: the shell's header already says "Send" with the arrow
-        // back, so the page title is the step's own question.
-        PageHeader(
-          title: phone
-              ? switch (_kind) {
-                  _TxKind.cosign => _cosignTitle,
-                  _ => _stepSubtitle,
-                }
-              : 'Send',
-          subtitle: phone
-              ? null
-              : switch (_kind) {
-                  _TxKind.cosign =>
-                    'Review and sign a partially-signed transaction',
-                  _ => _stepSubtitle,
-                },
+    final List<Widget> children;
+    if (cosign) {
+      // The same centred column as Compose and Review, so the page does not
+      // shift sideways when the mode changes.
+      children = [
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _columnMaxWidth),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: _cosignChildren(phone, watchOnly),
+            ),
+          ),
         ),
-        if (context.watch<AppState>().isActiveWalletHardware &&
-            context.watch<AppState>().hwWatchOnly) ...[
-          WarningBanner(
-            title: 'Watch-only mode',
-            message:
-                'This wallet was opened without its device. Browsing '
-                'works offline; connect and unlock the device to sign and '
-                'send.',
-            action: SecondaryButton(
-              label: 'Connect',
-              icon: Icons.usb,
-              onPressed: () => _ensureDeviceConnected(),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
+      ];
+    } else {
+      final stage = Column(
+        key: ValueKey(_stage),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_stage == _Stage.compose)
+            ..._composeChildren(phone, watchOnly)
+          else
+            ..._reviewChildren(phone),
+          if (footer != null && !pinFooter) ...[
+            const SizedBox(height: AppSpacing.xl),
+            footer,
+          ],
         ],
-        if (isPsbt) ...[
-          Align(
-            alignment: Alignment.centerLeft,
-            child: GhostButton(
-              label: '‹ Change transaction type',
-              onPressed: () => setState(() {
-                _kind = null;
-                _step = _WizStep.type;
-              }),
+      );
+      children = [
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _columnMaxWidth),
+            child: AnimatedSwitcher(
+              duration: AppMotion.of(context, AppMotion.standard),
+              switchInCurve: AppMotion.settle,
+              child: stage,
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
-          // Keyed so leaving and re-entering the mode rebuilds the
-          // view rather than carrying a loaded PSBT — and its Sign
-          // buttons — across the change.
-          CosignView(key: ValueKey(_kind)),
-        ] else ...[
-          _WizardStepper(
-            labels: _stepLabels,
-            current: _step.index,
-            maxReached: _maxReached,
-            onTap: (i) => _goTo(_WizStep.values[i]),
-          ),
-          SizedBox(height: gap),
-          Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: _step == _WizStep.review ? 1020 : 760,
-              ),
-              child: AnimatedSwitcher(
-                duration: AppMotion.of(context, AppMotion.standard),
-                switchInCurve: AppMotion.settle,
-                child: Column(
-                  key: ValueKey(_step),
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ..._stepChildren(),
-                    if (_error != null && _step != _WizStep.review) ...[
-                      const SizedBox(height: AppSpacing.lg),
-                      DangerBanner(message: _error!),
-                    ],
-                    if (!pinNav) ...[SizedBox(height: gap), _navBar()],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
+        ),
+      ];
+    }
+
+    final page = ListView(padding: EdgeInsets.all(pad), children: children);
 
     return Scaffold(
       body: PageBackground.flat(
-        child: !pinNav
+        child: !pinFooter
             ? page
             : Column(
                 children: [
                   Expanded(child: page),
-                  // The pinned row needs a ground and a rule of its own:
-                  // without them the steps scroll up until they touch the
-                  // Continue button, and the row melts into the shell's
-                  // CarouselNav sitting right underneath it. Phone-only —
-                  // pinNav is false on every desktop build.
+                  // The pinned row has a ground and a rule of its own, or the
+                  // column scrolls up until it touches the button.
                   DecoratedBox(
                     decoration: BoxDecoration(
                       color: AppScheme.of(context).canvas,
@@ -1296,12 +1268,12 @@ class _SendScreenState extends State<SendScreen> {
                     ),
                     child: Padding(
                       padding: EdgeInsets.fromLTRB(
-                        AppSpacing.pagePadding(context),
+                        pad,
                         AppSpacing.md,
-                        AppSpacing.pagePadding(context),
-                        AppSpacing.sm,
+                        pad,
+                        AppSpacing.md,
                       ),
-                      child: _navBar(),
+                      child: footer,
                     ),
                   ),
                 ],
@@ -1310,343 +1282,870 @@ class _SendScreenState extends State<SendScreen> {
     );
   }
 
-  List<Widget> _stepChildren() => switch (_step) {
-    _WizStep.type => _typeStep(),
-    _WizStep.asset => _assetStep(),
-    _WizStep.inputs => _inputsStep(),
-    _WizStep.outputs => _outputsStep(),
-    _WizStep.fee => _feeStep(),
-    _WizStep.review => _reviewStep(),
-  };
+  /// "Watch-only mode": the device is not connected, so nothing can be
+  /// signed until it is.
+  Widget _watchOnlyBanner() => Padding(
+    padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+    child: WarningBanner(
+      title: 'Watch-only mode',
+      message:
+          'This wallet was opened without its device. Browsing works '
+          'offline; connect and unlock the device to sign and send.',
+      action: SecondaryButton(
+        label: 'Connect',
+        icon: Icons.usb_outlined,
+        onPressed: () => _ensureDeviceConnected(),
+      ),
+    ),
+  );
 
-  Widget _navBar() {
-    final isReview = _step == _WizStep.review;
-    // Phone: Back stays compact on the left, the primary action takes the
-    // rest of the row so it is a full-width thumb target.
-    final phone = AppLayout.isPhone(context);
-    final Widget primary;
-    if (_step == _WizStep.type) {
-      primary = const SizedBox.shrink();
-    } else if (isReview) {
-      // Says what the next screen is: nothing is signed or sent from
-      // here, the summary that opens next is where that happens.
-      primary = PrimaryButton(
-        label: _sending ? 'Preparing…' : _sendButtonLabel,
-        icon: Icons.send_rounded,
-        isFullWidth: phone,
-        onPressed: _canContinue ? _confirm : null,
-      );
-    } else {
-      primary = PrimaryButton(
-        label: 'Continue',
-        icon: Icons.arrow_forward,
-        isFullWidth: phone,
-        onPressed: _canContinue ? _next : null,
-      );
-    }
-    return Row(
-      children: [
-        if (_step != _WizStep.type)
-          // Phone: two filled controls of the same height side by side — the
-          // inset-grey Back beside the crimson primary. A ghost there is a
-          // border-less wash, which loses its edge next to a filled slab.
-          // Desktop keeps the ghost it has always had.
-          phone
-              ? SecondaryButton(
-                  label: '‹ Back',
-                  onPressed: _sending ? null : _back,
-                )
-              : GhostButton(
-                  label: '‹ Back',
-                  onPressed: _sending ? null : _back,
-                ),
-        if (phone && _step != _WizStep.type) ...[
-          const SizedBox(width: AppSpacing.md),
-          Expanded(child: primary),
-        ] else ...[
-          const Spacer(),
-          primary,
-        ],
-      ],
-    );
-  }
-
-  // ── Step 1: type ────────────────────────────────────────────────────────────
+  // ── Cosign ──────────────────────────────────────────────────────────────────
 
   /// What the co-sign mode is called. One name on every wallet and both
-  /// chains: it used to be "Import a PSBT" / "Co-sign a PSBT", which named
-  /// the Bitcoin artifact on a screen that takes a Liquid PSET just the same
-  /// — the chain is asked inside, as the mode's first step.
+  /// chains: it takes a Bitcoin PSBT or a Liquid PSET alike, and asks which
+  /// inside.
   String get _cosignTitle => 'Cosign a transaction';
 
-  /// The only two things a multisig wallet can do here: start a transaction
-  /// its co-signers will finish, or take one of theirs further. A singlesig
-  /// wallet keeps the wording it has always had.
-  List<Widget> _typeStep() {
-    final multisig = _isMultisigWallet;
-    return [
-      _BigChoiceCard(
-        icon: Icons.send_outlined,
-        title: multisig
-            ? 'Create a partial transaction'
-            : 'Standard transaction',
-        subtitle: multisig
-            ? 'Build the transaction and sign it with this wallet\'s key. It '
-                  'comes back as a PSBT to hand to your co-signers — nothing is '
-                  'broadcast until the quorum is met.'
-            : 'Build a new transaction: pick coins, add one or more '
-                  'recipients, set the fee, review and sign.',
-        selected: _kind == _TxKind.standard,
-        onTap: () => _selectKind(_TxKind.standard),
+  List<Widget> _cosignChildren(bool phone, bool watchOnly) => [
+    // Desktop only: on a phone the shell header's arrow leaves the mode.
+    if (!phone) ...[
+      Align(
+        alignment: Alignment.centerLeft,
+        child: GhostButton(
+          label: 'Back to send',
+          icon: Icons.arrow_back_outlined,
+          onPressed: _leaveCosign,
+        ),
       ),
       const SizedBox(height: AppSpacing.md),
-      _BigChoiceCard(
-        icon: Icons.edit_document,
-        title: _cosignTitle,
-        subtitle: multisig
-            ? 'Load a transaction a co-signer started — a Bitcoin PSBT or a '
-                  'Liquid PSET — inspect it, add your signature, and pass it on '
-                  'or broadcast once every required signature is in.'
-            : 'Paste a partially-signed transaction from a co-signer — a '
-                  'Bitcoin PSBT or a Liquid PSET — inspect it, add your '
-                  'signature, and pass it on or broadcast.',
-        selected: _kind == _TxKind.cosign,
-        onTap: () => _selectKind(_TxKind.cosign),
-      ),
-    ];
-  }
+    ],
+    PageHeader(
+      title: _cosignTitle,
+      subtitle: phone ? null : 'Review and sign a partially signed transaction',
+    ),
+    if (watchOnly) _watchOnlyBanner(),
+    // Keyed so leaving and re-entering the mode rebuilds the view rather
+    // than carrying a loaded PSBT — and its Sign buttons — across the change.
+    CosignView(key: ValueKey(_kind), bridge: _bridge),
+  ];
 
-  // ── Step 2: network ─────────────────────────────────────────────────────────
+  // ── Compose ─────────────────────────────────────────────────────────────────
 
-  /// Pick the chain. On Liquid the transaction can carry several assets at
-  /// once — the asset is chosen per output row on the Outputs step, so this
-  /// step is a plain Bitcoin-vs-Liquid choice.
-  List<Widget> _assetStep() {
-    if (_loadingAssets) {
-      return [const Center(child: CircularProgressIndicator())];
-    }
+  List<Widget> _composeChildren(bool phone, bool watchOnly) {
     final s = AppScheme.of(context);
     final btc = _assets.where((a) => a.ticker == 'BTC').firstOrNull;
     final lbtc = _assets.where((a) => a.ticker == 'LBTC').firstOrNull;
-    final tokenCount = _liquidSpendable.where((a) => a.ticker != 'LBTC').length;
-
-    void selectNetwork(AssetBalance a) {
-      setState(() {
-        if (_selectedAsset?.assetId != a.assetId) {
-          // Chain changed: coin selection, output assets, and previews no
-          // longer apply — start the recipient list fresh.
-          _manualInputs = false;
-          for (final i in List.generate(_utxos.length, (i) => i)) {
-            _utxos[i] = _utxos[i].copyWith(isSelected: false);
-          }
-          _preview = null;
-          for (final o in _outputs) {
-            o.dispose();
-          }
-          _outputs
-            ..clear()
-            ..add(_OutputDraft());
-        }
-        _selectedAsset = a;
-      });
-    }
-
-    final cards = <Widget>[
-      if (btc != null)
-        _BigChoiceCard(
-          leading: const AssetLogo(ticker: 'BTC', size: 28),
-          title: 'Bitcoin',
-          subtitle: btc.displayAmount,
-          selected: _selectedAsset?.assetId == btc.assetId,
-          onTap: () => selectNetwork(btc),
-        ),
-      if (lbtc != null)
-        _BigChoiceCard(
-          leading: const AssetLogo(ticker: 'LBTC', size: 28),
-          title: 'Liquid Network',
-          // The backend formats LBTC amounts with a plain "BTC" suffix;
-          // spell the asset out so the two cards can't be confused.
-          subtitle: () {
-            final amount = lbtc.displayAmount.replaceFirst(
-              RegExp(r'\bBTC\b'),
-              'LBTC',
-            );
-            return tokenCount > 0
-                ? '$amount · $tokenCount token${tokenCount == 1 ? '' : 's'}'
-                : amount;
-          }(),
-          selected: _selectedAsset?.assetId == lbtc.assetId,
-          onTap: () => selectNetwork(lbtc),
-        ),
-    ];
+    // The chain switch replaces the old Network step. A wallet with one
+    // chain has nothing to choose, so it gets no switch at all.
+    final Widget? chainSwitch = btc != null && lbtc != null
+        ? ChainSwitch<String>(
+            selected: _isBtc ? 'BTC' : 'LBTC',
+            bitcoin: 'BTC',
+            liquid: 'LBTC',
+            expand: phone,
+            onChanged: (v) => _selectNetwork(v == 'BTC' ? btc : lbtc),
+          )
+        : null;
+    final cosignLink = GhostButton(
+      label: _cosignTitle,
+      icon: Icons.draw_outlined,
+      onPressed: _startCosign,
+    );
+    // A multisig wallet cannot finish a transaction alone: what it builds
+    // here is the first half of a round trip with its co-signers.
+    final multisigNote = _isMultisigWallet
+        ? 'Builds a partial transaction for your co-signers'
+        : null;
 
     return [
-      // Side by side on desktop; a phone column is too narrow for two cards
-      // (the titles and balances wrapped into three ragged lines), so the
-      // cards stack there at full width.
-      if (AppLayout.isPhone(context))
-        for (var i = 0; i < cards.length; i++) ...[
-          if (i > 0) const SizedBox(height: AppSpacing.md),
-          cards[i],
-        ]
-      else
-        Row(
-          children: [
-            for (var i = 0; i < cards.length; i++) ...[
-              if (i > 0) const SizedBox(width: AppSpacing.md),
-              Expanded(child: cards[i]),
-            ],
-          ],
-        ),
-      if (_selectedAsset?.ticker == 'LBTC') ...[
+      if (phone) ...[
+        // The shell's header already names the page; the phone column opens
+        // on its controls instead of a second "Send".
+        if (chainSwitch != null) ...[
+          chainSwitch,
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        Align(alignment: Alignment.centerLeft, child: cosignLink),
+        if (multisigNote != null)
+          Text(
+            multisigNote,
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
+          ),
         const SizedBox(height: AppSpacing.lg),
-        Text(
-          'One Liquid transaction can move LBTC and tokens together — '
-          'pick the asset for each recipient on the Outputs step.',
-          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+      ] else
+        PageHeader(
+          title: 'Send',
+          subtitle: multisigNote,
+          actions: [cosignLink, ?chainSwitch],
         ),
+      if (watchOnly) _watchOnlyBanner(),
+      if (_loadingAssets)
+        const Padding(
+          padding: EdgeInsets.all(AppSpacing.xxl),
+          child: Center(child: CircularProgressIndicator()),
+        )
+      else if (_selectedAsset == null)
+        FormCard(
+          child: Text(
+            'This wallet holds nothing that can be sent from here',
+            style: AppTypography.body.copyWith(color: s.inkSecondary),
+          ),
+        )
+      else ...[
+        for (var i = 0; i < _outputs.length; i++) ...[
+          _recipientCard(i, phone),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: GhostButton(
+            label: 'Add recipient',
+            icon: Icons.add_outlined,
+            onPressed: () => setState(() => _outputs.add(_OutputDraft())),
+          ),
+        ),
+        if (_outputs.length > 1) ...[
+          const SizedBox(height: AppSpacing.sm),
+          ..._totalLines(phone),
+        ],
+        const SizedBox(height: AppSpacing.xl),
+        _feeCard(phone),
+        const SizedBox(height: AppSpacing.lg),
+        _coinsCard(phone),
+      ],
+      if (_error != null) ...[
+        const SizedBox(height: AppSpacing.lg),
+        DangerBanner(message: _error!),
       ],
     ];
   }
 
-  // ── Step 3: inputs ──────────────────────────────────────────────────────────
+  /// Switch the chain the transaction is built on — what the old Network
+  /// step did.
+  void _selectNetwork(AssetBalance a) {
+    setState(() {
+      if (_selectedAsset?.assetId != a.assetId) {
+        // Chain changed: coin selection, output assets, and previews no
+        // longer apply — start the recipient list fresh.
+        _manualInputs = false;
+        for (final i in List.generate(_utxos.length, (i) => i)) {
+          _utxos[i] = _utxos[i].copyWith(isSelected: false);
+        }
+        _preview = null;
+        for (final o in _outputs) {
+          o.dispose();
+        }
+        _outputs
+          ..clear()
+          ..add(_OutputDraft());
+      }
+      _selectedAsset = a;
+    });
+  }
 
-  List<Widget> _inputsStep() {
+  /// Why an amount that has been typed cannot be sent, or null.
+  String? _amountProblem(_OutputDraft o) {
+    if (o.sendMax || o.amountCtrl.text.trim().isEmpty) return null;
+    final sats = _amountSatsOf(o);
+    if (sats == null) return 'Not a valid amount';
+    if (sats <= 0) return 'Enter an amount above zero';
+    return null;
+  }
+
+  /// The row asset's balance, for BTC / LBTC rows. A token's field takes base
+  /// units while its balance is shown in display units, so a token row says
+  /// nothing here rather than put two scales side by side.
+  String? _availableText(_OutputDraft o) {
+    final a = _rowAsset(o);
+    if (a == null || !_rowIsBtcLike(o)) return null;
+    // The backend formats LBTC amounts with a plain "BTC" suffix.
+    final amount = a.ticker == 'LBTC'
+        ? a.displayAmount.replaceFirst(RegExp(r'\bBTC\b'), 'LBTC')
+        : a.displayAmount;
+    return 'Available $amount';
+  }
+
+  Widget _recipientCard(int i, bool phone) {
+    final s = AppScheme.of(context);
+    final o = _outputs[i];
+    final multi = _outputs.length > 1;
+    final problem = _amountProblem(o);
+    final approx = problem == null ? _equivalentText(o) : null;
+
+    return FormCard(
+      title: multi ? 'Recipient ${i + 1}' : 'Recipient',
+      trailing: multi
+          ? _IconAction(
+              icon: Icons.close_outlined,
+              tooltip: 'Remove recipient',
+              onTap: () => setState(() {
+                _outputs[i].dispose();
+                _outputs.removeAt(i);
+              }),
+            )
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Per-output asset — Liquid only: one transaction can pay LBTC and
+          // tokens to different recipients at once.
+          if (!_isBtc && _liquidSpendable.length > 1) ...[
+            const _FieldLabel('Asset'),
+            _assetSelector(i),
+            const SizedBox(height: AppSpacing.lg),
+          ],
+          const _FieldLabel('Address'),
+          TextField(
+            controller: o.addressCtrl,
+            style: AppTypography.mono,
+            // An address is not prose: no autocorrect, no suggestions, no
+            // capitalisation — a "corrected" bech32 string is a different
+            // address. No-ops on desktop.
+            keyboardType: TextInputType.visiblePassword,
+            autocorrect: false,
+            enableSuggestions: false,
+            textCapitalization: TextCapitalization.none,
+            // Phone: let the whole address show, wrapped, so it can be
+            // checked in place; Enter never inserts a newline.
+            maxLines: phone ? null : 1,
+            textInputAction: phone ? TextInputAction.done : null,
+            inputFormatters: phone
+                ? [FilteringTextInputFormatter.deny(RegExp(r'[\r\n]'))]
+                : null,
+            decoration: InputDecoration(
+              hintText: 'Paste, scan or type',
+              suffixIcon: phone ? null : _addressActions(i),
+            ),
+            // A payment link pasted straight into the field (⌘V never goes
+            // through the paste button) resolves to address + amount on the
+            // spot. Setting the controller does not re-enter onChanged, so
+            // this runs once: after it the field holds a bare address.
+            onChanged: (v) => PaymentUri.isPaymentUri(v)
+                ? _applyAddressInput(i, v)
+                : setState(() {}),
+          ),
+          if (phone) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _addressActionStrip(i),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.lg),
+          _FieldLabel('Amount', trailing: _availableText(o)),
+          TextField(
+            controller: o.amountCtrl,
+            // Max owns the field while engaged — tap it again to edit.
+            enabled: !o.maxEngaged,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: AppTypography.numeric,
+            decoration: InputDecoration(
+              hintText: o.sendMax
+                  ? 'Everything after the fee'
+                  : o.fiatInput
+                  ? '0.00'
+                  : (_rowIsBtcLike(o) ? '0.00000000' : '0'),
+              suffixIcon: Padding(
+                padding: const EdgeInsets.only(left: AppSpacing.xs),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _MaxToggle(
+                      engaged: o.maxEngaged,
+                      onTap: () => _toggleMax(i),
+                    ),
+                    // The unit — and, on a BTC/LBTC row with a price, the
+                    // flip to fiat and back.
+                    UnitChip(
+                      label: o.fiatInput
+                          ? PriceService.instance.currency
+                          : _rowTicker(o),
+                      other: _canToggleFiat(o)
+                          ? (o.fiatInput
+                                ? _rowTicker(o)
+                                : PriceService.instance.currency)
+                          : null,
+                      onTap: _canToggleFiat(o) ? () => _toggleFiat(i) : null,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          if (problem != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              problem,
+              style: AppTypography.caption.copyWith(color: s.danger),
+            ),
+          ] else if (approx != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              approx,
+              style: AppTypography.numericSmall.copyWith(color: s.inkFaint),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// The Liquid asset a row pays: logo, name and balance per option.
+  Widget _assetSelector(int i) {
+    final s = AppScheme.of(context);
+    String nameOf(AssetBalance a) => a.ticker == 'LBTC'
+        ? 'LBTC'
+        : AssetRegistryService.instance.displayTicker(a);
+    return DropdownButtonFormField<String>(
+      initialValue: _rowAsset(_outputs[i])?.assetId,
+      decoration: const InputDecoration(hintText: 'Choose asset'),
+      // The value fills the field and a long ticker + amount ellipsises
+      // instead of overflowing.
+      isExpanded: true,
+      items: [
+        for (final a in _liquidSpendable)
+          DropdownMenuItem(
+            value: a.assetId,
+            child: Row(
+              children: [
+                AssetLogo(ticker: a.ticker, size: 20),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    nameOf(a),
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.body.copyWith(color: s.ink),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Flexible(
+                  child: Text(
+                    a.displayAmount,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.numericSmall.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+      onChanged: (id) => setState(() {
+        _outputs[i].asset = _liquidSpendable
+            .where((a) => a.assetId == id)
+            .firstOrNull;
+        // Units changed meaning — the old amount no longer applies.
+        _clearMax(_outputs[i]);
+        _outputs[i].fiatInput = false;
+        _outputs[i].amountCtrl.clear();
+      }),
+    );
+  }
+
+  /// One "Total BTC" (or other ticker) line per asset across the recipients, and a note
+  /// for a Max recipient, whose amount only the preview knows.
+  List<Widget> _totalLines(bool phone) {
+    final s = AppScheme.of(context);
+    final labelStyle = AppTypography.caption.copyWith(color: s.inkSecondary);
+    final valueStyle = AppTypography.numericSmall.copyWith(color: s.ink);
+    return [
+      for (final entry in _totalsByTicker.entries)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Total ${entry.key}', style: labelStyle),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(
+                child: phone
+                    // Coin on one line, the fiat reading under it: side by
+                    // side they wrapped at "· ≈" on a phone column.
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            _totalCoinText(entry.key, entry.value),
+                            textAlign: TextAlign.end,
+                            style: valueStyle,
+                          ),
+                          if (_totalFiatText(entry.key, entry.value)
+                              case final fiat?)
+                            Text(
+                              fiat,
+                              textAlign: TextAlign.end,
+                              style: AppTypography.numericSmall.copyWith(
+                                color: s.inkFaint,
+                              ),
+                            ),
+                        ],
+                      )
+                    : Text(
+                        switch (_totalFiatText(entry.key, entry.value)) {
+                          final fiat? =>
+                            '${_totalCoinText(entry.key, entry.value)} · $fiat',
+                          null => _totalCoinText(entry.key, entry.value),
+                        },
+                        textAlign: TextAlign.end,
+                        style: valueStyle,
+                      ),
+              ),
+            ],
+          ),
+        ),
+      if (_hasMaxOutput)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+          child: Row(
+            children: [
+              Text('Max recipient', style: labelStyle),
+              const Spacer(),
+              Text(
+                'Set at review',
+                style: AppTypography.caption.copyWith(color: s.inkFaint),
+              ),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  // ── Fee ─────────────────────────────────────────────────────────────────────
+
+  static const _feeTimes = {
+    'slow': '~60 min',
+    'normal': '~30 min',
+    'fast': '~10 min',
+  };
+
+  bool get _customRateValid {
+    final v = double.tryParse(_customFeeCtrl.text.trim());
+    return v != null && v > 0;
+  }
+
+  /// The same rough size the old Fee step forecast with: the exact vsize
+  /// only exists once the preview has built the transaction.
+  int get _estVsize =>
+      110 +
+      68 * math.max<int>(1, _manualInputs ? _selectedUtxos.length : 1) +
+      31 * _outputs.length;
+
+  /// What the chosen rate means: `~30 min · 3 sat/vB · ≈ 627 sats`.
+  String get _feeLine {
+    if (_feePreset == 'custom' && !_customRateValid) {
+      return 'Enter a rate in sat/vB · ${_fmtRate(_feeRate)} sat/vB until then';
+    }
+    final time = _feeTimes[_feePreset];
+    final est = (_feeRate * _estVsize).round();
+    return [
+      ?time,
+      '${_fmtRate(_feeRate)} sat/vB',
+      '≈ ${_groupDigits(est)} sats',
+    ].join(' · ');
+  }
+
+  Widget _feeCard(bool phone) {
     final s = AppScheme.of(context);
     if (!_isBtc) {
+      return FormCard(
+        title: 'Fee',
+        child: Text(
+          'Liquid uses a flat fee of about 0.1 sat/vB, taken automatically',
+          style: AppTypography.body.copyWith(color: s.inkSecondary),
+        ),
+      );
+    }
+    return FormCard(
+      title: 'Fee',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SegmentedSwitch<String>(
+            expand: phone,
+            selected: _feePreset,
+            onChanged: (f) => setState(() => _feePreset = f),
+            options: const [
+              SegOption(value: 'slow', label: 'Slow'),
+              SegOption(value: 'normal', label: 'Normal'),
+              SegOption(value: 'fast', label: 'Fast'),
+              SegOption(value: 'custom', label: 'Custom'),
+            ],
+          ),
+          if (_feePreset == 'custom') ...[
+            const SizedBox(height: AppSpacing.md),
+            SizedBox(
+              width: phone ? double.infinity : 200,
+              child: TextField(
+                controller: _customFeeCtrl,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                style: AppTypography.numeric,
+                decoration: const InputDecoration(
+                  hintText: '3.0',
+                  suffixText: 'sat/vB',
+                  helperText: 'Minimum 0.1 sat/vB',
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            _feeLine,
+            style: AppTypography.numericSmall.copyWith(color: s.inkSecondary),
+          ),
+          Text(
+            'Times are estimates; the exact fee is set at review',
+            style: AppTypography.caption.copyWith(color: s.inkFaint),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Coins ───────────────────────────────────────────────────────────────────
+
+  /// Manual coin control: open the picker, loading the coins the first time.
+  void _chooseCoins() {
+    setState(() => _manualInputs = true);
+    if (_utxos.isEmpty) _loadUtxos();
+  }
+
+  Widget _coinsCard(bool phone) {
+    final s = AppScheme.of(context);
+    final manual = _isBtc && _manualInputs;
+    final subtitle = !_isBtc
+        ? 'Chosen automatically; coin control is Bitcoin only'
+        : manual
+        ? 'Chosen by you'
+        : 'Chosen automatically';
+
+    final header = Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Coins',
+                style: AppTypography.sectionTitle.copyWith(color: s.ink),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                subtitle,
+                style: AppTypography.caption.copyWith(color: s.inkSecondary),
+              ),
+            ],
+          ),
+        ),
+        if (_isBtc) ...[
+          const SizedBox(width: AppSpacing.md),
+          manual
+              ? GhostButton(
+                  label: 'Back to automatic',
+                  onPressed: () => setState(() => _manualInputs = false),
+                )
+              : SecondaryButton(label: 'Choose coins', onPressed: _chooseCoins),
+        ],
+      ],
+    );
+
+    if (!manual) return FormCard(child: header);
+
+    final insufficient =
+        !_hasMaxOutput &&
+        _outputsTotal > 0 &&
+        _outputsTotal > _selectedInputTotal;
+    final labelStyle = AppTypography.caption.copyWith(color: s.inkSecondary);
+    final valueStyle = AppTypography.numericSmall.copyWith(color: s.ink);
+
+    return FormCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          header,
+          const SizedBox(height: AppSpacing.lg),
+          if (_loadingUtxos)
+            const Padding(
+              padding: EdgeInsets.all(AppSpacing.xl),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_utxos.isEmpty)
+            Text('No spendable coins found', style: labelStyle)
+          else
+            UtxoPicker(
+              utxos: _utxos,
+              // Phone: no inner scroll region — the page scrolls and the coin
+              // list takes the height it needs.
+              maxHeight: phone ? double.infinity : 420,
+              onToggle: (i) {
+                // Frozen coins are listed so the total adds up, but are never
+                // spent (CLAUDE.md rule 3).
+                if (_utxos[i].isFrozen) return;
+                setState(
+                  () => _utxos[i] = _utxos[i].copyWith(
+                    isSelected: !_utxos[i].isSelected,
+                  ),
+                );
+              },
+            ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Text('${_selectedUtxos.length} selected', style: labelStyle),
+              const SizedBox(width: AppSpacing.lg),
+              Expanded(
+                child: Text(
+                  _fmtAmount(_selectedInputTotal),
+                  textAlign: TextAlign.end,
+                  style: valueStyle,
+                ),
+              ),
+            ],
+          ),
+          if (!_hasMaxOutput && _outputsTotal > 0)
+            Row(
+              children: [
+                Text('Needed', style: labelStyle),
+                const SizedBox(width: AppSpacing.lg),
+                Expanded(
+                  child: Text(
+                    '${_fmtAmount(_outputsTotal)} + fee',
+                    textAlign: TextAlign.end,
+                    style: valueStyle,
+                  ),
+                ),
+              ],
+            ),
+          if (_selectedUtxos.isEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Select at least one coin',
+              style: AppTypography.caption.copyWith(color: s.danger),
+            ),
+          ] else if (insufficient) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'The selected coins may not cover the amount and the fee',
+              style: AppTypography.caption.copyWith(color: s.warning),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ── Footer ──────────────────────────────────────────────────────────────────
+
+  /// What is still missing before Review can open, said beside the button.
+  /// Fields with a wrong value say so under themselves; this names the empty
+  /// ones, which are not errors until the user tries to go on.
+  String? get _composeHint {
+    if (_loadingAssets || _canReview) return null;
+    if (_selectedAsset == null) return null;
+    if (_manualInputs && _selectedUtxos.isEmpty) {
+      return 'Select at least one coin';
+    }
+    for (var i = 0; i < _outputs.length; i++) {
+      final o = _outputs[i];
+      final who = _outputs.length == 1 ? '' : ' for recipient ${i + 1}';
+      if (o.addressCtrl.text.trim().isEmpty) return 'Add an address$who';
+      if (!o.sendMax) {
+        final sats = _amountSatsOf(o);
+        if (sats == null || sats <= 0) return 'Enter an amount$who';
+      }
+    }
+    return null;
+  }
+
+  Widget _footer(bool phone) {
+    final s = AppScheme.of(context);
+    if (_stage == _Stage.compose) {
+      final hint = _composeHint;
+      final button = PrimaryButton(
+        label: 'Review',
+        icon: Icons.arrow_forward_outlined,
+        isFullWidth: phone,
+        onPressed: _canReview ? _review : null,
+      );
+      final hintText = hint == null
+          ? null
+          : Text(
+              hint,
+              textAlign: phone ? TextAlign.center : TextAlign.end,
+              style: AppTypography.caption.copyWith(color: s.inkSecondary),
+            );
+      if (phone) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (hintText != null) ...[
+              hintText,
+              const SizedBox(height: AppSpacing.sm),
+            ],
+            button,
+          ],
+        );
+      }
+      return Row(
+        children: [
+          Expanded(child: hintText ?? const SizedBox.shrink()),
+          const SizedBox(width: AppSpacing.lg),
+          button,
+        ],
+      );
+    }
+
+    // Review. A signed transaction whose broadcast failed is the one thing
+    // left to do here: retry it, without signing again.
+    final Widget primary = _failedBroadcast != null
+        ? PrimaryButton(
+            label: _sending ? 'Broadcasting…' : 'Retry broadcast',
+            icon: Icons.refresh_outlined,
+            isFullWidth: phone,
+            onPressed: _sending ? null : _retryBroadcast,
+          )
+        // Nothing is signed from here: the summary or the device that opens
+        // next is where that happens, behind the password gate.
+        : PrimaryButton(
+            label: _sending ? 'Preparing…' : _sendButtonLabel,
+            isFullWidth: phone,
+            onPressed: _canSign ? _confirm : null,
+          );
+    if (phone) return primary;
+    return Row(children: [const Spacer(), primary]);
+  }
+
+  // ── Review ──────────────────────────────────────────────────────────────────
+
+  List<Widget> _reviewChildren(bool phone) {
+    final s = AppScheme.of(context);
+    final head = <Widget>[
+      // On a phone the shell header's arrow is this Back (it steps Review →
+      // Compose through the BackHandler); a second one under it is noise.
+      if (!phone) ...[
+        Align(
+          alignment: Alignment.centerLeft,
+          child: GhostButton(
+            label: 'Back',
+            icon: Icons.arrow_back_outlined,
+            onPressed: _sending ? null : _backToCompose,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+      ],
+      Text(
+        'Review',
+        style: AppTypography.pageTitleOf(context).copyWith(color: s.ink),
+      ),
+      const SizedBox(height: AppSpacing.xs),
+      Text(
+        'Check every address before you sign',
+        style: AppTypography.bodyOf(context).copyWith(color: s.inkSecondary),
+      ),
+      SizedBox(height: phone ? AppSpacing.lg : AppSpacing.xl),
+    ];
+
+    if (_previewing) {
       return [
-        _BigChoiceCard(
-          icon: Icons.auto_awesome,
-          title: 'Automatic selection',
-          subtitle:
-              'On Liquid, coins are selected automatically and stay '
-              'confidential — manual coin control applies to Bitcoin only.',
-          selected: true,
-          onTap: () {},
+        ...head,
+        const Padding(
+          padding: EdgeInsets.all(AppSpacing.xl),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+        Center(
+          child: Text(
+            'Building transaction…',
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
+          ),
+        ),
+      ];
+    }
+
+    // A broadcast failure after signing is recoverable without re-signing:
+    // the signed PSBT was retained, so the footer offers the retry and this
+    // offers the copy.
+    if (_failedBroadcast != null) {
+      return [
+        ...head,
+        if (_error != null) ...[
+          DangerBanner(message: _error!),
+          const SizedBox(height: AppSpacing.lg),
+        ],
+        Text(
+          'The transaction is signed — only the broadcast failed. Your '
+          'signatures were kept: retry when the network is reachable, or '
+          'copy the signed transaction and broadcast it elsewhere.',
+          style: AppTypography.body.copyWith(color: s.inkSecondary),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SecondaryButton(
+            label: 'Copy signed transaction',
+            icon: Icons.content_copy_outlined,
+            isFullWidth: phone,
+            onPressed: _copyFailedBroadcastPsbt,
+          ),
+        ),
+      ];
+    }
+
+    final preview = _preview;
+    if (preview == null) {
+      // The preview itself failed: say why and offer to build it again.
+      return [
+        ...head,
+        if (_error != null) ...[
+          DangerBanner(message: _error!),
+          const SizedBox(height: AppSpacing.lg),
+        ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SecondaryButton(
+            label: 'Retry',
+            icon: Icons.refresh_outlined,
+            onPressed: _buildPreview,
+          ),
         ),
       ];
     }
 
     return [
-      _BigChoiceCard(
-        icon: Icons.auto_awesome,
-        title: 'Automatic',
-        badge: 'Easiest',
-        subtitle: 'Let the wallet pick the best coins for this payment.',
-        selected: !_manualInputs,
-        onTap: () => setState(() => _manualInputs = false),
-      ),
-      const SizedBox(height: AppSpacing.md),
-      _BigChoiceCard(
-        icon: Icons.tune,
-        title: 'Manual coin control',
-        badge: 'Safest',
-        subtitle: 'Choose exactly which UTXOs this transaction spends.',
-        selected: _manualInputs,
-        onTap: () {
-          setState(() => _manualInputs = true);
-          if (_utxos.isEmpty) _loadUtxos();
-        },
-      ),
-      if (_manualInputs) ...[
+      ...head,
+      // A signing or broadcast error keeps the transaction on screen: the
+      // primary below tries again.
+      if (_error != null) ...[
+        DangerBanner(message: _error!),
         const SizedBox(height: AppSpacing.lg),
-        FormCard(
-          title: 'Your coins',
-          subtitle: 'Tap to select the inputs to spend',
-          child: _loadingUtxos
-              ? const Padding(
-                  padding: EdgeInsets.all(AppSpacing.xl),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              : _utxos.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  child: Text(
-                    'No spendable coins found',
-                    style: AppTypography.caption,
-                  ),
-                )
-              : UtxoPicker(
-                  utxos: _utxos,
-                  // Phone: no inner scroll region — the page scrolls and
-                  // the coin list takes the height it needs.
-                  maxHeight: AppLayout.isPhone(context) ? double.infinity : 420,
-                  onToggle: (i) {
-                    if (_utxos[i].isFrozen) return;
-                    setState(
-                      () => _utxos[i] = _utxos[i].copyWith(
-                        isSelected: !_utxos[i].isSelected,
-                      ),
-                    );
-                  },
-                ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.lg,
-            vertical: AppSpacing.md,
-          ),
-          // Phone: this is a stat strip, not a card — it sits on the inset
-          // grey like every other small phone surface instead of drawing a
-          // hairline box around two figures. Desktop keeps the outlined card.
-          decoration: AppLayout.isPhone(context)
-              ? BoxDecoration(
-                  color: s.panelInset,
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-                )
-              : BoxDecoration(
-                  color: s.surfaceSolid,
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                  border: Border.all(color: s.edge),
-                ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.account_balance_wallet_outlined,
-                size: 16,
-                color: s.inkSecondary,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Text(
-                '${_selectedUtxos.length} selected',
-                style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
-              ),
-              const Spacer(),
-              // Phone: the amount takes the rest of the row (Expanded, not
-              // Flexible — a loose child would leave the leftover space
-              // after itself and drift off the right edge) and wraps
-              // instead of overflowing.
-              if (AppLayout.isPhone(context))
-                Expanded(
-                  child: Text(
-                    _fmtAmount(_selectedInputTotal),
-                    textAlign: TextAlign.end,
-                    style: AppTypography.numericSmall.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: s.ink,
-                    ),
-                  ),
-                )
-              else
-                Text(
-                  _fmtAmount(_selectedInputTotal),
-                  style: AppTypography.numericSmall.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: s.ink,
-                  ),
-                ),
-            ],
-          ),
-        ),
       ],
+      // While the transaction is being signed and sent, a green stroke runs
+      // round the flow: this is the thing being worked on.
+      LiveEdge(
+        mode: _sending ? LiveEdgeMode.working : LiveEdgeMode.off,
+        color: s.success,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        width: 2,
+        child: _TxDiagram(
+          preview: preview,
+          isBtcLike: _isBtcLike,
+          ticker: _selectedAsset?.ticker ?? 'BTC',
+          liquid: !_isBtc,
+        ),
+      ),
+      const SizedBox(height: AppSpacing.lg),
+      _ReviewSummary(preview: preview, isBtc: _isBtc),
     ];
   }
 
-  // ── Step 4: outputs ─────────────────────────────────────────────────────────
+  // ── Address helpers ─────────────────────────────────────────────────────────
 
-  /// Toggle MAX on a row — engaging and disengaging both work, for tokens as
-  /// well as BTC/LBTC. Disengaging restores the amount that MAX replaced.
+  /// Toggle Max on a row — engaging and disengaging both work, for tokens as
+  /// well as BTC/LBTC. Disengaging restores the amount that Max replaced.
   void _toggleMax(int i) {
     final o = _outputs[i];
     setState(() {
@@ -1672,7 +2171,7 @@ class _SendScreenState extends State<SendScreen> {
         o.sendMax = true;
         o.amountCtrl.clear();
       } else {
-        // The fee is paid in LBTC, so a token MAX is just the whole balance —
+        // The fee is paid in LBTC, so a token Max is just the whole balance —
         // a number we can show right now.
         o.sendMax = false;
         o.amountCtrl.text = '${_rowAsset(o)?.amount ?? 0}';
@@ -1680,7 +2179,7 @@ class _SendScreenState extends State<SendScreen> {
     });
   }
 
-  /// Disengage MAX on a row and put back whatever it replaced. Call inside a
+  /// Disengage Max on a row and put back whatever it replaced. Call inside a
   /// [setState]; it only mutates.
   void _clearMax(_OutputDraft o) {
     o.maxEngaged = false;
@@ -1689,94 +2188,13 @@ class _SendScreenState extends State<SendScreen> {
     o.amountBeforeMax = null;
   }
 
-  /// Fill a row's address with one of this wallet's own — a fresh one or a
-  /// previously used one (handy when steering change to yourself).
-  Future<void> _useMyAddress(int i, {required bool fresh}) async {
-    final asset = _isBtc ? 'BTC' : 'LBTC';
-    try {
-      if (fresh) {
-        final info = await _bridge.generateReceiveAddress(_walletId, asset);
-        if (!mounted) return;
-        setState(() => _outputs[i].addressCtrl.text = info.address);
-      } else {
-        final list = await _bridge.listPreviousAddresses(_walletId, asset);
-        if (!mounted) return;
-        final chosen = await _pickUsedAddress(list);
-        if (chosen != null && mounted) {
-          setState(() => _outputs[i].addressCtrl.text = chosen);
-        }
-      }
-    } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
-    }
-  }
-
-  Future<String?> _pickUsedAddress(List<AddressInfo> addresses) {
-    final phone = AppLayout.isPhone(context);
-    return showAppDialog<String>(
-      context,
-      builder: (ctx) => AppDialog(
-        title: const Text('Choose one of your addresses'),
-        content: SizedBox(
-          width: phone ? double.infinity : 480,
-          child: addresses.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.all(AppSpacing.lg),
-                  child: Text('No previously used addresses.'),
-                )
-              : phone
-              // The sheet already scrolls; a nested list would fight it.
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final a in addresses)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Text(
-                          '#${a.index}',
-                          style: AppTypography.caption,
-                        ),
-                        title: HexText(a.address, truncate: true),
-                        subtitle: a.label != null ? Text(a.label!) : null,
-                        onTap: () => Navigator.of(ctx).pop(a.address),
-                      ),
-                  ],
-                )
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: addresses.length,
-                  itemBuilder: (_, i) {
-                    final a = addresses[i];
-                    return ListTile(
-                      dense: true,
-                      leading: Text(
-                        '#${a.index}',
-                        style: AppTypography.caption,
-                      ),
-                      title: HexText(a.address, truncate: true),
-                      subtitle: a.label != null ? Text(a.label!) : null,
-                      onTap: () => Navigator.of(ctx).pop(a.address),
-                    );
-                  },
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Fills a row from text that arrived whole — pasted, scanned, or dropped
   /// into the field in one go.
   ///
   /// A `bitcoin:` / `liquidtestnet:` payment link carries the amount beside
   /// the address, so the row takes both and the field is left holding the
   /// address alone: the recipient asked for a figure, and copying it across
-  /// by eye is the step that puts a digit in the wrong place. A MAX still
+  /// by eye is the step that puts a digit in the wrong place. A Max still
   /// engaged is stood down — an amount was named, so "everything" is no
   /// longer what is being sent.
   void _applyAddressInput(int i, String text) {
@@ -1803,9 +2221,8 @@ class _SendScreenState extends State<SendScreen> {
     }
   }
 
-  /// Camera scan into a row's address field — the phone strip's version of
-  /// [ScanIconButton]. Plain-text QRs (addresses and payment links) come back
-  /// as `descriptor`.
+  /// Camera scan into a row's address field. Plain-text QRs (addresses and
+  /// payment links) come back as `descriptor`.
   Future<void> _scanAddress(int i) async {
     final outcome = await showUrScannerDialog(
       context,
@@ -1817,50 +2234,25 @@ class _SendScreenState extends State<SendScreen> {
     _applyAddressInput(i, value);
   }
 
-  /// Phone stand-in for the use-my-address popup menu: a sheet with the
-  /// same two choices, big enough to tap.
-  Future<void> _pickMyAddressSource(int i) async {
-    final choice = await showAppDialog<String>(
+  /// "Use my own address": one window — the next unused address and every
+  /// one that already received, each under the label Receive gave it (handy
+  /// when steering change to yourself). A sheet on a phone.
+  Future<void> _pickMyAddress(int i) async {
+    final address = await showOwnAddressPicker(
       context,
-      builder: (ctx) {
-        final s = AppScheme.of(ctx);
-        return AppDialog(
-          title: const Text('Use my own address'),
-          icon: const Icon(Icons.account_balance_wallet_outlined),
-          // Same two choices, same two glyphs — drawn in the phone's list
-          // grammar (one card, hairline-separated rows, tinted glyph tile)
-          // so a row here means what a row means on Settings and the
-          // Dashboard. This sheet is only ever opened from the phone strip.
-          content: ListCard(
-            children: [
-              ListRow(
-                icon: Icons.add_circle_outline,
-                tint: s.accent,
-                title: 'New address (this wallet)',
-                onTap: () => Navigator.of(ctx).pop('fresh'),
-              ),
-              ListRow(
-                icon: Icons.history,
-                tint: s.inkSecondary,
-                title: 'Choose a used address…',
-                onTap: () => Navigator.of(ctx).pop('used'),
-              ),
-            ],
-          ),
-        );
-      },
+      bridge: _bridge,
+      walletId: _walletId,
+      asset: _isBtc ? 'BTC' : 'LBTC',
+      useSats: context.read<AppState>().useSats,
     );
-    if (choice == null || !mounted) return;
-    await _useMyAddress(i, fresh: choice == 'fresh');
+    if (address == null || !mounted) return;
+    setState(() => _outputs[i].addressCtrl.text = address);
   }
 
   /// Phone: the address field keeps its whole width for the address and the
-  /// actions sit under it as labelled buttons — three 48 dp icon buttons
-  /// were eating 144 dp of a 337 dp field, and tooltips do not exist on
-  /// touch.
+  /// actions sit under it as labelled buttons — tooltips do not exist on
+  /// touch, and three 48 dp icon buttons would eat half the field.
   Widget _addressActionStrip(int i) {
-    // Dense: three inline actions under one field. At the phone's full 54 dp
-    // slab they wrapped onto two rows and cost ~60 dp per recipient.
     return Wrap(
       spacing: AppSpacing.sm,
       runSpacing: AppSpacing.sm,
@@ -1868,13 +2260,13 @@ class _SendScreenState extends State<SendScreen> {
         if (cameraScanSupported)
           SecondaryButton(
             label: 'Scan',
-            icon: Icons.qr_code_scanner,
+            icon: Icons.qr_code_scanner_outlined,
             dense: true,
             onPressed: () => _scanAddress(i),
           ),
         SecondaryButton(
           label: 'Paste',
-          icon: Icons.paste,
+          icon: Icons.content_paste_outlined,
           dense: true,
           onPressed: () => _pasteAddress(i),
         ),
@@ -1882,46 +2274,38 @@ class _SendScreenState extends State<SendScreen> {
           label: 'My address',
           icon: Icons.account_balance_wallet_outlined,
           dense: true,
-          onPressed: () => _pickMyAddressSource(i),
+          onPressed: () => _pickMyAddress(i),
         ),
       ],
     );
   }
 
-  /// Address-field suffix: scan QR, paste, use-my-address menu.
+  /// Desktop: scan, paste and use-my-address as small icon buttons at the
+  /// field's trailing edge, each with its tooltip.
   Widget _addressActions(int i) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ScanIconButton(
-          controller: _outputs[i].addressCtrl,
-          title: 'Scan recipient address',
-          onScanned: (_) => setState(() {}),
-        ),
-        IconButton(
-          icon: const Icon(Icons.paste, size: 18),
-          tooltip: 'Paste',
-          onPressed: () async {
-            final data = await Clipboard.getData('text/plain');
-            if (data?.text != null) {
-              _outputs[i].addressCtrl.text = data!.text!;
-              setState(() {});
-            }
-          },
-        ),
-        PopupMenuButton<String>(
-          tooltip: 'Use my own address',
-          icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
-          onSelected: (v) => _useMyAddress(i, fresh: v == 'fresh'),
-          itemBuilder: (_) => const [
-            PopupMenuItem(
-              value: 'fresh',
-              child: Text('New address (this wallet)'),
+    return Padding(
+      padding: const EdgeInsets.only(right: AppSpacing.xs),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (cameraScanSupported)
+            _IconAction(
+              icon: Icons.qr_code_scanner_outlined,
+              tooltip: 'Scan QR',
+              onTap: () => _scanAddress(i),
             ),
-            PopupMenuItem(value: 'used', child: Text('Choose a used address…')),
-          ],
-        ),
-      ],
+          _IconAction(
+            icon: Icons.content_paste_outlined,
+            tooltip: 'Paste',
+            onTap: () => _pasteAddress(i),
+          ),
+          _IconAction(
+            icon: Icons.account_balance_wallet_outlined,
+            tooltip: 'Use my own address',
+            onTap: () => _pickMyAddress(i),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1938,812 +2322,154 @@ class _SendScreenState extends State<SendScreen> {
     if (!price.hasPrice) return null;
     return '≈ ${price.symbol}${AmountUnits.fiatText(amount, price.btcPrice)}';
   }
-
-  List<Widget> _outputsStep() {
-    final s = AppScheme.of(context);
-    final phone = AppLayout.isPhone(context);
-    final insufficient =
-        _isBtc &&
-        _manualInputs &&
-        !_hasMaxOutput &&
-        _outputsTotal > 0 &&
-        _outputsTotal > _selectedInputTotal;
-    final totals = _totalsByTicker;
-
-    return [
-      for (var i = 0; i < _outputs.length; i++)
-        Padding(
-          padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-          child: FormCard(
-            title: _outputs.length == 1 ? 'Recipient' : 'Recipient ${i + 1}',
-            trailing: _outputs.length > 1
-                ? IconButton(
-                    icon: Icon(Icons.close, size: 18, color: s.inkSecondary),
-                    tooltip: 'Remove output',
-                    onPressed: () => setState(() {
-                      _outputs[i].dispose();
-                      _outputs.removeAt(i);
-                    }),
-                  )
-                : null,
-            child: Column(
-              children: [
-                // Per-output asset — Liquid only: one tx can pay LBTC and
-                // tokens to different recipients at once.
-                if (!_isBtc && _liquidSpendable.length > 1) ...[
-                  // Phone: the uppercase micro-label sits above the field
-                  // rather than floating inside it — three filled boxes
-                  // stacked in one card need captions that stay put, and this
-                  // is the same label the Dashboard and Settings put over a
-                  // group. Desktop keeps the floating labelText.
-                  if (phone) const ListSectionLabel(label: 'Asset'),
-                  DropdownButtonFormField<String>(
-                    initialValue: _rowAsset(_outputs[i])?.assetId,
-                    decoration: phone
-                        ? const InputDecoration(hintText: 'Choose asset')
-                        : const InputDecoration(labelText: 'Asset'),
-                    // Phone: the value fills the field and a long ticker +
-                    // amount ellipsises instead of overflowing.
-                    isExpanded: phone,
-                    items: [
-                      for (final a in _liquidSpendable)
-                        DropdownMenuItem(
-                          value: a.assetId,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              AssetLogo(ticker: a.ticker, size: 18),
-                              const SizedBox(width: AppSpacing.sm),
-                              if (phone)
-                                Flexible(
-                                  child: Text(
-                                    a.ticker == 'LBTC'
-                                        ? 'LBTC'
-                                        : AssetRegistryService.instance
-                                              .displayTicker(a),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                )
-                              else
-                                Text(
-                                  a.ticker == 'LBTC'
-                                      ? 'LBTC'
-                                      : AssetRegistryService.instance
-                                            .displayTicker(a),
-                                ),
-                              const SizedBox(width: AppSpacing.sm),
-                              if (phone)
-                                Flexible(
-                                  child: Text(
-                                    a.displayAmount,
-                                    style: AppTypography.caption,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                )
-                              else
-                                Text(
-                                  a.displayAmount,
-                                  style: AppTypography.caption,
-                                ),
-                            ],
-                          ),
-                        ),
-                    ],
-                    onChanged: (id) => setState(() {
-                      _outputs[i].asset = _liquidSpendable
-                          .where((a) => a.assetId == id)
-                          .firstOrNull;
-                      // Units changed meaning — old amount no longer applies.
-                      _clearMax(_outputs[i]);
-                      _outputs[i].fiatInput = false;
-                      _outputs[i].amountCtrl.clear();
-                    }),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                ],
-                if (phone) const ListSectionLabel(label: 'Address'),
-                TextField(
-                  controller: _outputs[i].addressCtrl,
-                  style: AppTypography.mono,
-                  // An address is not prose: no autocorrect, no suggestions,
-                  // no capitalisation — a "corrected" bech32 string is a
-                  // different address. No-ops on desktop.
-                  keyboardType: TextInputType.visiblePassword,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  textCapitalization: TextCapitalization.none,
-                  // Phone: let the whole address show, wrapped, so it can
-                  // be checked in place; Enter never inserts a newline.
-                  maxLines: phone ? null : 1,
-                  textInputAction: phone ? TextInputAction.done : null,
-                  inputFormatters: phone
-                      ? [FilteringTextInputFormatter.deny(RegExp(r'[\r\n]'))]
-                      : null,
-                  decoration: InputDecoration(
-                    hintText: 'Enter, paste, or scan address',
-                    suffixIcon: phone ? null : _addressActions(i),
-                  ),
-                  // A payment link pasted straight into the field (⌘V on the
-                  // desktop never goes through the paste button) resolves to
-                  // address + amount on the spot. Setting the controller
-                  // does not re-enter onChanged, so this runs once: after it
-                  // the field holds a bare address and the branch is dead.
-                  onChanged: (v) => PaymentUri.isPaymentUri(v)
-                      ? _applyAddressInput(i, v)
-                      : setState(() {}),
-                ),
-                if (phone) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: _addressActionStrip(i),
-                  ),
-                ],
-                const SizedBox(height: AppSpacing.md),
-                if (phone) const ListSectionLabel(label: 'Amount'),
-                TextField(
-                  controller: _outputs[i].amountCtrl,
-                  // MAX owns the field while engaged — tap it again to edit.
-                  enabled: !_outputs[i].maxEngaged,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  style: AppTypography.numeric,
-                  decoration: InputDecoration(
-                    hintText: _outputs[i].sendMax
-                        ? 'Everything after the fee'
-                        : _outputs[i].fiatInput
-                        ? '0.00'
-                        : (_rowIsBtcLike(_outputs[i]) ? '0.00000000' : '0'),
-                    suffixIcon: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _MaxToggle(
-                          engaged: _outputs[i].maxEngaged,
-                          onTap: () => _toggleMax(i),
-                        ),
-                        // The unit — and, on a BTC/LBTC row with a price,
-                        // the ⇅ that flips the field to fiat and back.
-                        UnitChip(
-                          label: _outputs[i].fiatInput
-                              ? PriceService.instance.currency
-                              : _rowTicker(_outputs[i]),
-                          other: _canToggleFiat(_outputs[i])
-                              ? (_outputs[i].fiatInput
-                                    ? _rowTicker(_outputs[i])
-                                    : PriceService.instance.currency)
-                              : null,
-                          onTap: _canToggleFiat(_outputs[i])
-                              ? () => _toggleFiat(i)
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ),
-                  onChanged: (_) => setState(() {}),
-                ),
-                if (_equivalentText(_outputs[i]) case final approx?) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      approx,
-                      style: AppTypography.numericSmall.copyWith(
-                        fontSize: 13,
-                        color: s.inkSecondary,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: SecondaryButton(
-          label: 'Add output',
-          icon: Icons.add,
-          onPressed: () => setState(() => _outputs.add(_OutputDraft())),
-        ),
-      ),
-      const SizedBox(height: AppSpacing.lg),
-      for (final entry in totals.entries)
-        Row(
-          children: [
-            Text(
-              'Total ${entry.key}',
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-            ),
-            const Spacer(),
-            if (phone)
-              // Coin on one line, the fiat reading under it: side by side
-              // they wrapped at "· ≈" on a phone column.
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      _totalCoinText(entry.key, entry.value),
-                      textAlign: TextAlign.end,
-                      style: AppTypography.numericSmall.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: s.ink,
-                      ),
-                    ),
-                    if (_totalFiatText(entry.key, entry.value) case final fiat?)
-                      Text(
-                        fiat,
-                        textAlign: TextAlign.end,
-                        style: AppTypography.caption.copyWith(
-                          color: s.inkSecondary,
-                        ),
-                      ),
-                  ],
-                ),
-              )
-            else
-              Text(
-                switch (_totalFiatText(entry.key, entry.value)) {
-                  final fiat? =>
-                    '${_totalCoinText(entry.key, entry.value)} · $fiat',
-                  null => _totalCoinText(entry.key, entry.value),
-                },
-                style: AppTypography.numericSmall.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: s.ink,
-                ),
-              ),
-          ],
-        ),
-      if (_hasMaxOutput)
-        Row(
-          children: [
-            Text(
-              'MAX output',
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-            ),
-            const Spacer(),
-            Text(
-              'resolved at review',
-              style: AppTypography.caption.copyWith(color: s.inkFaint),
-            ),
-          ],
-        ),
-      if (insufficient) ...[
-        const SizedBox(height: AppSpacing.md),
-        WarningBanner(
-          title: 'Selected inputs may not cover this',
-          message:
-              'Outputs total ${_fmtAmount(_outputsTotal)} but the selected '
-              'coins hold ${_fmtAmount(_selectedInputTotal)} (fee comes on '
-              'top). Go back and select more coins, or lower the amounts.',
-        ),
-      ],
-    ];
-  }
-
-  // ── Step 5: fee ─────────────────────────────────────────────────────────────
-
-  List<Widget> _feeStep() {
-    final s = AppScheme.of(context);
-    if (!_isBtc) {
-      return [
-        FormCard(
-          title: 'Network fee',
-          subtitle: 'Liquid uses a flat minimal fee — nothing to configure.',
-          child: Row(
-            children: [
-              Icon(Icons.water_drop_outlined, size: 18, color: s.liquid),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  'Flat fee (~0.1 sat/vB), deducted automatically.',
-                  style: AppTypography.bodySmall.copyWith(
-                    color: s.inkSecondary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ];
-    }
-
-    final estVsize =
-        110 +
-        68 * math.max(1, _manualInputs ? _selectedUtxos.length : 1) +
-        31 * _outputs.length;
-    return [
-      FormCard(
-        title: 'Fee rate',
-        subtitle: 'Times are network estimates — actual confirmation varies.',
-        child: _FeeSelector(
-          selected: _feePreset,
-          customController: _customFeeCtrl,
-          onSelect: (f) => setState(() => _feePreset = f),
-          onCustomChanged: () => setState(() {}),
-        ),
-      ),
-      const SizedBox(height: AppSpacing.lg),
-      if (AppLayout.isPhone(context))
-        // Label above value: the one-liner is a hair too long for the
-        // narrower Android widths once a custom rate is typed.
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Rough forecast',
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '≈${(_feeRate * estVsize).round()} sats '
-              '(${_feeRate.toStringAsFixed(1)} sat/vB × ~$estVsize vB)',
-              style: AppTypography.numericSmall.copyWith(color: s.ink),
-            ),
-          ],
-        )
-      else
-        Row(
-          children: [
-            Text(
-              'Rough forecast',
-              style: AppTypography.caption.copyWith(color: s.inkSecondary),
-            ),
-            const Spacer(),
-            Text(
-              '≈${(_feeRate * estVsize).round()} sats '
-              '(${_feeRate.toStringAsFixed(1)} sat/vB × ~$estVsize vB)',
-              style: AppTypography.numericSmall.copyWith(color: s.ink),
-            ),
-          ],
-        ),
-      Text(
-        'The exact fee is computed at the review step.',
-        style: AppTypography.caption.copyWith(color: s.inkFaint),
-      ),
-    ];
-  }
-
-  // ── Step 6: review ──────────────────────────────────────────────────────────
-
-  List<Widget> _reviewStep() {
-    final s = AppScheme.of(context);
-    if (_previewing) {
-      return [
-        Padding(
-          padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-          child: const Center(child: CircularProgressIndicator()),
-        ),
-        Center(
-          child: Text(
-            'Building transaction…',
-            style: AppTypography.caption.copyWith(color: s.inkSecondary),
-          ),
-        ),
-      ];
-    }
-    if (_error != null) {
-      // A broadcast failure after signing is recoverable without re-signing:
-      // the signed PSBT was retained, so offer retry/export instead of the
-      // plain rebuild-preview retry.
-      if (_failedBroadcast != null) {
-        return [
-          DangerBanner(message: _error!),
-          const SizedBox(height: AppSpacing.lg),
-          Text(
-            'The transaction is signed — only the broadcast failed. Your '
-            'signatures were kept: retry when the network is reachable, or '
-            'copy the signed transaction and broadcast it elsewhere.',
-            style: AppTypography.caption.copyWith(color: s.inkSecondary),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          if (AppLayout.isPhone(context)) ...[
-            // Two wide buttons do not share a 379 dp row: stack them.
-            PrimaryButton(
-              label: _sending ? 'Broadcasting…' : 'Retry broadcast',
-              icon: Icons.refresh,
-              isFullWidth: true,
-              onPressed: _sending ? null : _retryBroadcast,
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            SecondaryButton(
-              label: 'Copy signed transaction',
-              icon: Icons.copy,
-              isFullWidth: true,
-              onPressed: _copyFailedBroadcastPsbt,
-            ),
-          ] else
-            Row(
-              children: [
-                PrimaryButton(
-                  label: _sending ? 'Broadcasting…' : 'Retry broadcast',
-                  icon: Icons.refresh,
-                  onPressed: _sending ? null : _retryBroadcast,
-                ),
-                const SizedBox(width: AppSpacing.md),
-                SecondaryButton(
-                  label: 'Copy signed transaction',
-                  icon: Icons.copy,
-                  onPressed: _copyFailedBroadcastPsbt,
-                ),
-              ],
-            ),
-        ];
-      }
-      return [
-        DangerBanner(message: _error!),
-        const SizedBox(height: AppSpacing.lg),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: SecondaryButton(
-            label: 'Retry',
-            icon: Icons.refresh,
-            onPressed: _buildPreview,
-          ),
-        ),
-      ];
-    }
-    final preview = _preview;
-    if (preview == null) return [const SizedBox.shrink()];
-
-    return [
-      _TxDiagram(
-        preview: preview,
-        isBtcLike: _isBtcLike,
-        ticker: _selectedAsset?.ticker ?? 'BTC',
-      ),
-      const SizedBox(height: AppSpacing.xl),
-      _FeeForecastPanel(preview: preview, isBtc: _isBtc),
-      const SizedBox(height: AppSpacing.lg),
-      Text(
-        'Verify each recipient address — character by character for '
-        'high-value sends. "Send" opens a final summary; nothing is signed '
-        'until you confirm there.',
-        style: AppTypography.caption.copyWith(color: s.inkSecondary),
-      ),
-    ];
-  }
 }
 
-// ── Wizard stepper header ─────────────────────────────────────────────────────
+// ── Formatting ────────────────────────────────────────────────────────────────
 
-/// Step rail for the send wizard.
-///
-/// Layout note: the connector must line up with the CENTRE OF THE DOTS, not
-/// with the centre of the dot+label column — an `Expanded` sibling of the whole
-/// column centres itself against the label too and lands visibly low. The rail
-/// is therefore top-aligned and offset by exactly half the dot.
-class _WizardStepper extends StatelessWidget {
-  const _WizardStepper({
-    required this.labels,
-    required this.current,
-    required this.maxReached,
-    required this.onTap,
-  });
+/// `3` for a whole rate, `2.5` otherwise.
+String _fmtRate(double rate) => rate == rate.roundToDouble()
+    ? rate.toStringAsFixed(0)
+    : rate.toStringAsFixed(1);
 
-  final List<String> labels;
-  final int current;
-  final int maxReached;
-  final void Function(int) onTap;
+/// `1,734,567` — sats are grouped (design.md, "Type").
+String _groupDigits(int n) {
+  final digits = n.abs().toString();
+  final out = StringBuffer(n < 0 ? '-' : '');
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) out.write(',');
+    out.write(digits[i]);
+  }
+  return out.toString();
+}
 
-  /// Diameter of a step dot. The rail offset is derived from it.
-  static const double _dot = 28;
+// ── Field label ───────────────────────────────────────────────────────────────
 
-  /// Rail thickness.
-  static const double _rail = 2;
+/// A field's label: an `eyebrow` above it, never floating inside, with an
+/// optional quiet fact on the right (the balance above an amount).
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.label, {this.trailing});
 
-  /// Phone: a dot, not a small numbered circle. Six numbered rings joined by
-  /// rails was the desktop rail shrunk down; here the dots are only
-  /// wayfinding and the step name under them does the talking. Each dot
-  /// still sits in a 48 dp-tall touch slot, so a passed step is tappable.
-  static const double _dotCompact = 8;
-
-  /// The dot of the step you are on — a touch bigger, so "where am I" is
-  /// answerable without reading the line below.
-  static const double _dotCompactCurrent = 10;
+  final String label;
+  final String? trailing;
 
   @override
   Widget build(BuildContext context) {
-    if (AppLayout.isPhone(context)) return _buildCompact(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < labels.length; i++) ...[
-          if (i > 0)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(
-                  top: (_dot - _rail) / 2,
-                  left: AppSpacing.xs,
-                  right: AppSpacing.xs,
-                ),
-                child: _StepRail(filled: i <= current, thickness: _rail),
-              ),
-            ),
-          _StepDot(
-            index: i,
-            label: labels[i],
-            size: _dot,
-            active: i == current,
-            done: i < current,
-            clickable: i <= maxReached && i != current,
-            onTap: () => onTap(i),
-          ),
-        ],
-      ],
-    );
-  }
-
-  /// Phone: small dots and the step's name.
-  ///
-  /// No numerals, no connecting rails: a 2 px rail between 8 dp dots is noise,
-  /// and stretching six dots edge to edge across the column is exactly what
-  /// made the header read as a desktop widget scaled down. The dots are a
-  /// left-aligned rail at a fixed pitch (each in its own touch slot, so
-  /// tapping a passed dot still jumps back to it) and the line underneath
-  /// carries the wayfinding: a quiet counter, then the step name loud.
-  Widget _buildCompact(BuildContext context) {
     final s = AppScheme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            for (var i = 0; i < labels.length; i++)
-              _StepDot(
-                index: i,
-                label: labels[i],
-                size: i == current ? _dotCompactCurrent : _dotCompact,
-                active: i == current,
-                done: i < current,
-                clickable: i <= maxReached && i != current,
-                onTap: () => onTap(i),
-                compact: true,
-              ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Row(
-          children: [
-            // The same uppercase micro-label the rest of the phone puts over
-            // a group — the counter is the quiet half of this line.
-            Text(
-              'Step ${current + 1} of ${labels.length}'.toUpperCase(),
-              style: AppTypography.navSection.copyWith(
-                color: s.inkFaint,
-                letterSpacing: 1.3,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Flexible(
+    final t = trailing;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            label,
+            style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+          ),
+          if (t != null) ...[
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
               child: Text(
-                labels[current],
+                t,
+                textAlign: TextAlign.end,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: AppTypography.stepIndicator.copyWith(
-                  color: s.ink,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: AppTypography.numericSmall.copyWith(color: s.inkFaint),
               ),
             ),
           ],
-        ),
-      ],
-    );
-  }
-}
-
-/// One connector between two dots: a static track with an accent fill that
-/// sweeps across as the step is passed, rather than snapping colour.
-class _StepRail extends StatelessWidget {
-  const _StepRail({required this.filled, required this.thickness});
-
-  final bool filled;
-  final double thickness;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    return SizedBox(
-      height: thickness,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: s.edge,
-              borderRadius: BorderRadius.circular(thickness),
-            ),
-          ),
-          TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: filled ? 1 : 0),
-            duration: AppMotion.of(context, AppMotion.emphasized),
-            curve: AppMotion.settle,
-            builder: (context, t, _) => Align(
-              alignment: Alignment.centerLeft,
-              child: FractionallySizedBox(
-                widthFactor: t.clamp(0.0, 1.0),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: s.accent,
-                    borderRadius: BorderRadius.circular(thickness),
-                  ),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
 }
 
-class _StepDot extends StatefulWidget {
-  const _StepDot({
-    required this.index,
-    required this.label,
-    required this.size,
-    required this.active,
-    required this.done,
-    required this.clickable,
+// ── Small icon action ─────────────────────────────────────────────────────────
+
+/// An icon button at a field's edge or a card's corner: 32 square on the
+/// desktop with a 16 px glyph, a 48 dp target on a phone. Hover is a surface
+/// step and the accent on the glyph, keyboard focus a ring, and the tooltip
+/// names the action.
+class _IconAction extends StatefulWidget {
+  const _IconAction({
+    required this.icon,
+    required this.tooltip,
     required this.onTap,
-    this.compact = false,
   });
 
-  final int index;
-  final String label;
-  final double size;
-  final bool active;
-  final bool done;
-  final bool clickable;
+  final IconData icon;
+  final String tooltip;
   final VoidCallback onTap;
 
-  /// Phone form: the dot alone inside a 48 dp touch slot, no label.
-  final bool compact;
-
   @override
-  State<_StepDot> createState() => _StepDotState();
+  State<_IconAction> createState() => _IconActionState();
 }
 
-class _StepDotState extends State<_StepDot> {
+class _IconActionState extends State<_IconAction> {
   bool _hover = false;
+  bool _focus = false;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final reached = widget.active || widget.done;
-    if (widget.compact) {
-      // Phone: a dot, and nothing else. No numeral, no check glyph, no ring —
-      // the fill alone says passed / here / not yet, and the
-      // AnimatedContainer still animates that fill (and the current dot's
-      // extra 2 dp) as the step changes.
-      return Semantics(
-        // The numeral used to be the dot's only spoken content; without it
-        // the step name has to be said here, or the rail is six unlabelled
-        // targets to a screen reader.
-        button: widget.clickable,
-        selected: widget.active,
-        label: 'Step ${widget.index + 1}: ${widget.label}',
-        excludeSemantics: true,
-        child: GestureDetector(
-          onTap: widget.clickable ? widget.onTap : null,
-          behavior: HitTestBehavior.opaque,
-          // The dot is pinned to the left of its slot so the rail starts
-          // flush with the page's text; the rest of the 32 x 48 slot is touch
-          // area, which is what keeps an 8 dp dot tappable back to a passed
-          // step.
-          child: SizedBox(
-            width: 32,
-            height: AppLayout.minTouchTarget,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: AnimatedContainer(
-                duration: AppMotion.of(context, AppMotion.quick),
-                curve: AppMotion.settle,
-                width: widget.size,
-                height: widget.size,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.active
-                      ? s.accent
-                      : widget.done
-                      ? s.accent.withValues(alpha: 0.45)
-                      : s.panelInset,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final ring = reached
-        ? s.accent
-        : _hover
-        ? s.accent.withValues(alpha: 0.55)
-        : s.edgeStrong;
-
-    final dot = AnimatedContainer(
-      duration: AppMotion.of(context, AppMotion.quick),
+    final phone = AppLayout.isPhone(context);
+    final side = phone ? AppLayout.minTouchTarget : AppSpacing.xxl;
+    final button = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.instant),
       curve: AppMotion.settle,
-      width: widget.size,
-      height: widget.size,
+      width: side,
+      height: side,
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: widget.active
-            ? s.accent
-            : widget.done
-            ? s.accentSoft
-            : Colors.transparent,
-        border: Border.all(color: ring, width: widget.active ? 0 : 1.4),
+        color: _hover ? s.hover : Colors.transparent,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       ),
-      child: Center(
-        child: widget.done
-            ? Icon(Icons.check_rounded, size: 15, color: s.accent)
-            : Text(
-                '${widget.index + 1}',
-                style: AppTypography.numericSmall.copyWith(
-                  color: widget.active
-                      ? Colors.white
-                      : _hover
-                      ? s.accent
-                      : s.inkSecondary,
-                  fontWeight: FontWeight.w700,
-                  height: 1.0,
-                ),
-              ),
+      foregroundDecoration: _focus
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              border: Border.all(color: s.focus, width: 2),
+            )
+          : null,
+      child: Icon(
+        widget.icon,
+        size: phone ? 20 : AppSpacing.iconSmall,
+        // Under the pointer the glyph takes the accent, as every icon
+        // control does.
+        color: _hover ? s.accentGlyph : s.inkSecondary,
       ),
     );
-
-    return MouseRegion(
-      cursor: widget.clickable
-          ? SystemMouseCursors.click
-          : SystemMouseCursors.basic,
-      onEnter: (_) {
-        if (widget.clickable) setState(() => _hover = true);
-      },
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.clickable ? widget.onTap : null,
-        // Labels vary in width; a fixed slot keeps the rails between dots
-        // even instead of stretching around the longest word.
-        child: SizedBox(
-          width: 78,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              dot,
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                widget.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                // 12px, not 10.5 — these are the only wayfinding in the flow
-                // and were being read as decoration rather than labels.
-                style: AppTypography.caption.copyWith(
-                  fontSize: 12,
-                  height: 1.2,
-                  color: reached ? s.ink : s.inkSecondary,
-                  fontWeight: widget.active ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-            ],
+    final tappable = Semantics(
+      button: true,
+      label: widget.tooltip,
+      excludeSemantics: true,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowHoverHighlight: (v) => setState(() => _hover = v),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onTap();
+              return null;
+            },
           ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: button,
         ),
       ),
     );
+    if (phone) return tappable;
+    return Tooltip(message: widget.tooltip, child: tappable);
   }
 }
 
-// ── MAX toggle ────────────────────────────────────────────────────────────────
+// ── Max toggle ────────────────────────────────────────────────────────────────
 
-/// The MAX affordance on an amount field. A real two-state toggle: crimson
-/// while engaged, quiet while not (a hairline outline on desktop, the inset
-/// grey on a phone), so "is MAX on?" is answerable at a glance and tapping
-/// again always turns it back off.
+/// The Max affordance on an amount field: a quiet text button that is a real
+/// two-state toggle. Engaged it takes the selected surface and the primary
+/// ink, so "is Max on?" is answerable at a glance; tapping again turns it
+/// off.
 class _MaxToggle extends StatefulWidget {
   const _MaxToggle({required this.engaged, required this.onTap});
 
@@ -2756,387 +2482,96 @@ class _MaxToggle extends StatefulWidget {
 
 class _MaxToggleState extends State<_MaxToggle> {
   bool _hover = false;
+  bool _focus = false;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final on = widget.engaged;
-    final border = on
-        ? s.accent
-        : _hover
-        ? s.accent.withValues(alpha: 0.6)
-        : s.edgeStrong;
     final phone = AppLayout.isPhone(context);
     final chip = AnimatedContainer(
-      duration: AppMotion.of(context, AppMotion.quick),
-      // Phone: no margin — the chip already sits inside its own 48 dp
-      // slot below, and the vertical margin only inflated the field's
-      // suffix and pushed the amount box past 70 dp.
-      margin: phone
-          ? EdgeInsets.zero
-          : const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-      padding: EdgeInsets.symmetric(
-        horizontal: phone ? AppSpacing.md : AppSpacing.sm,
-        vertical: phone ? 7 : 5,
+      duration: AppMotion.of(context, AppMotion.instant),
+      curve: AppMotion.settle,
+      height: AppSpacing.xl,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: on ? s.selected : (_hover ? s.hover : Colors.transparent),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        border: Border.all(color: on ? s.edgeStrong : Colors.transparent),
       ),
-      // Phone: off is a filled inset-grey chip, like every other small
-      // control on the phone, rather than an outlined ghost; on stays
-      // the crimson fill. Desktop keeps the hairline two-state chip.
-      decoration: phone
+      foregroundDecoration: _focus
           ? BoxDecoration(
-              color: on ? s.accent : s.panelInset,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            )
-          : BoxDecoration(
-              color: on ? s.accent : Colors.transparent,
               borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-              border: Border.all(color: border, width: 1),
-            ),
+              border: Border.all(color: s.focus, width: 2),
+            )
+          : null,
       child: Text(
-        'MAX',
+        'Max',
         style: AppTypography.label.copyWith(
-          color: on
-              ? Colors.white
-              : _hover
-              ? s.accent
-              : s.inkSecondary,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.6,
-          height: 1.0,
+          color: on || _hover ? s.ink : s.inkSecondary,
         ),
       ),
     );
-    if (phone) {
-      // Touch: the whole 48 dp slot taps, not just the 23 dp chip, and the
-      // hover states are simply never entered.
-      return GestureDetector(
-        onTap: widget.onTap,
-        behavior: HitTestBehavior.opaque,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            minWidth: AppLayout.minTouchTarget,
-            minHeight: AppLayout.minTouchTarget,
+    final tappable = Semantics(
+      button: true,
+      toggled: on,
+      label: 'Max',
+      excludeSemantics: true,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowHoverHighlight: (v) => setState(() => _hover = v),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onTap();
+              return null;
+            },
           ),
-          child: Center(child: chip),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          // Touch: the whole 48 dp slot taps, not just the 24 dp chip.
+          child: phone
+              ? ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minWidth: AppLayout.minTouchTarget,
+                    minHeight: AppLayout.minTouchTarget,
+                  ),
+                  child: Center(child: chip),
+                )
+              : chip,
         ),
-      );
-    }
+      ),
+    );
+    if (phone) return tappable;
     return Tooltip(
       message: on
-          ? 'MAX on — tap to edit the amount'
+          ? 'Max is on — tap to type an amount'
           : 'Send the whole balance',
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        child: GestureDetector(onTap: widget.onTap, child: chip),
-      ),
+      child: tappable,
     );
   }
 }
 
-// ── Big selectable choice card ────────────────────────────────────────────────
+// ── Transaction diagram (the flow) ────────────────────────────────────────────
 
-class _BigChoiceCard extends StatelessWidget {
-  const _BigChoiceCard({
-    this.icon,
-    this.leading,
-    required this.title,
-    required this.subtitle,
-    required this.selected,
-    required this.onTap,
-    this.badge,
-  });
-
-  final IconData? icon;
-  final Widget? leading;
-  final String title;
-  final String subtitle;
-  final bool selected;
-  final VoidCallback onTap;
-
-  /// Optional qualifier chip, drawn beside the title. Same wording and styling
-  /// as the wallet-setup cards: "Easiest" / "Safest", never "Recommended" —
-  /// the trade-off is named, so the user picks on their own terms.
-  final String? badge;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final phone = AppLayout.isPhone(context);
-    // Phone: the softer card corner the rest of the phone uses, and a 1.5 px
-    // selected ring — a 2 px ring reads heavy against a 14 radius. Three of
-    // these stack on the Type step, so the padding tightens a notch too.
-    final radius = phone ? AppSpacing.radiusLg : AppSpacing.radiusMd;
-    final card = AnimatedContainer(
-      duration: AppMotion.of(context, AppMotion.quick),
-      curve: AppMotion.settle,
-      padding: EdgeInsets.all(
-        phone ? AppSpacing.cardPaddingSmall : AppSpacing.lg,
-      ),
-      decoration: BoxDecoration(
-        color: selected ? s.accentSoft : (phone ? s.panel : s.surfaceSolid),
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(
-          color: selected ? s.accent : s.edge,
-          width: selected ? (phone ? 1.5 : 2) : 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          leading ??
-              Icon(icon, size: 26, color: selected ? s.accent : s.inkSecondary),
-          const SizedBox(width: AppSpacing.lg),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        title,
-                        style: AppTypography.body.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: selected ? s.accent : s.ink,
-                        ),
-                      ),
-                    ),
-                    if (badge != null) ...[
-                      const SizedBox(width: AppSpacing.sm),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.sm,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.warningLight,
-                          borderRadius: BorderRadius.circular(
-                            AppSpacing.radiusSm,
-                          ),
-                        ),
-                        child: Text(
-                          badge!,
-                          style: AppTypography.label.copyWith(
-                            color: AppColors.warning,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: AppTypography.caption.copyWith(color: s.inkSecondary),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Icon(
-            selected ? Icons.check_circle : Icons.radio_button_unchecked,
-            size: 20,
-            color: selected ? s.accent : s.inkFaint,
-          ),
-        ],
-      ),
-    );
-    if (phone) {
-      // The card's fill is opaque, so an InkWell underneath it never shows
-      // its ripple; on touch the ripple is painted over the card instead.
-      return Stack(
-        children: [
-          card,
-          Positioned.fill(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(radius),
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(radius),
-      child: card,
-    );
-  }
-}
-
-// ── Fee selector (presets + custom sat/vB) ────────────────────────────────────
-
-class _FeeSelector extends StatelessWidget {
-  const _FeeSelector({
-    required this.selected,
-    required this.onSelect,
-    required this.customController,
-    required this.onCustomChanged,
-  });
-  final String selected;
-  final void Function(String) onSelect;
-  final TextEditingController customController;
-  final VoidCallback onCustomChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final presets = [
-      ('slow', 'Slow', '~60 min', '1 sat/vB'),
-      ('normal', 'Normal', '~30 min', '3 sat/vB'),
-      ('fast', 'Fast', '~10 min', '8 sat/vB'),
-      ('custom', 'Custom', 'your rate', 'sat/vB'),
-    ];
-    final phone = AppLayout.isPhone(context);
-
-    Widget tile((String, String, String, String) p) {
-      final (id, label, time, rate) = p;
-      final isActive = id == selected;
-      return InkWell(
-        onTap: () => onSelect(id),
-        borderRadius: BorderRadius.circular(
-          phone ? AppSpacing.radiusLg : AppSpacing.radiusSm,
-        ),
-        child: AnimatedContainer(
-          duration: AppMotion.of(context, AppMotion.quick),
-          curve: AppMotion.settle,
-          padding: const EdgeInsets.all(AppSpacing.md),
-          constraints: phone
-              ? const BoxConstraints(minHeight: AppLayout.minTouchTarget)
-              : null,
-          // Phone: four filled inset-grey cells with the chosen one lit —
-          // the same segmented grammar the phone uses everywhere else. Four
-          // empty hairline boxes on the page ground was the desktop row
-          // wrapped into a grid, not a phone control.
-          decoration: phone
-              ? BoxDecoration(
-                  color: isActive ? s.accentSoft : s.panelInset,
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-                  // The unlit cell's ring is its own fill: invisible, but it
-                  // keeps the inner width constant so the captions do not
-                  // re-wrap as the selection moves between cells.
-                  border: Border.all(
-                    color: isActive ? s.accent : s.panelInset,
-                    width: 1.5,
-                  ),
-                )
-              : BoxDecoration(
-                  color: isActive ? s.accentSoft : Colors.transparent,
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                  border: Border.all(
-                    color: isActive ? s.accent : s.edge,
-                    width: isActive ? 2 : 1,
-                  ),
-                ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: AppTypography.label.copyWith(
-                  color: isActive ? s.accent : s.ink,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              Text(
-                time,
-                style: AppTypography.caption.copyWith(color: s.inkSecondary),
-              ),
-              Text(
-                rate,
-                style: AppTypography.monoSmall.copyWith(color: s.inkSecondary),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (phone)
-          // 2 x 2: four presets across 337 dp left ~50 dp of text each and
-          // wrapped every caption at a different height.
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final w = (constraints.maxWidth - AppSpacing.sm) / 2;
-              return Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: [
-                  for (final p in presets) SizedBox(width: w, child: tile(p)),
-                ],
-              );
-            },
-          )
-        else
-          Row(
-            children: presets.map((p) {
-              return Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(right: AppSpacing.sm),
-                  child: tile(p),
-                ),
-              );
-            }).toList(),
-          ),
-        if (selected == 'custom') ...[
-          const SizedBox(height: AppSpacing.md),
-          TextField(
-            controller: customController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: AppTypography.numeric,
-            decoration: const InputDecoration(
-              hintText: '3.0',
-              suffixText: 'sat/vB',
-              helperText: 'Minimum 0.1 sat/vB',
-            ),
-            onChanged: (_) => onCustomChanged(),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-// ── Mempool-style transaction diagram ─────────────────────────────────────────
-
-/// Visual role of a diagram block.
-enum _BlockKind { input, autoInput, recipient, change, fee }
-
-class _DiagramEntry {
-  const _DiagramEntry({
-    required this.kind,
-    required this.title,
-    required this.amountText,
-    this.mono = true,
-  });
-  final _BlockKind kind;
-  final String title;
-  final String amountText;
-  final bool mono;
-}
-
-/// Inputs on the left, outputs (incl. change + fee) on the right, curved
-/// arrows flowing through a central node — the classic mempool.space layout.
+/// The previewed transaction as a [TxFlowDiagram]: the coins it spends, each
+/// payment, the change, the fee.
 class _TxDiagram extends StatelessWidget {
   const _TxDiagram({
     required this.preview,
     required this.isBtcLike,
     required this.ticker,
+    required this.liquid,
   });
 
   final TxPreview preview;
   final bool isBtcLike;
   final String ticker;
-
-  static const _blockH = 62.0;
-  static const _gap = 12.0;
+  final bool liquid;
 
   String _fmt(int sats) {
     if (isBtcLike) return '${(sats / 1e8).toStringAsFixed(8)} $ticker';
@@ -3152,480 +2587,52 @@ class _TxDiagram extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-
-    final inputs = preview.inputs.isEmpty
-        ? [
-            const _DiagramEntry(
-              kind: _BlockKind.autoInput,
-              title: 'Auto-selected coins',
-              amountText: 'confidential',
+  Widget build(BuildContext context) => TxFlowDiagram(
+    liquid: liquid,
+    inputs: preview.inputs.isEmpty
+        ? const [
+            TxFlowEntry(
+              role: TxFlowRole.autoInput,
+              title: 'Chosen automatically',
+              amount: 'Confidential',
               mono: false,
             ),
           ]
         : [
             for (final i in preview.inputs)
-              _DiagramEntry(
-                kind: _BlockKind.input,
+              TxFlowEntry(
+                role: TxFlowRole.input,
                 title: i.address,
-                amountText: _fmt(i.amountSats),
+                amount: _fmt(i.amountSats),
               ),
-          ];
-
-    final outputs = [
+          ],
+    outputs: [
       for (final o in preview.outputs)
-        _DiagramEntry(
-          kind: o.isChange ? _BlockKind.change : _BlockKind.recipient,
+        TxFlowEntry(
+          role: o.isChange ? TxFlowRole.change : TxFlowRole.recipient,
           title: o.address,
-          amountText: _fmtIo(o),
+          amount: _fmtIo(o),
         ),
-      _DiagramEntry(
-        kind: _BlockKind.fee,
+      TxFlowEntry(
+        role: TxFlowRole.fee,
         title: 'Network fee',
-        amountText: preview.feeDisplay,
+        amount: preview.feeDisplay,
         mono: false,
       ),
-    ];
-
-    if (AppLayout.isPhone(context)) {
-      return _buildStacked(context, s, inputs, outputs);
-    }
-
-    final rows = math.max(inputs.length, outputs.length);
-    final height = rows * _blockH + (rows - 1) * _gap + AppSpacing.lg * 2;
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: s.surfaceSolid,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: s.edge),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              TagChip(label: 'Inputs (${inputs.length})', color: s.bitcoin),
-              const Spacer(),
-              TagChip(
-                label: 'Outputs (${preview.outputs.length}) + fee',
-                color: s.accent,
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          SizedBox(
-            height: height,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final w = constraints.maxWidth;
-                // Columns share the width with a fixed arrow lane between.
-                final laneW = math.min(180.0, math.max(90.0, w * 0.18));
-                final colW = (w - laneW) / 2;
-
-                double centerYFor(int i, int count) {
-                  final columnH = count * _blockH + (count - 1) * _gap;
-                  final top = (height - columnH) / 2;
-                  return top + i * (_blockH + _gap) + _blockH / 2;
-                }
-
-                return Stack(
-                  children: [
-                    // Arrows behind the blocks.
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: _ArrowPainter(
-                          inputYs: [
-                            for (var i = 0; i < inputs.length; i++)
-                              centerYFor(i, inputs.length),
-                          ],
-                          outputYs: [
-                            for (var i = 0; i < outputs.length; i++)
-                              centerYFor(i, outputs.length),
-                          ],
-                          outputKinds: [for (final o in outputs) o.kind],
-                          leftX: colW,
-                          rightX: w - colW,
-                          centerX: w / 2,
-                          centerY: height / 2,
-                          scheme: s,
-                        ),
-                      ),
-                    ),
-                    // Central tx node.
-                    Positioned(
-                      left: w / 2 - 17,
-                      top: height / 2 - 17,
-                      child: Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: s.surfaceSolid,
-                          border: Border.all(color: s.accent, width: 2),
-                          boxShadow: [
-                            BoxShadow(color: s.accentGlow, blurRadius: 14),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.swap_horiz,
-                          size: 18,
-                          color: s.accent,
-                        ),
-                      ),
-                    ),
-                    // Input blocks.
-                    for (var i = 0; i < inputs.length; i++)
-                      Positioned(
-                        left: 0,
-                        top: centerYFor(i, inputs.length) - _blockH / 2,
-                        width: colW,
-                        height: _blockH,
-                        child: _DiagramBlock(entry: inputs[i]),
-                      ),
-                    // Output blocks.
-                    for (var i = 0; i < outputs.length; i++)
-                      Positioned(
-                        right: 0,
-                        top: centerYFor(i, outputs.length) - _blockH / 2,
-                        width: colW,
-                        height: _blockH,
-                        child: _DiagramBlock(entry: outputs[i]),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+    ],
+  );
 }
 
-/// Phone form of the diagram: the two columns become two full-width groups
-/// (inputs, then outputs + fee) with an arrow between them. At 379 dp the
-/// side-by-side blocks showed 7 glyphs of each address, which defeats the
-/// "verify each address" instruction under it; here every block has the
-/// whole width and the address is readable.
-extension on _TxDiagram {
-  Widget _buildStacked(
-    BuildContext context,
-    AppScheme s,
-    List<_DiagramEntry> inputs,
-    List<_DiagramEntry> outputs,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.cardPaddingSmall),
-      // Phone card: panel ground, hairline, softer corner. Reached only from
-      // the isPhone guard in _TxDiagram.build.
-      decoration: BoxDecoration(
-        color: s.panel,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-        border: Border.all(color: s.edge),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TagChip(label: 'Inputs (${inputs.length})', color: s.bitcoin),
-          const SizedBox(height: AppSpacing.sm),
-          for (var i = 0; i < inputs.length; i++) ...[
-            if (i > 0) const SizedBox(height: AppSpacing.sm),
-            _DiagramBlock(entry: inputs[i], wide: true),
-          ],
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-            child: Row(
-              children: [
-                Expanded(child: Divider(color: s.edge, height: 1)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                  ),
-                  child: Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      // Inset grey inside the card, with a lighter ring — a
-                      // 2 px ring on a 30 dp node read as a control.
-                      color: s.panelInset,
-                      border: Border.all(color: s.accent, width: 1.5),
-                    ),
-                    child: Icon(
-                      Icons.arrow_downward_rounded,
-                      size: 16,
-                      color: s.accent,
-                    ),
-                  ),
-                ),
-                Expanded(child: Divider(color: s.edge, height: 1)),
-              ],
-            ),
-          ),
-          TagChip(
-            label: 'Outputs (${preview.outputs.length}) + fee',
-            color: s.accent,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          for (var i = 0; i < outputs.length; i++) ...[
-            if (i > 0) const SizedBox(height: AppSpacing.sm),
-            _DiagramBlock(entry: outputs[i], wide: true),
-          ],
-        ],
-      ),
-    );
-  }
-}
+// ── Review summary ────────────────────────────────────────────────────────────
 
-class _DiagramBlock extends StatelessWidget {
-  const _DiagramBlock({required this.entry, this.wide = false});
-  final _DiagramEntry entry;
-
-  /// Full-width phone block: readable type, the address wraps instead of
-  /// hiding behind a hover tooltip, and no fixed height.
-  final bool wide;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final (color, chip) = switch (entry.kind) {
-      _BlockKind.input => (s.bitcoin, 'IN'),
-      _BlockKind.autoInput => (s.liquid, 'AUTO'),
-      _BlockKind.recipient => (s.accent, 'OUT'),
-      _BlockKind.change => (s.inkSecondary, 'CHANGE'),
-      _BlockKind.fee => (s.warning, 'FEE'),
-    };
-
-    if (wide) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.sm,
-        ),
-        decoration: BoxDecoration(
-          color: Color.alphaBlend(
-            color.withValues(alpha: s.isDark ? 0.10 : 0.06),
-            s.surfaceSolid,
-          ),
-          borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-          border: Border.all(color: color.withValues(alpha: 0.65), width: 1.4),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                TagChip(label: chip, color: color),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    entry.amountText,
-                    textAlign: TextAlign.end,
-                    style: AppTypography.numericSmall.copyWith(
-                      color: s.ink,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            entry.mono
-                ? HexText(
-                    entry.title,
-                    style: AppTypography.monoSmall.copyWith(color: s.ink),
-                  )
-                : Text(
-                    entry.title,
-                    style: AppTypography.caption.copyWith(color: s.ink),
-                  ),
-          ],
-        ),
-      );
-    }
-
-    return Tooltip(
-      message: entry.title,
-      waitDuration: const Duration(milliseconds: 400),
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.sm,
-        ),
-        decoration: BoxDecoration(
-          color: Color.alphaBlend(
-            color.withValues(alpha: s.isDark ? 0.10 : 0.06),
-            s.surfaceSolid,
-          ),
-          borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-          border: Border.all(color: color.withValues(alpha: 0.65), width: 1.4),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.16),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    chip,
-                    style: AppTypography.caption.copyWith(
-                      color: color,
-                      fontSize: 8.5,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: entry.mono
-                      // Sparrow-style endpoint highlighting on addresses.
-                      ? HexText(
-                          entry.title,
-                          truncate: true,
-                          style: AppTypography.monoSmall.copyWith(
-                            color: s.ink,
-                            fontSize: 10.5,
-                          ),
-                        )
-                      : Text(
-                          entry.title,
-                          style: AppTypography.caption.copyWith(
-                            color: s.ink,
-                            fontSize: 10.5,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 3),
-            Text(
-              entry.amountText,
-              style: AppTypography.numericSmall.copyWith(
-                color: s.ink,
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Draws the flow curves: inputs converge into the central node, outputs
-/// fan out of it, with small arrowheads on the output side.
-class _ArrowPainter extends CustomPainter {
-  _ArrowPainter({
-    required this.inputYs,
-    required this.outputYs,
-    required this.outputKinds,
-    required this.leftX,
-    required this.rightX,
-    required this.centerX,
-    required this.centerY,
-    required this.scheme,
-  });
-
-  final List<double> inputYs;
-  final List<double> outputYs;
-  final List<_BlockKind> outputKinds;
-  final double leftX;
-  final double rightX;
-  final double centerX;
-  final double centerY;
-  final AppScheme scheme;
-
-  Color _colorFor(_BlockKind kind) => switch (kind) {
-    _BlockKind.input || _BlockKind.autoInput => scheme.bitcoin,
-    _BlockKind.recipient => scheme.accent,
-    _BlockKind.change => scheme.inkSecondary,
-    _BlockKind.fee => scheme.warning,
-  };
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Input side — one curve per input into the node.
-    for (final y in inputYs) {
-      final paint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8
-        ..color = scheme.bitcoin.withValues(alpha: 0.55);
-      final path = Path()
-        ..moveTo(leftX, y)
-        ..cubicTo(
-          leftX + (centerX - leftX) * 0.5,
-          y,
-          centerX - (centerX - leftX) * 0.4,
-          centerY,
-          centerX - 17,
-          centerY,
-        );
-      canvas.drawPath(path, paint);
-    }
-
-    // Output side — node to each output, arrowhead at the end.
-    for (var i = 0; i < outputYs.length; i++) {
-      final y = outputYs[i];
-      final color = _colorFor(outputKinds[i]).withValues(alpha: 0.65);
-      final paint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8
-        ..color = color;
-      final endX = rightX - 7;
-      final path = Path()
-        ..moveTo(centerX + 17, centerY)
-        ..cubicTo(
-          centerX + (endX - centerX) * 0.4,
-          centerY,
-          endX - (endX - centerX) * 0.5,
-          y,
-          endX,
-          y,
-        );
-      canvas.drawPath(path, paint);
-
-      // Arrowhead.
-      final head = Path()
-        ..moveTo(rightX, y)
-        ..lineTo(endX - 1, y - 4.5)
-        ..lineTo(endX - 1, y + 4.5)
-        ..close();
-      canvas.drawPath(head, Paint()..color = color);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _ArrowPainter old) =>
-      old.inputYs != inputYs ||
-      old.outputYs != outputYs ||
-      old.leftX != leftX ||
-      old.rightX != rightX;
-}
-
-// ── Fee forecast panel (review step) ──────────────────────────────────────────
-
-class _FeeForecastPanel extends StatelessWidget {
-  const _FeeForecastPanel({required this.preview, required this.isBtc});
+/// The figures under the flow, one per row: amount, fee and its rate, size,
+/// the confirmation target, and the total set apart under a hairline.
+class _ReviewSummary extends StatelessWidget {
+  const _ReviewSummary({required this.preview, required this.isBtc});
   final TxPreview preview;
   final bool isBtc;
 
+  /// The same thresholds as the fee presets: a target, not a promise.
   String get _eta {
     if (!isBtc) return '~1 min';
     if (preview.feeRate >= 8) return '~10 min';
@@ -3636,118 +2643,66 @@ class _FeeForecastPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final phone = AppLayout.isPhone(context);
-
-    Widget cellBody(String label, String value, {Color? valueColor}) => Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: AppTypography.caption.copyWith(color: s.inkSecondary),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: AppTypography.numericSmall.copyWith(
-            fontWeight: FontWeight.w700,
-            color: valueColor ?? s.ink,
+    return FormCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _SummaryRow(label: 'Amount', value: preview.amountDisplay),
+          _SummaryRow(
+            label: 'Fee',
+            value: isBtc
+                ? '${_groupDigits(preview.feeSats)} sats · ${_fmtRate(preview.feeRate)} sat/vB'
+                : preview.feeDisplay,
           ),
-        ),
-      ],
-    );
-    Widget cell(String label, String value, {Color? valueColor}) =>
-        Expanded(child: cellBody(label, value, valueColor: valueColor));
-
-    if (phone) {
-      // Five cells in one row are 62 dp each on a phone; two per line keeps
-      // "Confirmation" and the total on one line apiece.
-      final cells = <(String, String, Color?)>[
-        ('Fee', '${preview.feeSats} sats', s.warning),
-        if (isBtc) ...[
-          ('Rate', '${preview.feeRate.toStringAsFixed(1)} sat/vB', null),
-          ('Est. size', '~${preview.vsizeEst} vB', null),
+          if (isBtc)
+            _SummaryRow(label: 'Size', value: '~${preview.vsizeEst} vB'),
+          _SummaryRow(label: 'Confirmation target', value: _eta),
+          const SizedBox(height: AppSpacing.sm),
+          Divider(height: 1, thickness: 1, color: s.edge),
+          const SizedBox(height: AppSpacing.sm),
+          _SummaryRow(label: 'Total', value: preview.totalDisplay, total: true),
         ],
-        ('Confirmation', _eta, null),
-        ('Total spend', preview.totalDisplay, null),
-      ];
-      return Container(
-        padding: const EdgeInsets.all(AppSpacing.cardPaddingSmall),
-        // Phone: a card — panel ground, hairline, the softer corner.
-        decoration: BoxDecoration(
-          color: s.panel,
-          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-          border: Border.all(color: s.edge),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.local_gas_station_outlined,
-                  size: 18,
-                  color: s.warning,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  'Fee forecast',
-                  style: AppTypography.label.copyWith(color: s.ink),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final w = (constraints.maxWidth - AppSpacing.md) / 2;
-                return Wrap(
-                  spacing: AppSpacing.md,
-                  runSpacing: AppSpacing.md,
-                  children: [
-                    for (final (label, value, color) in cells)
-                      SizedBox(
-                        width: w,
-                        // Each figure gets its own inset tile: this is the
-                        // step where the numbers have to be easiest to read,
-                        // and label-over-value columns floating on the card
-                        // ground had nothing separating one from the next.
-                        child: Container(
-                          padding: const EdgeInsets.all(AppSpacing.md),
-                          decoration: BoxDecoration(
-                            color: s.panelInset,
-                            borderRadius: BorderRadius.circular(
-                              AppSpacing.radiusMd,
-                            ),
-                          ),
-                          child: cellBody(label, value, valueColor: color),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: s.surfaceSolid,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: s.edge),
       ),
+    );
+  }
+}
+
+/// A key on the left in the secondary ink, its figure right-aligned in the
+/// primary ink. 40 tall; the total takes the larger figure.
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({
+    required this.label,
+    required this.value,
+    this.total = false,
+  });
+
+  final String label;
+  final String value;
+  final bool total;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 40),
       child: Row(
         children: [
-          Icon(Icons.local_gas_station_outlined, size: 20, color: s.warning),
+          Text(
+            label,
+            style: AppTypography.label.copyWith(color: s.inkSecondary),
+          ),
           const SizedBox(width: AppSpacing.lg),
-          cell('Fee', '${preview.feeSats} sats', valueColor: s.warning),
-          if (isBtc) ...[
-            cell('Rate', '${preview.feeRate.toStringAsFixed(1)} sat/vB'),
-            cell('Est. size', '~${preview.vsizeEst} vB'),
-          ],
-          cell('Confirmation', _eta),
-          cell('Total spend', preview.totalDisplay),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style:
+                  (total
+                          ? AppTypography.numericLargeOf(context)
+                          : AppTypography.numeric)
+                      .copyWith(color: s.ink),
+            ),
+          ),
         ],
       ),
     );

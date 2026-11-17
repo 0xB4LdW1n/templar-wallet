@@ -1,19 +1,12 @@
-// Hybrid component kit — the shared building blocks of the chosen design
-// language (Obsidian glass shell × Instrument data grammar).
+// Surfaces, data blocks, tags and the small motion helpers every screen
+// shares (design.md, "Surfaces" and "Controls").
 //
-// Rules baked in:
-//  - One frosted HeroPanel per screen max (GPU budget). Honors the
-//    reduce-effects setting and degrades to translucent fill.
-//  - Critical data always sits on DataWell (solid, AA-contrast backing).
-//  - All motion routes through AppMotion tokens (reduced-motion aware).
-
-import 'dart:math' as math;
-import 'dart:ui';
+// The page is a flat `canvas`. A card is the `panel` step with a hairline; a
+// recess for data is the `well`. Tags are quiet text on `panelInset`. Motion
+// is a fade and a short rise, once, and nothing loops.
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import '../../app/app_state.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
@@ -21,159 +14,33 @@ import '../../theme/app_typography.dart';
 
 // ── Page background ───────────────────────────────────────────────────────────
 
-/// Obsidian backdrop with a living "Aurora" field: a depth gradient plus a few
-/// slowly drifting color blooms (pure radial gradients — no blur, GPU-cheap).
-/// Wrap a screen's body in this. The drift freezes under OS reduced-motion or
-/// the in-app reduce-effects setting; the still composition stays on-brand.
+/// The page: the flat `canvas` step. Wrap a screen's body in this.
+///
+/// Both constructors draw the same thing; [PageBackground.flat] is kept so
+/// existing call sites compile.
 class PageBackground extends StatelessWidget {
-  /// Brand backdrop: accent gradient plus the drifting aurora. Reserved for the
-  /// entry screens (home picker, welcome) — it is the one place the brand gets
-  /// to speak.
-  const PageBackground({super.key, required this.child}) : _flat = false;
+  const PageBackground({super.key, required this.child});
 
-  /// Flat single-colour fill, no gradient and no aurora. Every surface inside
-  /// an open wallet uses this: decorative colour behind live balances and
-  /// addresses competes with the data for attention.
-  const PageBackground.flat({super.key, required this.child}) : _flat = true;
+  const PageBackground.flat({super.key, required this.child});
 
   final Widget child;
-  final bool _flat;
 
   @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    if (_flat) {
-      return ColoredBox(color: s.canvas, child: child);
-    }
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: s.bgGradient,
-          stops: const [0.0, 0.55, 1.0],
-        ),
-      ),
-      child: Stack(
-        children: [
-          Positioned.fill(child: _AuroraField(scheme: s)),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-/// Animated aurora layer — three drifting blooms. Cheap (radial gradients, no
-/// blur) and isolated in a RepaintBoundary so it never repaints the UI above.
-class _AuroraField extends StatefulWidget {
-  const _AuroraField({required this.scheme});
-  final AppScheme scheme;
-
-  @override
-  State<_AuroraField> createState() => _AuroraFieldState();
-}
-
-class _AuroraFieldState extends State<_AuroraField>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 32),
-  );
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Rebuilds when reduce-effects flips; reduced-motion is read live too.
-    final reduceEffects = context.select<AppState, bool>(
-      (st) => st.reduceEffects,
-    );
-    final frozen = AppMotion.reduced(context) || reduceEffects;
-    if (frozen) {
-      if (_c.isAnimating) _c.stop();
-      _c.value = 0.28; // a pleasing fixed composition
-    } else if (!_c.isAnimating) {
-      _c.repeat();
-    }
-
-    final s = widget.scheme;
-    return IgnorePointer(
-      child: RepaintBoundary(
-        child: AnimatedBuilder(
-          animation: _c,
-          builder: (_, _) => CustomPaint(
-            painter: _AuroraPainter(
-              t: _c.value,
-              glow: s.accent,
-              intensity: s.isDark ? 0.05 : 0.05,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AuroraPainter extends CustomPainter {
-  _AuroraPainter({
-    required this.t,
-    required this.glow,
-    required this.intensity,
-  });
-
-  final double t;
-
-  /// Single accent hue — monochrome glow, no rainbow. Depth comes from varied
-  /// per-blob alpha, not from multiple colors (keeps it serious/premium).
-  final Color glow;
-  final double intensity;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final a = t * 2 * math.pi;
-    void blob(double cx, double cy, double r, double drift, double mul) {
-      final dx = math.cos(a + drift) * 38;
-      final dy = math.sin(a * 0.7 + drift) * 24;
-      final center = Offset(size.width * cx + dx, size.height * cy + dy);
-      final paint = Paint()
-        ..shader = RadialGradient(
-          colors: [
-            glow.withValues(alpha: intensity * mul),
-            glow.withValues(alpha: 0),
-          ],
-        ).createShader(Rect.fromCircle(center: center, radius: r));
-      canvas.drawCircle(center, r, paint);
-    }
-
-    blob(0.16, 0.08, 460, 0, 1.0);
-    blob(0.86, 0.30, 380, 2.1, 0.65);
-    blob(0.46, 0.96, 440, 4.2, 0.5);
-  }
-
-  @override
-  bool shouldRepaint(_AuroraPainter old) =>
-      old.t != t || old.glow != glow || old.intensity != intensity;
+  Widget build(BuildContext context) =>
+      ColoredBox(color: AppScheme.of(context).canvas, child: child);
 }
 
 // ── Bottom-sheet surface ──────────────────────────────────────────────────────
 
-/// Rounded-top surface for modal bottom sheets (tx detail, asset/token detail).
-///
-/// Carries the same backdrop the activity/history pages sit on — the page
-/// depth gradient plus a soft static accent bloom — so detail sheets read as
-/// part of the same design language instead of a flat panel. Pair with
-/// `showModalBottomSheet(backgroundColor: Colors.transparent)`.
+/// Rounded-top surface for modal bottom sheets (tx detail, asset/token
+/// detail): the `panel` step with a hairline, floating over the page.
+/// Pair with `showModalBottomSheet(backgroundColor: Colors.transparent)`.
 class SheetSurface extends StatelessWidget {
   const SheetSurface({super.key, required this.child, this.topMargin = 0});
 
   final Widget child;
 
-  /// Gap above the sheet (leaves the page peeking at the top, like a card).
+  /// Gap above the sheet (leaves the page peeking at the top).
   final double topMargin;
 
   @override
@@ -183,12 +50,12 @@ class SheetSurface extends StatelessWidget {
       margin: EdgeInsets.only(top: topMargin),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        // Flat, like every other in-wallet surface: a sheet opens over live
-        // balances and addresses, so it must not reintroduce the brand wash.
-        color: s.canvas,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        color: s.panel,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppSpacing.radiusXl),
+        ),
         border: Border.all(color: s.edge),
-        boxShadow: s.panelShadow,
+        boxShadow: s.floatShadow,
       ),
       child: child,
     );
@@ -197,14 +64,14 @@ class SheetSurface extends StatelessWidget {
 
 // ── Panels ────────────────────────────────────────────────────────────────────
 
-/// Frosted glass hero — THE Obsidian signature. Use at most once per screen,
-/// for the element that matters most (balance, quorum). Frosting is skipped
-/// when the user enables "reduce effects" (translucent fill remains).
+/// The hero: the one block a screen exists for (the balance, the quorum).
+/// The card material at the hero radius and a wider inset — larger, not
+/// louder.
 class HeroPanel extends StatelessWidget {
   const HeroPanel({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(AppSpacing.cardPadding),
+    this.padding = const EdgeInsets.all(AppSpacing.xl),
   });
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -212,86 +79,51 @@ class HeroPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final reduceEffects = context.select<AppState, bool>(
-      (st) => st.reduceEffects,
-    );
-
-    final phone = AppLayout.isPhone(context);
-    final body = Container(
+    return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: phone
-            ? s.panel
-            : reduceEffects
-            ? s.surfaceSolid.withValues(alpha: 0.92)
-            : s.surfaceGlass,
+        color: s.panel,
         borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
         border: Border.all(color: s.edge),
-        // A BoxDecoration paints its gradient in place of its colour, so the
-        // specular sheen IS the fill wherever it is set. On the desktop that
-        // is the intent — glass over the page gradient. On a phone the ground
-        // is flat black: the sheen faded the hero to near-black by a third of
-        // the way down and the card lost its edge. Flat fill there.
-        gradient: phone
-            ? null
-            : LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: s.specular,
-                stops: const [0.0, 0.35],
-              ),
-        // No shadow on chrome (design.md): on a black ground it renders
-        // nothing and costs a blur pass on every scroll frame.
-        boxShadow: phone ? null : s.panelShadow,
-      ),
-      foregroundDecoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
-        border: Border(top: BorderSide(color: s.edgeBright)),
+        boxShadow: s.panelShadow,
       ),
       child: child,
-    );
-
-    // On a phone the hero sits on a flat canvas, so the backdrop blur has
-    // nothing to blur — it only costs a full-viewport readback per scroll
-    // frame. The translucent fill reads identically without it.
-    if (reduceEffects || AppLayout.isMobilePlatform) return body;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-        child: body,
-      ),
     );
   }
 }
 
-/// Solid panel with a colored accent rail header — the Instrument signature.
-/// Rail color codes domain: scheme.accent (app), bitcoin, liquid, warning.
+/// A titled card with a trailing control in the title row, in the card
+/// material. A domain is told by the title, not by a coloured edge.
 class RailPanel extends StatelessWidget {
   const RailPanel({
     super.key,
     required this.title,
     required this.child,
-    this.rail,
     this.trailing,
     this.padding,
   });
 
   final String title;
   final Widget child;
-  final Color? rail;
   final Widget? trailing;
 
-  /// Body padding. Pass EdgeInsets.zero for flush content (tables, rows).
+  /// Body padding. Pass EdgeInsets.zero for flush content (tables, rows):
+  /// the panel then rules a hairline under the title.
   final EdgeInsetsGeometry? padding;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
+    final pad = AppLayout.isPhone(context)
+        ? AppSpacing.cardPaddingSmall
+        : AppSpacing.cardPadding;
+    final flush =
+        padding != null &&
+        padding!.resolve(Directionality.of(context)).top == 0;
     return Container(
       decoration: BoxDecoration(
-        color: s.surfaceGlass,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        color: s.panel,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         border: Border.all(color: s.edge),
         boxShadow: s.panelShadow,
       ),
@@ -299,42 +131,31 @@ class RailPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            decoration: BoxDecoration(
-              color: s.surfaceRaised,
-              border: Border(
-                left: BorderSide(color: rail ?? s.accent, width: 3),
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.lg,
-              vertical: AppSpacing.sm + 2,
-            ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(pad, pad, pad, 0),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
-                    title.toUpperCase(),
-                    style: AppTypography.navSection.copyWith(
-                      color: s.inkSecondary,
-                      letterSpacing: 1.1,
-                    ),
+                    title,
+                    style: AppTypography.sectionTitle.copyWith(color: s.ink),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                ?trailing,
+                if (trailing != null) ...[
+                  const SizedBox(width: AppSpacing.md),
+                  trailing!,
+                ],
               ],
             ),
           ),
-          Divider(height: 1, color: s.edge),
+          if (flush) ...[
+            const SizedBox(height: AppSpacing.lg),
+            Divider(height: 1, thickness: 1, color: s.edge),
+          ],
           Padding(
             padding:
-                padding ??
-                EdgeInsets.all(
-                  AppLayout.isPhone(context)
-                      ? AppSpacing.cardPaddingSmall
-                      : AppSpacing.cardPadding,
-                ),
+                padding ?? EdgeInsets.fromLTRB(pad, AppSpacing.lg, pad, pad),
             child: child,
           ),
         ],
@@ -345,13 +166,13 @@ class RailPanel extends StatelessWidget {
 
 // ── Data display ──────────────────────────────────────────────────────────────
 
-/// Solid, AA-contrast backing for critical data (addresses, outpoints,
-/// descriptors, amounts). Never translucent — guardrail, not a style choice.
+/// The recess critical data is printed in (addresses, outpoints,
+/// descriptors): the `well` with a hairline. Solid, never translucent.
 class DataWell extends StatelessWidget {
   const DataWell({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(AppSpacing.md + 2),
+    this.padding = const EdgeInsets.all(AppSpacing.md),
   });
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -363,8 +184,8 @@ class DataWell extends StatelessWidget {
       width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(
-        color: s.surfaceSolid,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd - 2),
+        color: s.well,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         border: Border.all(color: s.edge),
       ),
       child: child,
@@ -372,62 +193,101 @@ class DataWell extends StatelessWidget {
   }
 }
 
-/// Key/value row for technical data: fixed-width label, full selectable mono
-/// value that wraps. Never truncates.
+/// Key/value row for technical data: the key in `label` and the secondary
+/// ink in a fixed column, the value in selectable `mono` and the primary
+/// ink, wrapping rather than truncating. 40 tall.
 ///
-/// On a phone a long value (an outpoint, an address) stacks under its label
-/// so it gets the whole column instead of the ~250 dp left of the label.
+/// On a phone a long value (an outpoint, an address) stacks under its key
+/// so it gets the whole column instead of what is left beside the key.
 class KvRow extends StatelessWidget {
   const KvRow({
     super.key,
     required this.label,
     required this.value,
-    this.labelWidth = 86,
+    this.labelWidth = 96,
+    this.divider = false,
   });
   final String label;
   final String value;
   final double labelWidth;
 
+  /// A hairline under the row, for a run of rows that is not inside a
+  /// [DataWell].
+  final bool divider;
+
   /// Values longer than this stack on a phone; shorter ones (fees, counts,
   /// network names) keep the two-column shape, which scans faster.
   static const int _stackOver = 20;
 
+  static const double _rowHeight = 40;
+
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final labelText = Text(
-      label.toUpperCase(),
-      style: AppTypography.navSection.copyWith(color: s.inkFaint, fontSize: 10),
+    final keyText = Text(
+      label,
+      style: AppTypography.label.copyWith(color: s.inkSecondary),
     );
     final valueText = SelectableText(
       value,
-      style: AppTypography.monoSmall.copyWith(color: s.ink),
+      style: AppTypography.mono.copyWith(color: s.ink),
     );
+    final Widget body;
     if (AppLayout.isPhone(context) && value.length > _stackOver) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [labelText, const SizedBox(height: 2), valueText],
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-      child: Row(
+      body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: labelWidth, child: labelText),
+          keyText,
+          const SizedBox(height: AppSpacing.xs),
+          valueText,
+        ],
+      );
+    } else {
+      body = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: labelWidth, child: keyText),
+          const SizedBox(width: AppSpacing.sm),
           Expanded(child: valueText),
         ],
-      ),
+      );
+    }
+    return Container(
+      constraints: const BoxConstraints(minHeight: _rowHeight),
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      decoration: divider
+          ? BoxDecoration(
+              border: Border(bottom: BorderSide(color: s.edge)),
+            )
+          : null,
+      child: body,
     );
   }
 }
 
-/// Small outlined tag — YOURS / CHANGE / RECIPIENT / status markers.
-/// Ellipsises rather than overflows when the parent is tighter than the
-/// label; 11 pt on a phone (9.5 is unreadable at arm's length).
+/// 6 px status dot.
+class _Dot extends StatelessWidget {
+  const _Dot(this.color);
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 6,
+    height: 6,
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(999),
+    ),
+  );
+}
+
+/// A quiet tag: `eyebrow` in the secondary ink on `panelInset`.
+///
+/// [color] names what the tag means. A status or chain hue becomes a 6 px
+/// dot before the word; the ink roles and the accent draw no dot (the
+/// accent is never decoration). The word itself is never coloured.
+/// Ellipsises rather than overflows when the parent is tighter than it.
 class TagChip extends StatelessWidget {
   const TagChip({super.key, required this.label, required this.color});
   final String label;
@@ -435,35 +295,75 @@ class TagChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final phone = AppLayout.isPhone(context);
+    final s = AppScheme.of(context);
+    final neutral =
+        color == s.ink ||
+        color == s.inkSecondary ||
+        color == s.inkFaint ||
+        color == s.accent;
+    return QuietTag(label: label, dot: neutral ? null : color);
+  }
+}
+
+/// The tag every badge in the kit draws: `panelInset`, radius 4, 2×6
+/// padding, an optional 6 px dot or 16 px glyph, the word in the secondary
+/// ink. [mono] sets the word in `monoSmall`, for tickers and data.
+class QuietTag extends StatelessWidget {
+  const QuietTag({
+    super.key,
+    required this.label,
+    this.dot,
+    this.icon,
+    this.mono = false,
+  });
+
+  final String label;
+  final Color? dot;
+  final IconData? icon;
+  final bool mono;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final d = dot;
+    final i = icon;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        border: Border.all(color: color.withValues(alpha: 0.65)),
-        borderRadius: BorderRadius.circular(4),
+        color: s.panelInset,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
       ),
-      child: Text(
-        label.toUpperCase(),
-        maxLines: 1,
-        softWrap: false,
-        overflow: TextOverflow.ellipsis,
-        style: AppTypography.navSection.copyWith(
-          color: color,
-          fontSize: phone ? 11 : 9.5,
-          letterSpacing: 0.8,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (d != null) ...[
+            _Dot(d),
+            const SizedBox(width: AppSpacing.xs),
+          ] else if (i != null) ...[
+            Icon(i, size: AppSpacing.iconSmall, color: s.inkSecondary),
+            const SizedBox(width: AppSpacing.xs),
+          ],
+          // A loose Flexible in a min-size Row is a no-op while the label
+          // fits and is legal under unbounded width, so the tag can sit in a
+          // header scroller as well as a tight Row.
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: (mono ? AppTypography.monoSmall : AppTypography.eyebrow)
+                  .copyWith(color: s.inkSecondary),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// Testnet badge — Home only.
-///
-/// It used to sit in every screen header, which in a testnet-only build meant
-/// the same word repeated on eight pages: read once, then invisible. Stated
-/// once, on the dashboard the user lands on after unlocking, it is still the
-/// answer to "which network am I on" and is no longer wallpaper.
+/// The network the wallet is on: a 6 px dot in the testnet hue and the word.
+/// Stated once, on the Dashboard.
 class TestnetBadge extends StatelessWidget {
   const TestnetBadge({super.key});
 
@@ -472,23 +372,63 @@ class TestnetBadge extends StatelessWidget {
     final s = AppScheme.of(context);
     return Semantics(
       label: 'Testnet network — no mainnet funds',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-        decoration: BoxDecoration(
-          color: s.testnet.withValues(alpha: 0.12),
-          border: Border.all(color: s.testnet.withValues(alpha: 0.6)),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          'TESTNET',
-          maxLines: 1,
-          softWrap: false,
-          overflow: TextOverflow.ellipsis,
-          style: AppTypography.navSection.copyWith(
-            color: s.testnet,
-            fontSize: 10,
-            letterSpacing: 1.2,
+      excludeSemantics: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _Dot(s.testnet),
+          const SizedBox(width: AppSpacing.sm),
+          Text(
+            'Testnet',
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── The mark of "you are here" ────────────────────────────────────────────────
+
+/// The current destination's mark (design.md, "The accent"): a short bar in
+/// the accent — and so in the wallet's own colour — on the leading edge of
+/// the row the user is on, or above the tab they are on.
+///
+/// The row is already told apart by its surface step and its ink; the bar
+/// is the one touch of the wax on the chrome. It fades with the selection
+/// and never moves.
+class CurrentMark extends StatelessWidget {
+  const CurrentMark({
+    super.key,
+    required this.active,
+    this.axis = Axis.vertical,
+  });
+
+  final bool active;
+
+  /// Vertical on the edge of a row, horizontal over a tab.
+  final Axis axis;
+
+  static const double thickness = 3;
+  static const double length = AppSpacing.lg;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final vertical = axis == Axis.vertical;
+    return AnimatedOpacity(
+      opacity: active ? 1 : 0,
+      duration: AppMotion.of(context, AppMotion.quick),
+      curve: AppMotion.settle,
+      child: Container(
+        width: vertical ? thickness : length,
+        height: vertical ? length : thickness,
+        decoration: BoxDecoration(
+          color: s.accent,
+          borderRadius: BorderRadius.circular(2),
         ),
       ),
     );
@@ -497,120 +437,63 @@ class TestnetBadge extends StatelessWidget {
 
 // ── Motion helpers ────────────────────────────────────────────────────────────
 
-/// Staggered rise-and-settle entrance (Obsidian motion signature).
-/// No-op under OS reduced motion.
-class Reveal extends StatelessWidget {
-  const Reveal({super.key, required this.child, this.delay = 0});
+/// Gap between two staggered entrances.
+const Duration _stagger = Duration(milliseconds: 60);
+
+/// Fade in with an optional rise, once, after `delay` staggers.
+class _Enter extends StatelessWidget {
+  const _Enter({required this.child, required this.delay, required this.rise});
   final Widget child;
   final int delay;
+  final double rise;
 
   @override
   Widget build(BuildContext context) {
     if (AppMotion.reduced(context)) return child;
+    final wait = _stagger * delay.clamp(0, 8);
+    final total = AppMotion.emphasized + wait;
+    final start = wait.inMicroseconds / total.inMicroseconds;
     // On a phone the entrance is composited from a cached raster of the
-    // child: a QR CustomPaint or a blurred card inside would otherwise be
-    // repainted through a saveLayer on every one of the ~20 frames.
+    // child: a QR CustomPaint inside would otherwise be repainted through a
+    // saveLayer on every frame of the fade.
     final content = AppLayout.isMobilePlatform
         ? RepaintBoundary(child: child)
         : child;
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: AppMotion.emphasized + Duration(milliseconds: 70 * delay),
-      curve: AppMotion.enter,
+      duration: total,
+      curve: Interval(start, 1, curve: AppMotion.settle),
       builder: (_, t, c) => Opacity(
         opacity: t,
-        child: Transform.translate(offset: Offset(0, 14 * (1 - t)), child: c),
+        child: rise == 0
+            ? c
+            : Transform.translate(offset: Offset(0, rise * (1 - t)), child: c),
       ),
       child: content,
     );
   }
 }
 
-/// Springy pop-in (scale + fade) for delight moments — the Aurora motion
-/// signature. No-op under reduced motion. Use sparingly; never on streaming
-/// data, only on hero/brand elements.
-class Pop extends StatelessWidget {
-  const Pop({super.key, required this.child, this.delay = 0});
+/// Entrance for a block of a page: a fade and an 8 px rise, once. [delay]
+/// staggers siblings. Skipped under reduced motion.
+class Reveal extends StatelessWidget {
+  const Reveal({super.key, required this.child, this.delay = 0});
   final Widget child;
   final int delay;
 
   @override
-  Widget build(BuildContext context) {
-    if (AppMotion.reduced(context)) return child;
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: AppMotion.emphasized + Duration(milliseconds: 90 * delay),
-      curve: AppMotion.spring,
-      builder: (_, t, c) => Opacity(
-        opacity: t.clamp(0, 1),
-        child: Transform.scale(scale: 0.96 + 0.04 * t, child: c),
-      ),
-      child: child,
-    );
-  }
+  Widget build(BuildContext context) =>
+      _Enter(delay: delay, rise: 8, child: child);
 }
 
-/// Sheened text — a restrained, premium vertical sheen on titles/numerals
-/// (top bright, fading down). Monochrome by default (no hue), so it reads
-/// serious; pass [colors] to override. Sizing/weight come from [style].
-class GradientText extends StatelessWidget {
-  const GradientText(
-    this.text, {
-    super.key,
-    required this.style,
-    this.colors,
-    this.textAlign,
-    this.maxLines,
-    this.overflow,
-  });
-
-  final String text;
-  final TextStyle style;
-  final List<Color>? colors;
-  final TextAlign? textAlign;
-
-  /// Passed straight to the inner [Text]; a hero numeral usually wants
-  /// `maxLines: 1` with a `FittedBox` around it so it scales, never wraps.
-  final int? maxLines;
-  final TextOverflow? overflow;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final grad = colors ?? [s.ink, s.ink.withValues(alpha: 0.66)];
-    return ShaderMask(
-      shaderCallback: (r) => LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: grad,
-      ).createShader(r),
-      blendMode: BlendMode.srcIn,
-      child: Text(
-        text,
-        textAlign: textAlign,
-        maxLines: maxLines,
-        overflow: overflow,
-        style: style.copyWith(color: Colors.white),
-      ),
-    );
-  }
-}
-
-/// Hover-aware row tint (Instrument grammar) for table/list rows.
+/// A table or list row that answers the pointer with the `hover` step.
 ///
 /// [trailing] is an action that belongs to the row (copy, open) and on
 /// desktop fades in on hover; a phone has no hover, so there it is simply
-/// always shown. Leave it null and the row is exactly what it was.
+/// always shown.
 class HoverRow extends StatefulWidget {
-  const HoverRow({
-    super.key,
-    required this.child,
-    this.zebra = false,
-    this.onTap,
-    this.trailing,
-  });
+  const HoverRow({super.key, required this.child, this.onTap, this.trailing});
   final Widget child;
-  final bool zebra;
   final VoidCallback? onTap;
   final Widget? trailing;
 
@@ -624,6 +507,7 @@ class _HoverRowState extends State<HoverRow> {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
+    final radius = BorderRadius.circular(AppSpacing.radiusMd);
     Widget content = widget.child;
     final trailing = widget.trailing;
     if (trailing != null) {
@@ -647,13 +531,23 @@ class _HoverRowState extends State<HoverRow> {
           : MouseCursor.defer,
       child: AnimatedContainer(
         duration: AppMotion.of(context, AppMotion.instant),
-        color: _h && widget.onTap != null
-            ? s.hover
-            : (widget.zebra ? s.zebra : Colors.transparent),
+        curve: AppMotion.settle,
+        decoration: BoxDecoration(
+          color: _h && widget.onTap != null ? s.hover : Colors.transparent,
+          borderRadius: radius,
+        ),
         child: content,
       ),
     );
     if (widget.onTap == null) return row;
-    return InkWell(onTap: widget.onTap, child: row);
+    return InkWell(
+      onTap: widget.onTap,
+      borderRadius: radius,
+      // The row paints its own hover step; the press is the pressed step.
+      hoverColor: Colors.transparent,
+      highlightColor: s.pressed,
+      splashFactory: NoSplash.splashFactory,
+      child: row,
+    );
   }
 }

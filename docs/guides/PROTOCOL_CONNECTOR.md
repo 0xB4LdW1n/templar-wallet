@@ -50,7 +50,7 @@ All paths under `apps/gui/lib/`.
 | `services/protocol_store.dart` | Local records (below) |
 | `features/loans/` | The Loans page and loan detail |
 | `features/settings/protocol_section.dart` | Settings › Templar Protocol |
-| `features/settings/liquid_network_switch.dart` | `switchLiquidNetwork`, shared with Settings › Network & Sync |
+| `features/settings/liquid_network_switch.dart` | `switchLiquidNetwork`, shared with Settings › Network |
 
 ## When the networks disagree
 
@@ -70,7 +70,7 @@ network was being switched, the refusal offers to open the site, where a new
 one is issued.
 
 The switch is `switchLiquidNetwork`: the same confirmation and the same
-closing of the open wallet as Settings › Network & Sync. Afterwards the
+closing of the open wallet as Settings › Network. Afterwards the
 wallet list is read again and the wallet chosen anew, because the engine
 closed whatever was open.
 
@@ -127,7 +127,7 @@ Start the protocol's regtest node and site as the protocol's own
 documentation describes. The engine's defaults for the regtest backend are
 `elementsd` RPC at `http://127.0.0.1:18884` with user and password
 `templar` (overridable with `TEMPLAR_ELEMENTS_RPC_URL`, `_USER`, `_PASS`).
-In the wallet: Settings › Network & Sync › Liquid network › Regtest, reopen
+In the wallet: Settings › Network › Liquid network › Regtest, reopen
 the wallet, sync, and fund a Liquid receive address from the node. Then
 connect from the site and take an offer; the origination request opens
 through `templar://sign`.

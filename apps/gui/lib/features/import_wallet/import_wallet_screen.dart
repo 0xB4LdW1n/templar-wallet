@@ -7,15 +7,13 @@ import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/cards.dart';
+import '../../shared/widgets/choice_list.dart';
 import '../../shared/widgets/page_header.dart';
-import '../../shared/widgets/step_header.dart';
-import '../../shared/widgets/hybrid_kit.dart';
 import '../vault/vault_setup_sheet.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
-import '../../shared/widgets/glass_dialog.dart';
+import '../../shared/widgets/app_dialog.dart';
 
 class ImportWalletScreen extends StatefulWidget {
   const ImportWalletScreen({super.key});
@@ -32,8 +30,8 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
   String? _error;
 
   /// Restore used to hard-code Bitcoin-only, which left the recovered wallet
-  /// with no Liquid descriptor: no LIQUID section, no LBTC address in
-  /// Receive, no CT descriptor in Wallet Info. The same seed derives both
+  /// with no Liquid descriptor: no Liquid section, no LBTC address in
+  /// Receive, no CT descriptor in Wallet info. The same seed derives both
   /// chains, so the question is asked here exactly as the creation wizard
   /// asks it — and defaults the same way.
   bool _liquidEnabled = true;
@@ -91,7 +89,7 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
           _importing = false;
           _error =
               'Set an app password first — Templar will not store a '
-              'recovery phrase on this computer unencrypted.';
+              'recovery phrase on this device unencrypted.';
         });
       }
       return;
@@ -124,6 +122,8 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
     final wordCount = _words.length;
 
     // Android back: leave to the picker like the on-screen Cancel does,
@@ -134,184 +134,190 @@ class _ImportWalletScreenState extends State<ImportWalletScreen> {
         if (!didPop) context.go(AppRoutes.walletPicker);
       },
       child: Scaffold(
-        body: PageBackground.flat(
-          // Edge-to-edge on mobile: the title must clear the status bar.
-          child: SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 640),
-                child: ListView(
-                  padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
-                  children: [
-                    PageHeader(
-                      title: 'Restore Wallet',
-                      subtitle:
-                          'Import an existing wallet from a BIP39 seed phrase',
-                      actions: [
-                        GhostButton(
-                          label: 'Cancel',
-                          onPressed: () => context.go(AppRoutes.walletPicker),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    const WarningBanner(
-                      title: 'Keep your seed phrase private',
-                      message:
-                          'Never enter your seed phrase on an untrusted device or '
-                          'application. Templar stores it encrypted with your app '
-                          'password — it is never written to disk in the clear.',
-                    ),
-                    const SizedBox(height: AppSpacing.xl),
-                    FormCard(
-                      title: 'Seed phrase',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          TextField(
-                            controller: _mnemonicController,
-                            maxLines: 5,
-                            // Seed words must never reach the keyboard's
-                            // autocorrect or personal dictionary.
-                            autocorrect: false,
-                            enableSuggestions: false,
-                            onChanged: (_) => setState(() {}),
-                            decoration: const InputDecoration(
-                              hintText:
-                                  'Enter your 12 or 24 word seed phrase, separated by spaces…',
-                              alignLabelWithHint: true,
-                            ),
-                            style: AppTypography.mono,
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          Row(
-                            children: [
-                              Text(
-                                wordCount == 0
-                                    ? 'Enter seed phrase above'
-                                    : '$wordCount word${wordCount == 1 ? '' : 's'}',
-                                style: AppTypography.caption.copyWith(
-                                  color: _validWordCount
-                                      ? AppColors.success
-                                      : wordCount > 0
-                                      ? AppColors.warning
-                                      : AppColors.textMuted,
-                                ),
-                              ),
-                              const Spacer(),
-                              if (_validWordCount)
-                                const Icon(
-                                  Icons.check_circle,
-                                  size: 14,
-                                  color: AppColors.success,
-                                ),
-                            ],
-                          ),
-                        ],
+        backgroundColor: s.canvas,
+        // Edge-to-edge on mobile: the title must clear the status bar.
+        body: SafeArea(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth:
+                    AppSpacing.formMaxWidth +
+                    2 * AppSpacing.pagePadding(context),
+              ),
+              child: ListView(
+                padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+                children: [
+                  PageHeader(
+                    title: 'Restore wallet',
+                    actions: [
+                      GhostButton(
+                        label: 'Cancel',
+                        onPressed: () => context.go(AppRoutes.walletPicker),
                       ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    FormCard(
-                      title: 'Wallet name',
-                      child: TextField(
-                        controller: _nameController,
-                        onChanged: (_) => setState(() {}),
-                        // The FormCard title above is already this field's
-                        // label; on a 379 dp column a floating Material label
-                        // on top of it labels one field twice, and it fights
-                        // the borderless filled phone field. A resting hint
-                        // says the same thing without the second line.
-                        decoration: InputDecoration(
-                          labelText: AppLayout.isPhone(context) ? null : 'Name',
-                          hintText: AppLayout.isPhone(context)
-                              ? 'Wallet name'
-                              : null,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    FormCard(
-                      title: 'Coins',
-                      subtitle:
-                          'Both chains come from the phrase you just entered',
-                      child: Column(
-                        children: [
-                          SelectableOptionCard(
-                            title: 'Bitcoin + Liquid',
-                            description:
-                                'Restores the paired Liquid wallet too — confidential '
-                                'LBTC and Liquid assets, same recovery phrase.',
-                            isSelected: _liquidEnabled,
-                            icon: Icons.water_drop_outlined,
-                            onTap: () => setState(() => _liquidEnabled = true),
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          SelectableOptionCard(
-                            title: 'Bitcoin only',
-                            description:
-                                'Just the Bitcoin network. The Liquid section stays '
-                                'hidden; you can turn it on later from Wallet Info.',
-                            isSelected: !_liquidEnabled,
-                            icon: Icons.currency_bitcoin,
-                            onTap: () => setState(() => _liquidEnabled = false),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: AppSpacing.lg),
-                      DangerBanner(message: _error!),
                     ],
-                    const SizedBox(height: AppSpacing.xl),
-                    if (_importing)
-                      Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const CircularProgressIndicator(),
-                            const SizedBox(height: AppSpacing.md),
-                            Text(
-                              'Restoring wallet…',
-                              style: AppTypography.body,
-                            ),
-                          ],
-                        ),
-                      )
-                    else if (AppLayout.isPhone(context))
-                      // One full-width action at the foot. The footer Cancel
-                      // would be this screen's SECOND Cancel — the header
-                      // already carries one, and Android back is wired to the
-                      // same route by the PopScope above — while the primary
-                      // action would sit at intrinsic width in the corner.
-                      PrimaryButton(
-                        label: 'Restore Wallet',
-                        icon: Icons.restore,
-                        isFullWidth: true,
-                        onPressed: _canImport ? _import : null,
-                      )
-                    else
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
+                  ),
+                  const WarningBanner(
+                    title: 'Keep your seed phrase private',
+                    message:
+                        'Never enter your seed phrase on an untrusted device or '
+                        'application. Templar stores it encrypted with your app '
+                        'password — it is never written to disk in the clear.',
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+
+                  // ── Recovery phrase ──────────────────────────────────
+                  const _FieldLabel('Recovery phrase'),
+                  TextField(
+                    controller: _mnemonicController,
+                    minLines: 4,
+                    maxLines: 6,
+                    // Seed words must never reach the keyboard's
+                    // autocorrect or personal dictionary.
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    onChanged: (_) => setState(() {}),
+                    style: AppTypography.mono.copyWith(color: s.ink),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    '12 or 24 words, separated by spaces',
+                    style: AppTypography.caption.copyWith(color: s.inkFaint),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  _WordCount(count: wordCount, valid: _validWordCount),
+                  const SizedBox(height: AppSpacing.xl),
+
+                  // ── Name ─────────────────────────────────────────────
+                  const _FieldLabel('Wallet name'),
+                  TextField(
+                    controller: _nameController,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+
+                  // ── Coins ────────────────────────────────────────────
+                  const _FieldLabel('Coins'),
+                  ChoiceList<bool>(
+                    options: const [
+                      ChoiceListOption(
+                        value: false,
+                        label: 'Bitcoin only',
+                        icon: Icons.currency_bitcoin,
+                      ),
+                      ChoiceListOption(
+                        value: true,
+                        label: 'Bitcoin + Liquid',
+                        icon: Icons.water_drop_outlined,
+                      ),
+                    ],
+                    selected: _liquidEnabled,
+                    onChanged: (v) => setState(() => _liquidEnabled = v),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Both chains come from the same phrase. With Bitcoin only '
+                    'the Liquid section stays hidden; you can turn it on later '
+                    'from Wallet info.',
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: AppSpacing.lg),
+                    DangerBanner(message: _error!),
+                  ],
+                  const SizedBox(height: AppSpacing.xl),
+                  if (_importing)
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          GhostButton(
-                            label: 'Cancel',
-                            onPressed: () => context.go(AppRoutes.walletPicker),
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          PrimaryButton(
-                            label: 'Restore Wallet',
-                            icon: Icons.restore,
-                            onPressed: _canImport ? _import : null,
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: AppSpacing.md),
+                          Text(
+                            'Restoring wallet…',
+                            style: AppTypography.body.copyWith(
+                              color: s.inkSecondary,
+                            ),
                           ),
                         ],
                       ),
-                  ],
-                ),
+                    )
+                  else
+                    // The screen's one action. Cancel is in the header (and
+                    // Android back goes to the same place), so it is not
+                    // repeated down here.
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: PrimaryButton(
+                        label: 'Restore wallet',
+                        isFullWidth: phone,
+                        onPressed: _canImport ? _import : null,
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A field's label: an eyebrow above it, never floating inside.
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Text(
+        text,
+        style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+      ),
+    );
+  }
+}
+
+/// The phrase's word count as it is typed: a 6 px dot and a few words. A
+/// count of 12 or 24 is only a count — whether the words are a valid phrase
+/// is the engine's answer, on Restore.
+class _WordCount extends StatelessWidget {
+  const _WordCount({required this.count, required this.valid});
+
+  final int count;
+  final bool valid;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final words = '$count word${count == 1 ? '' : 's'}';
+    final (Color dot, String text) = count == 0
+        ? (s.inkFaint, 'No words yet')
+        : valid
+        ? (s.success, words)
+        : (s.warning, '$words — a phrase has 12 or 24');
+    return Row(
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: dot,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Text(
+          text,
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
+        ),
+      ],
     );
   }
 }

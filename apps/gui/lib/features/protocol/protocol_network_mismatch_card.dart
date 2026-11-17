@@ -4,6 +4,8 @@ import '../../bridge/wallet_bridge.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/cards.dart';
+import '../../shared/widgets/hybrid_kit.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'models/protocol_link.dart';
@@ -37,7 +39,7 @@ class ProtocolNetworkMismatchCard extends StatefulWidget {
   /// testnet, where there is nothing to choose).
   final void Function(String? policyAsset) onSwitch;
 
-  /// Deep link to Settings › Network & Sync.
+  /// Deep link to Settings › Network.
   final VoidCallback onOpenSettings;
 
   /// The engine's current Liquid state: whether the network is locked by the
@@ -80,27 +82,55 @@ class _ProtocolNetworkMismatchCardState
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     final m = widget.mismatch;
     final phone = AppLayout.isPhone(context);
     final canSwitch = m.canSwitch && !_locked;
     final needsAsset = canSwitch && m.targetShortName == 'regtest';
 
+    final switchButton = canSwitch
+        ? PrimaryButton(
+            key: const Key('protocol-mismatch-switch'),
+            label: _switchLabel,
+            isLoading: widget.busy,
+            isFullWidth: phone,
+            onPressed: widget.busy
+                ? null
+                : () => widget.onSwitch(
+                    needsAsset ? _policyAsset.text.trim() : null,
+                  ),
+          )
+        : null;
+    final settingsButton = SecondaryButton(
+      key: const Key('protocol-mismatch-settings'),
+      label: 'Open Network settings',
+      isFullWidth: phone,
+      onPressed: widget.busy ? null : widget.onOpenSettings,
+    );
+
     return FormCard(
       title: 'Wrong network',
       subtitle: m.kind == ProtocolMismatchKind.chain
           ? 'Same network name, different chain — the two nodes do not share '
-                'an LBTC asset, so nothing signed on one is valid on the other.'
-          : 'A wallet only signs on the chain it is running.',
+                'an LBTC asset, so nothing signed on one is valid on the other'
+          : 'A wallet only signs on the chain it is running',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // The two names exactly as the site and the engine give them, in
+          // mono: the difference may be one word.
+          KvRow(label: 'The site', value: m.siteNetwork, labelWidth: 112),
+          KvRow(label: 'This wallet', value: m.walletNetwork, labelWidth: 112),
+          const SizedBox(height: AppSpacing.md),
           DangerBanner(message: m.message),
           const SizedBox(height: AppSpacing.lg),
           if (!m.canSwitch)
             Text(
               'This build runs Liquid testnet and a local Liquid regtest. Open '
               'the site for one of those, or point it at your regtest node.',
-              style: AppTypography.caption,
+              style: AppTypography.bodyOf(
+                context,
+              ).copyWith(color: s.inkSecondary),
             )
           else if (_locked)
             const InfoBanner(
@@ -112,13 +142,17 @@ class _ProtocolNetworkMismatchCardState
             )
           else ...[
             if (needsAsset) ...[
+              Text(
+                'Regtest LBTC asset id',
+                style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+              ),
+              const SizedBox(height: AppSpacing.sm),
               TextField(
                 key: const Key('protocol-mismatch-policy'),
                 controller: _policyAsset,
                 enabled: !widget.busy,
-                style: AppTypography.mono,
+                style: AppTypography.mono.copyWith(color: s.ink),
                 decoration: InputDecoration(
-                  labelText: 'Regtest LBTC asset id',
                   hintText: widget.info?.regtestDefaultPolicyAsset,
                   helperText: m.sitePolicyAsset != null
                       ? 'Sent by the site with this request. Edit it only if '
@@ -127,7 +161,6 @@ class _ProtocolNetworkMismatchCardState
                             'liquidregtest id is used. Your node reports its own '
                             'with elements-cli dumpassetlabels.',
                   helperMaxLines: 3,
-                  prefixIcon: phone ? null : const Icon(Icons.tag, size: 16),
                 ),
               ),
               const SizedBox(height: AppSpacing.lg),
@@ -137,28 +170,25 @@ class _ProtocolNetworkMismatchCardState
                   'Switching closes the open wallet. Templar reopens this '
                   'request straight after, and you pick the wallet again.',
             ),
-            const SizedBox(height: AppSpacing.lg),
-            PrimaryButton(
-              key: const Key('protocol-mismatch-switch'),
-              label: _switchLabel,
-              icon: Icons.swap_horiz,
-              isLoading: widget.busy,
-              isFullWidth: phone,
-              onPressed: widget.busy
-                  ? null
-                  : () => widget.onSwitch(
-                      needsAsset ? _policyAsset.text.trim() : null,
-                    ),
-            ),
           ],
-          const SizedBox(height: AppSpacing.md),
-          SecondaryButton(
-            key: const Key('protocol-mismatch-settings'),
-            label: 'Open Network settings',
-            icon: Icons.wifi_outlined,
-            isFullWidth: phone,
-            onPressed: widget.busy ? null : widget.onOpenSettings,
-          ),
+          SizedBox(height: phone ? AppSpacing.lg : AppSpacing.xl),
+          if (phone) ...[
+            if (switchButton != null) ...[
+              switchButton,
+              const SizedBox(height: AppSpacing.sm),
+            ],
+            settingsButton,
+          ] else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                settingsButton,
+                if (switchButton != null) ...[
+                  const SizedBox(width: AppSpacing.sm),
+                  Flexible(child: switchButton),
+                ],
+              ],
+            ),
         ],
       ),
     );

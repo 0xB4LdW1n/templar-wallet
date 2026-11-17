@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
-import 'hex_text.dart';
-import 'hybrid_kit.dart';
 
 /// One summary row on the wallet-created screen.
 class WalletCreatedDetail {
@@ -13,14 +11,18 @@ class WalletCreatedDetail {
   final String label;
   final String value;
 
-  /// Render the value as colored mono hex (keys, descriptors, fingerprints).
+  /// A value compared character by character (a key, a descriptor, a
+  /// fingerprint): set in mono and selectable.
   final bool mono;
 }
 
-/// The celebratory "wallet created" view shared by every setup flow —
-/// springy check mark, sheened title, then a staggered recap of what was
-/// just created (type, threshold, networks, keys). Motion primitives no-op
-/// under reduced-motion settings.
+/// The last step of every setup flow: a calm statement of what now exists.
+///
+/// The flow's step header already says "Wallet created" in the display
+/// size, so this view does not repeat it. It is one line of what the wallet
+/// can do and the wallet's facts as key/value rows on one card — the name
+/// first. No seal (creating a wallet is not a signature), no glowing check,
+/// nothing that bounces.
 class WalletCreatedView extends StatelessWidget {
   const WalletCreatedView({
     required this.walletName,
@@ -31,115 +33,94 @@ class WalletCreatedView extends StatelessWidget {
 
   final String walletName;
 
-  /// One line under the title, e.g. "2-of-3 multisig — 2 keys required".
+  /// One line above the facts, e.g. "2-of-3 multisig — 2 keys required".
   final String? subtitle;
 
-  /// Recap rows revealed one after another.
+  /// The facts, in the order given, after the name.
   final List<WalletCreatedDetail> details;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: AppSpacing.xl),
-            Pop(
-              child: Container(
-                width: 88,
-                height: 88,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: s.success,
-                  boxShadow: [
-                    BoxShadow(
-                      color: s.success.withValues(alpha: 0.35),
-                      blurRadius: 28,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.check_rounded,
-                  color: Colors.white,
-                  size: 46,
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            Reveal(
-              delay: 1,
-              child: GradientText(
-                walletName,
-                style: AppTypography.pageTitle.copyWith(fontSize: 26),
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Reveal(
-              delay: 2,
-              child: Text(
-                subtitle ?? 'Your wallet is ready.',
-                textAlign: TextAlign.center,
-                style: AppTypography.body.copyWith(color: s.inkSecondary),
-              ),
-            ),
-            if (details.isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.xl),
-              Reveal(
-                delay: 3,
-                child: DataWell(
-                  child: Column(
-                    children: [
-                      for (var i = 0; i < details.length; i++) ...[
-                        if (i > 0) const SizedBox(height: AppSpacing.sm),
-                        Reveal(
-                          delay: 3 + i,
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              SizedBox(
-                                width: 110,
-                                child: Text(
-                                  details[i].label,
-                                  style: AppTypography.caption.copyWith(
-                                    color: s.inkFaint,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: AppSpacing.sm),
-                              Expanded(
-                                child: details[i].mono
-                                    ? Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: HexText(
-                                          details[i].value,
-                                          truncate: true,
-                                        ),
-                                      )
-                                    : Text(
-                                        details[i].value,
-                                        style: AppTypography.bodySmall.copyWith(
-                                          color: s.ink,
-                                        ),
-                                      ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ],
+    final rows = [WalletCreatedDetail('Name', walletName), ...details];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          subtitle ?? 'Your wallet is ready',
+          style: AppTypography.bodyOf(context).copyWith(color: s.inkSecondary),
         ),
+        const SizedBox(height: AppSpacing.xl),
+        Container(
+          decoration: BoxDecoration(
+            color: s.panel,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+            border: Border.all(color: s.edge),
+            boxShadow: s.panelShadow,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0) Divider(height: 1, thickness: 1, color: s.edge),
+                _FactRow(detail: rows[i]),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A key in the secondary ink in a fixed column, the value in the primary
+/// ink beside it. On a phone a long mono value (a key, a descriptor) goes
+/// under its key so it gets the whole width.
+class _FactRow extends StatelessWidget {
+  const _FactRow({required this.detail});
+
+  final WalletCreatedDetail detail;
+
+  static const double _keyWidth = 112;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final key = Text(
+      detail.label,
+      style: AppTypography.label.copyWith(color: s.inkSecondary),
+    );
+    final value = detail.mono
+        ? SelectableText(
+            detail.value,
+            style: AppTypography.mono.copyWith(color: s.ink),
+          )
+        : Text(detail.value, style: AppTypography.body.copyWith(color: s.ink));
+    final stack = AppLayout.isPhone(context) && detail.mono;
+    return Container(
+      constraints: const BoxConstraints(minHeight: AppSpacing.xxxl),
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
       ),
+      child: stack
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                key,
+                const SizedBox(height: AppSpacing.xs),
+                value,
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(width: _keyWidth, child: key),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(child: value),
+              ],
+            ),
     );
   }
 }

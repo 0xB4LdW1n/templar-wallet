@@ -8,9 +8,9 @@
 import 'package:flutter/material.dart';
 
 import '../../services/udev_installer.dart';
-import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../theme/app_colors.dart';
+import '../../shared/widgets/hybrid_kit.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 
@@ -54,87 +54,165 @@ class _DevicePermissionCardState extends State<DevicePermissionCard> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final s = AppScheme.of(context);
+    final detail = widget.detail;
+    final success = _success;
+    final error = _error;
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.cardPadding),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceDark : AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: AppColors.warning, width: 1.5),
+        color: s.panel,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(color: s.edge),
+        boxShadow: s.panelShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.usb_off_rounded,
-                color: AppColors.warning,
-                size: 22,
+              Icon(
+                Icons.usb_off_outlined,
+                color: s.warning,
+                size: AppSpacing.icon,
               ),
-              const SizedBox(width: AppSpacing.md),
+              const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
                   'Device permissions needed',
-                  style: AppTypography.sectionTitle,
+                  style: AppTypography.sectionTitle.copyWith(color: s.ink),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             'On Linux, a normal user cannot talk to a hardware wallet until '
             'udev rules grant access to it. Templar ships the official rules '
             'from the HWI project and can install them for you — you will be '
             'asked for your password once.',
-            style: AppTypography.bodySmall.copyWith(
-              color: isDark
-                  ? AppColors.textSecondaryDark
-                  : AppColors.textSecondary,
-            ),
+            style: AppTypography.body.copyWith(color: s.inkSecondary),
           ),
-          if (widget.detail != null && widget.detail!.isNotEmpty) ...[
+          if (detail != null && detail.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(
-              widget.detail!,
-              style: AppTypography.caption,
+              detail,
+              style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
               maxLines: 4,
               overflow: TextOverflow.ellipsis,
             ),
           ],
           const SizedBox(height: AppSpacing.lg),
           if (_running) ...[
-            const LinearProgressIndicator(),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
+              child: const LinearProgressIndicator(minHeight: AppSpacing.xs),
+            ),
             const SizedBox(height: AppSpacing.sm),
-            Text('Waiting for authentication…', style: AppTypography.caption),
+            Text(
+              'Waiting for authentication…',
+              style: AppTypography.caption.copyWith(color: s.inkSecondary),
+            ),
           ] else
-            Row(
-              children: [
-                PrimaryButton(
-                  label: 'Fix device permissions',
-                  icon: Icons.admin_panel_settings_outlined,
-                  onPressed: _fix,
-                ),
-              ],
+            SecondaryButton(
+              label: 'Fix device permissions',
+              icon: Icons.admin_panel_settings_outlined,
+              onPressed: _fix,
             ),
-          if (_success != null) ...[
+          if (success != null) ...[
             const SizedBox(height: AppSpacing.md),
-            InfoBanner(title: 'Permissions installed', message: _success!),
+            _StatusLine(color: s.success, text: success),
           ],
-          if (_error != null) ...[
+          if (error != null) ...[
             const SizedBox(height: AppSpacing.md),
-            const WarningBanner(
-              title: 'Could not install rules',
-              message: 'Details and a manual alternative below.',
+            Text(
+              'Could not install the rules — the manual steps are below',
+              style: AppTypography.caption.copyWith(color: s.danger),
             ),
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AppSpacing.xs),
             // Selectable: the fallback is a block of shell commands the user
             // has to copy into a terminal, so it must not be plain Text.
-            SelectableText(_error!, style: AppTypography.monoSmall),
+            _TechnicalDetail(detail: error, label: 'manual steps'),
           ],
         ],
       ),
+    );
+  }
+}
+
+/// A status: a 6 px dot and the words beside it.
+class _StatusLine extends StatelessWidget {
+  const _StatusLine({required this.color, required this.text});
+  final Color color;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 20,
+          child: Center(
+            child: Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            text,
+            style: AppTypography.caption.copyWith(color: s.ink),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The raw words behind a failure, folded away until asked for: selectable
+/// `mono` in a well.
+class _TechnicalDetail extends StatefulWidget {
+  const _TechnicalDetail({required this.detail, this.label = 'details'});
+  final String detail;
+  final String label;
+
+  @override
+  State<_TechnicalDetail> createState() => _TechnicalDetailState();
+}
+
+class _TechnicalDetailState extends State<_TechnicalDetail> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GhostButton(
+          label: _open ? 'Hide ${widget.label}' : 'Show ${widget.label}',
+          icon: _open ? Icons.expand_less_outlined : Icons.expand_more_outlined,
+          onPressed: () => setState(() => _open = !_open),
+        ),
+        if (_open) ...[
+          const SizedBox(height: AppSpacing.xs),
+          DataWell(
+            child: SelectableText(
+              widget.detail,
+              style: AppTypography.mono.copyWith(color: s.ink),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

@@ -1,18 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import '../../theme/app_colors.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'buttons.dart';
-import 'glass_dialog.dart';
+import 'app_dialog.dart';
 import 'hex_text.dart';
+
+// The code box (design.md, "Code box"): a value a user compares character by
+// character, printed in mono on a recess cut into the card, with the ways to
+// hand it over — copy, QR — as icon buttons at its edge. Copy turns into a
+// check for a moment: the one small reward for a true thing having happened.
 
 /// Longest value a single QR holds: byte mode at version 40, low error
 /// correction. A descriptor, an xpub or a fingerprint is nowhere near it; a
 /// signed PSBT is, and gets the animated UR codes instead.
 const int kQrMaxChars = 2900;
+
+/// How long a copy control shows its check.
+const Duration _copiedFor = Duration(milliseconds: 1500);
 
 /// Opens [value] as a QR — a dialog on desktop, a sheet on a phone — with the
 /// value printed under the code so what is scanned can be read too.
@@ -31,6 +38,8 @@ Future<void> showValueQr(
 
 /// The body [showValueQr] opens. Keyed by its payload so a test can read
 /// back what a camera would (the package keeps `data` private).
+///
+/// The code sits on white whatever the theme: a scanner needs the contrast.
 class ValueQrDialog extends StatelessWidget {
   const ValueQrDialog({
     super.key,
@@ -61,7 +70,7 @@ class ValueQrDialog extends StatelessWidget {
               Text(
                 'Too long for a single QR code (${value.length} characters). '
                 'Copy it instead.',
-                style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+                style: AppTypography.body.copyWith(color: s.inkSecondary),
                 textAlign: TextAlign.center,
               )
             else
@@ -70,6 +79,7 @@ class ValueQrDialog extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  border: Border.all(color: s.edge),
                 ),
                 child: SizedBox.square(
                   dimension: side,
@@ -102,80 +112,121 @@ class ValueQrDialog extends StatelessWidget {
         ),
       ),
       actions: [
+        // Closing is not what the sheet is for, so it is never the accent.
         if (phone)
-          PrimaryButton(
+          SecondaryButton(
             label: 'Close',
+            isFullWidth: true,
             onPressed: () => Navigator.of(context).pop(),
           )
         else
-          TextButton(
+          GhostButton(
+            label: 'Close',
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
           ),
       ],
     );
   }
 }
 
-/// The QR glyph beside a copy glyph: same size, same ink, same hit area, so
-/// the two read as one pair of ways to hand a value over.
-class _QrGlyphButton extends StatelessWidget {
-  const _QrGlyphButton({
-    required this.title,
-    required this.value,
-    required this.color,
-    required this.phone,
-    this.size = 16,
-    this.dense = false,
+/// A 28 px icon button at a code box's edge (48 on touch): outlined 16 px
+/// glyph in the secondary ink, the accent's under the pointer (both from
+/// the themed [IconButton]). [color] overrides it for a glyph that states
+/// something — the check of a copy that just happened.
+class _EdgeIconButton extends StatelessWidget {
+  const _EdgeIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.color,
   });
 
-  final String title;
-  final String value;
-  final Color color;
-  final bool phone;
-  final double size;
-
-  /// Desktop CopyRow's 4 dp-padded glyph rather than an IconButton.
-  final bool dense;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    void open() => showValueQr(context, title: title, value: value);
-    if (dense && !phone) {
-      return InkWell(
-        onTap: open,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        child: Tooltip(
-          message: 'Show QR',
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.xs),
-            child: Icon(Icons.qr_code_2_rounded, size: size, color: color),
-          ),
-        ),
-      );
-    }
+    final phone = AppLayout.isPhone(context);
+    final side = phone
+        ? AppLayout.minTouchTarget
+        : AppSpacing.controlHeightSmall;
     return IconButton(
-      icon: Icon(Icons.qr_code_2_rounded, size: size, color: color),
-      onPressed: open,
-      tooltip: 'Show QR',
-      visualDensity: phone ? VisualDensity.standard : VisualDensity.compact,
+      icon: Icon(icon, color: color),
+      iconSize: phone ? AppSpacing.icon : AppSpacing.iconSmall,
+      onPressed: onPressed,
+      tooltip: tooltip,
       padding: EdgeInsets.zero,
-      constraints: phone
-          ? const BoxConstraints(
-              minWidth: AppLayout.minTouchTarget,
-              minHeight: AppLayout.minTouchTarget,
-            )
-          : const BoxConstraints(),
+      constraints: BoxConstraints.tightFor(width: side, height: side),
+      style: IconButton.styleFrom(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        ),
+      ),
     );
   }
 }
 
+/// The copy control: a copy glyph that becomes a check for [_copiedFor].
+class _CopyButton extends StatefulWidget {
+  const _CopyButton({required this.value});
+
+  final String value;
+
+  @override
+  State<_CopyButton> createState() => _CopyButtonState();
+}
+
+class _CopyButtonState extends State<_CopyButton> {
+  bool _copied = false;
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: widget.value));
+    if (!mounted) return;
+    setState(() => _copied = true);
+    await Future<void>.delayed(_copiedFor);
+    if (mounted) setState(() => _copied = false);
+  }
+
+  @override
+  Widget build(BuildContext context) => _EdgeIconButton(
+    icon: _copied ? Icons.check : Icons.copy_outlined,
+    // The check is a fact — it was copied — so it is the success green.
+    color: _copied ? AppScheme.of(context).success : null,
+    tooltip: _copied ? 'Copied' : 'Copy',
+    onPressed: _copy,
+  );
+}
+
+/// The QR control beside a copy control: same size, same ink, so the two
+/// read as one pair of ways to hand a value over.
+class _QrButton extends StatelessWidget {
+  const _QrButton({required this.title, required this.value});
+
+  final String title;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => _EdgeIconButton(
+    icon: Icons.qr_code_2_outlined,
+    tooltip: 'Show QR',
+    onPressed: () => showValueQr(context, title: title, value: value),
+  );
+}
+
+/// The recess a value is printed in.
+BoxDecoration _wellDecoration(AppScheme s) => BoxDecoration(
+  color: s.well,
+  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+  border: Border.all(color: s.edge),
+);
+
 /// A boxed, selectable, copyable monospace value (descriptor, txid, PSBT).
 ///
-/// Desktop: the value is clipped at [maxLines] with a compact copy glyph.
-/// Phone: the copy control is a 48 dp button, and when the value does not fit
-/// [maxLines] a "Show all" toggle appears under it — a descriptor the user
-/// cannot read to the end is one they cannot verify before copying.
+/// The value is clipped at [maxLines]. On a phone, when it does not fit, a
+/// "Show all" toggle appears under it — a descriptor the user cannot read to
+/// the end is one they cannot verify before copying.
 class CodeBox extends StatefulWidget {
   const CodeBox({
     super.key,
@@ -189,7 +240,7 @@ class CodeBox extends StatefulWidget {
   final String? label;
   final int maxLines;
 
-  /// A QR glyph beside the copy glyph, opening [showValueQr]. Off by
+  /// A QR control beside the copy control, opening [showValueQr]. Off by
   /// default: a PSBT or a whole descriptor bundle is too long for one code
   /// and has its own animated route.
   final bool showQr;
@@ -199,45 +250,13 @@ class CodeBox extends StatefulWidget {
 }
 
 class _CodeBoxState extends State<CodeBox> {
-  bool _copied = false;
   bool _expanded = false;
-
-  Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: widget.value));
-    setState(() => _copied = true);
-    await Future.delayed(const Duration(seconds: 2));
-    if (mounted) setState(() => _copied = false);
-  }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final phone = AppLayout.isPhone(context);
     final s = AppScheme.of(context);
-    final secondary = isDark
-        ? AppColors.textSecondaryDark
-        : AppColors.textSecondary;
-    final textStyle = AppTypography.monoSmall.copyWith(
-      color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
-    );
-
-    final copyButton = IconButton(
-      icon: Icon(
-        _copied ? Icons.check : Icons.copy,
-        size: phone ? 20 : 16,
-        color: _copied ? AppColors.success : secondary,
-      ),
-      onPressed: _copy,
-      tooltip: _copied ? 'Copied!' : 'Copy',
-      visualDensity: phone ? VisualDensity.standard : VisualDensity.compact,
-      padding: EdgeInsets.zero,
-      constraints: phone
-          ? const BoxConstraints(
-              minWidth: AppLayout.minTouchTarget,
-              minHeight: AppLayout.minTouchTarget,
-            )
-          : const BoxConstraints(),
-    );
+    final textStyle = AppTypography.mono.copyWith(color: s.ink);
 
     final Widget text;
     if (phone) {
@@ -259,36 +278,40 @@ class _CodeBoxState extends State<CodeBox> {
               SelectableText(
                 widget.value,
                 style: textStyle,
+                minLines: 1,
                 maxLines: _expanded ? null : widget.maxLines,
               ),
               if (overflows)
-                InkWell(
-                  onTap: () => setState(() => _expanded = !_expanded),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                  child: SizedBox(
-                    height: AppLayout.minTouchTarget,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        _expanded ? 'Show less' : 'Show all',
-                        style: AppTypography.label.copyWith(
-                          color: AppColors.accent,
-                        ),
-                      ),
-                    ),
+                TextButton(
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                  style: TextButton.styleFrom(
+                    foregroundColor: s.ink,
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, AppLayout.minTouchTarget),
+                    textStyle: AppTypography.label,
                   ),
+                  child: Text(_expanded ? 'Show less' : 'Show all'),
                 ),
             ],
           );
         },
       );
     } else {
+      // minLines: without it a selectable text reserves every one of its
+      // maxLines, and a one-line address sits in a four-line box.
       text = SelectableText(
         widget.value,
         style: textStyle,
+        minLines: 1,
         maxLines: widget.maxLines,
       );
     }
+
+    final title = widget.label ?? 'QR code';
+    final controls = <Widget>[
+      _CopyButton(value: widget.value),
+      if (widget.showQr) _QrButton(title: title, value: widget.value),
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -296,80 +319,36 @@ class _CodeBoxState extends State<CodeBox> {
         if (widget.label != null)
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: phone
-                // The same uppercase micro-label the Dashboard and Settings
-                // put over a card, so a descriptor is captioned like
-                // everything else on the screen.
-                ? Text(
-                    widget.label!.toUpperCase(),
-                    style: AppTypography.navSection.copyWith(
-                      letterSpacing: 1.3,
-                      color: s.inkFaint,
-                    ),
-                  )
-                : Text(
-                    widget.label!,
-                    style: AppTypography.label.copyWith(color: secondary),
-                  ),
+            child: Text(
+              widget.label!,
+              style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+            ),
           ),
         Container(
           width: double.infinity,
-          padding: phone
-              ? const EdgeInsets.fromLTRB(
-                  AppSpacing.md,
-                  AppSpacing.md,
-                  AppSpacing.xs,
-                  AppSpacing.md,
-                )
-              : const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            // A phone reads a descriptor out of the same inset grey a field
-            // is made of; the desktop keeps its own code-box surface.
-            color: phone
-                ? s.panelInset
-                : (isDark ? AppColors.codeBoxBgDark : AppColors.codeBoxBg),
-            borderRadius: BorderRadius.circular(
-              phone ? AppSpacing.radiusLg : AppSpacing.radiusSm,
-            ),
-            border: phone
-                ? null
-                : Border.all(
-                    color: isDark
-                        ? AppColors.codeBoxBorderDark
-                        : AppColors.codeBoxBorder,
-                  ),
+          // The controls sit in the corner: less padding on that side so
+          // their hit area, not their glyph, meets the edge.
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            AppSpacing.md,
+            AppSpacing.xs,
+            AppSpacing.md,
           ),
+          decoration: _wellDecoration(s),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(child: text),
+              const SizedBox(width: AppSpacing.xs),
               // Stacked on a phone, side by side on desktop: two 48 dp
-              // buttons in a row would eat a quarter of a 360 dp box.
-              if (!widget.showQr)
-                copyButton
-              else if (phone)
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    copyButton,
-                    _QrGlyphButton(
-                      title: widget.label ?? 'QR code',
-                      value: widget.value,
-                      color: secondary,
-                      phone: true,
-                      size: 20,
-                    ),
-                  ],
-                )
-              else ...[
-                copyButton,
-                _QrGlyphButton(
-                  title: widget.label ?? 'QR code',
-                  value: widget.value,
-                  color: secondary,
-                  phone: false,
-                ),
-              ],
+              // buttons in a row would eat a quarter of a 360 dp box. Lifted
+              // so the first control centres on the value's first line.
+              Transform.translate(
+                offset: Offset(0, phone ? -AppSpacing.md : -AppSpacing.xs),
+                child: phone
+                    ? Column(mainAxisSize: MainAxisSize.min, children: controls)
+                    : Row(mainAxisSize: MainAxisSize.min, children: controls),
+              ),
             ],
           ),
         ),
@@ -378,13 +357,13 @@ class _CodeBoxState extends State<CodeBox> {
   }
 }
 
-/// Label / value / copy glyph on one line.
+/// Label, value and its copy control on one line.
 ///
-/// Desktop keeps the 160 dp label column. On a phone the label sits above
-/// the value, the value wraps across the full width (or, with [singleLine],
-/// collapses in the middle to fit one line) and the copy control is a 48 dp
-/// button.
-class CopyRow extends StatefulWidget {
+/// Desktop keeps the 160 dp key column with the value in a well beside it.
+/// On a phone the label sits above the well, the value wraps across the full
+/// width (or, with [singleLine], collapses in the middle to fit one line) and
+/// the controls are 48 dp.
+class CopyRow extends StatelessWidget {
   const CopyRow({
     super.key,
     required this.label,
@@ -398,7 +377,7 @@ class CopyRow extends StatefulWidget {
   final String value;
   final bool mono;
 
-  /// A QR glyph beside the copy glyph, opening [showValueQr].
+  /// A QR control beside the copy control, opening [showValueQr].
   final bool showQr;
 
   /// Phone only: keep the value on one line, middle-ellipsised to the width,
@@ -406,85 +385,44 @@ class CopyRow extends StatefulWidget {
   final bool singleLine;
 
   @override
-  State<CopyRow> createState() => _CopyRowState();
-}
-
-class _CopyRowState extends State<CopyRow> {
-  bool _copied = false;
-
-  Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: widget.value));
-    setState(() => _copied = true);
-    await Future.delayed(const Duration(seconds: 2));
-    if (mounted) setState(() => _copied = false);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final labelStyle = AppTypography.bodySmall.copyWith(
-      color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
-    );
-    final valueStyle = widget.mono
-        ? AppTypography.monoSmall
-        : AppTypography.bodySmall;
-    final iconColor = _copied
-        ? AppColors.success
-        : (isDark ? AppColors.textSecondaryDark : AppColors.textMuted);
+    final s = AppScheme.of(context);
+    final valueStyle = (mono ? AppTypography.mono : AppTypography.body)
+        .copyWith(color: s.ink);
+    final controls = <Widget>[
+      _CopyButton(value: value),
+      if (showQr) _QrButton(title: label, value: value),
+    ];
 
     if (AppLayout.isPhone(context)) {
-      final s = AppScheme.of(context);
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              widget.label.toUpperCase(),
-              style: AppTypography.navSection.copyWith(
-                letterSpacing: 1.3,
-                color: s.inkFaint,
-              ),
+              label,
+              style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
             ),
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                Expanded(
-                  child: widget.singleLine
-                      ? MiddleEllipsisText(widget.value, style: valueStyle)
-                      : Text(
-                          widget.value,
-                          style: valueStyle,
-                          maxLines: 4,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                IconButton(
-                  onPressed: _copy,
-                  tooltip: _copied ? 'Copied!' : 'Copy',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: AppLayout.minTouchTarget,
-                    minHeight: AppLayout.minTouchTarget,
+            const SizedBox(height: AppSpacing.sm),
+            Container(
+              padding: const EdgeInsets.only(left: AppSpacing.md),
+              decoration: _wellDecoration(s),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: singleLine
+                        ? MiddleEllipsisText(value, style: valueStyle)
+                        : Text(
+                            value,
+                            style: valueStyle,
+                            maxLines: 4,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                   ),
-                  icon: Icon(
-                    _copied ? Icons.check : Icons.copy,
-                    size: 18,
-                    color: iconColor,
-                  ),
-                ),
-                if (widget.showQr)
-                  _QrGlyphButton(
-                    title: widget.label,
-                    value: widget.value,
-                    color: isDark
-                        ? AppColors.textSecondaryDark
-                        : AppColors.textMuted,
-                    phone: true,
-                    size: 18,
-                  ),
-              ],
+                  ...controls,
+                ],
+              ),
             ),
           ],
         ),
@@ -492,39 +430,42 @@ class _CopyRowState extends State<CopyRow> {
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
       child: Row(
         children: [
-          SizedBox(width: 160, child: Text(widget.label, style: labelStyle)),
-          Expanded(
+          SizedBox(
+            width: 160,
             child: Text(
-              widget.value,
-              style: valueStyle,
-              overflow: TextOverflow.ellipsis,
+              label,
+              style: AppTypography.label.copyWith(color: s.inkSecondary),
             ),
           ),
-          const SizedBox(width: AppSpacing.sm),
-          InkWell(
-            onTap: _copy,
-            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xs),
-              child: Icon(
-                _copied ? Icons.check : Icons.copy,
-                size: 14,
-                color: iconColor,
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.only(
+                left: AppSpacing.md,
+                right: AppSpacing.xs,
+              ),
+              constraints: const BoxConstraints(
+                minHeight: AppSpacing.controlHeight,
+              ),
+              decoration: _wellDecoration(s),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      value,
+                      style: valueStyle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  ...controls,
+                ],
               ),
             ),
           ),
-          if (widget.showQr)
-            _QrGlyphButton(
-              title: widget.label,
-              value: widget.value,
-              color: isDark ? AppColors.textSecondaryDark : AppColors.textMuted,
-              phone: false,
-              size: 14,
-              dense: true,
-            ),
         ],
       ),
     );

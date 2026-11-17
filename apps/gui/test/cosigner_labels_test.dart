@@ -187,7 +187,7 @@ void main() {
       );
       expect(find.byIcon(defaultCosignerIcon), findsNWidgets(3));
       expect(find.textContaining('+'), findsNothing);
-      expect(find.text('2/3'), findsOneWidget);
+      expect(find.text('2 of 3'), findsOneWidget);
     });
 
     testWidgets('past five, the rest collapse into one badge', (t) async {
@@ -198,7 +198,7 @@ void main() {
       // whole wallet, not the part that fitted.
       expect(find.byIcon(defaultCosignerIcon), findsNWidgets(maxRingIcons));
       expect(find.text('+3'), findsOneWidget);
-      expect(find.text('5/8'), findsOneWidget);
+      expect(find.text('5 of 8'), findsOneWidget);
     });
 
     testWidgets('the overflow badge opens the roster', (t) async {

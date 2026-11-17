@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../shared/widgets/glass_dialog.dart';
-import '../../theme/app_colors.dart';
+import '../../shared/widgets/app_dialog.dart';
+import '../../shared/widgets/banners.dart';
+import '../../shared/widgets/buttons.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 
@@ -127,10 +129,11 @@ class VaultPassphraseStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     if (done) {
-      return _banner(
-        color: AppColors.success,
+      return _StatusNote(
         icon: Icons.verified_user_outlined,
+        color: s.success,
         text:
             'Wallet storage is now encrypted. Templar will ask for this '
             'password each time it starts.',
@@ -141,26 +144,29 @@ class VaultPassphraseStep extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(_rationale(place), style: AppTypography.bodySmall),
+        Text(
+          _rationale(place),
+          style: AppTypography.body.copyWith(color: s.inkSecondary),
+        ),
         const SizedBox(height: AppSpacing.sm),
         Text(
           'This is a password for the app on $place — not the BIP39 '
           'passphrase of a hardware wallet, and not part of your recovery '
           'phrase.',
-          style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+          style: AppTypography.caption.copyWith(color: s.inkSecondary),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.xl),
         if (!declined || mandatory) ...[
-          GlassPasswordField(
+          PasswordField(
             controller: passCtrl,
             label: 'App password',
             autofocus: true,
             onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: AppSpacing.sm),
-          _StrengthMeter(strength: passphraseStrength(passCtrl.text)),
-          const SizedBox(height: AppSpacing.md),
-          GlassPasswordField(
+          PassphraseStrengthMeter(strength: passphraseStrength(passCtrl.text)),
+          const SizedBox(height: AppSpacing.lg),
+          PasswordField(
             controller: confirmCtrl,
             label: 'Confirm password',
             errorText: error,
@@ -168,17 +174,12 @@ class VaultPassphraseStep extends StatelessWidget {
             onSubmitted: onSubmitted,
           ),
           const SizedBox(height: AppSpacing.lg),
-          _banner(
-            color: seedOnDisk ? AppColors.danger : AppColors.warning,
-            icon: Icons.warning_amber_rounded,
-            text: _lossWarning,
-          ),
+          if (seedOnDisk)
+            DangerBanner(message: _lossWarning)
+          else
+            WarningBanner(message: _lossWarning),
         ] else
-          _banner(
-            color: AppColors.warning,
-            icon: Icons.no_encryption_outlined,
-            text: _declineWarning,
-          ),
+          WarningBanner(message: _declineWarning),
         const SizedBox(height: AppSpacing.md),
         // No skip where the seed lands on this disk (A2): unencrypted, the
         // recovery phrase is a readable file and every other protection in the
@@ -186,56 +187,56 @@ class VaultPassphraseStep extends StatelessWidget {
         // genuinely the user's.
         if (mandatory)
           Text(
-            'Required for a wallet whose recovery phrase is kept on this '
-            'computer. One password covers every wallet in Templar.',
-            style: AppTypography.caption.copyWith(
-              color: AppColors.textSecondary,
-            ),
+            'Required for a wallet whose recovery phrase is kept on $place. '
+            'One password covers every wallet in Templar.',
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
           )
         else
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: () => onDeclinedChanged(!declined),
-              child: Text(
-                declined
-                    ? 'Actually, I want a password'
-                    : 'Skip — don\'t encrypt wallet storage',
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.textSecondary,
-                  decoration: TextDecoration.underline,
-                ),
-              ),
-            ),
+          GhostButton(
+            label: declined
+                ? 'Actually, I want a password'
+                : 'Skip — don\'t encrypt wallet storage',
+            onPressed: () => onDeclinedChanged(!declined),
           ),
       ],
     );
   }
+}
 
-  Widget _banner({
-    required Color color,
-    required IconData icon,
-    required String text,
-  }) {
+/// A finished state, drawn like a banner: the raised surface, a 16 px glyph
+/// in the status colour, the words in ink. The kit has no success banner.
+class _StatusNote extends StatelessWidget {
+  const _StatusNote({
+    required this.icon,
+    required this.color,
+    required this.text,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+        color: s.panelInset,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: color),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon, size: AppSpacing.iconSmall, color: color),
+          ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
               text,
-              style: AppTypography.bodySmall.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
+              style: AppTypography.bodySmall.copyWith(color: s.ink),
             ),
           ),
         ],
@@ -244,49 +245,41 @@ class VaultPassphraseStep extends StatelessWidget {
   }
 }
 
-class _StrengthMeter extends StatelessWidget {
-  const _StrengthMeter({required this.strength});
+/// How strong a vault password is (0..4 from [passphraseStrength]): a 2 px
+/// neutral meter and one word. Neutral because a red-to-green bar turns a
+/// hint into a verdict the engine never gave.
+class PassphraseStrengthMeter extends StatelessWidget {
+  const PassphraseStrengthMeter({super.key, required this.strength});
 
   /// 0..4 from [passphraseStrength].
   final int strength;
 
   static const _labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
-  static const _colors = [
-    Colors.transparent,
-    AppColors.danger,
-    AppColors.warning,
-    AppColors.successMuted,
-    AppColors.success,
-  ];
 
   @override
   Widget build(BuildContext context) {
-    final color = _colors[strength];
+    final s = AppScheme.of(context);
     return Row(
       children: [
-        for (var i = 1; i <= 4; i++) ...[
-          Expanded(
-            child: Container(
-              height: 4,
-              decoration: BoxDecoration(
-                color: i <= strength
-                    ? color
-                    : AppColors.textMuted.withValues(alpha: 0.25),
-                borderRadius: BorderRadius.circular(2),
-              ),
+        Expanded(
+          child: ClipRect(
+            child: Stack(
+              children: [
+                Container(height: 2, color: s.edge),
+                FractionallySizedBox(
+                  widthFactor: strength / 4,
+                  child: Container(height: 2, color: s.inkSecondary),
+                ),
+              ],
             ),
           ),
-          if (i < 4) const SizedBox(width: AppSpacing.xs),
-        ],
+        ),
         const SizedBox(width: AppSpacing.md),
         SizedBox(
-          width: 48,
+          width: AppSpacing.xxxl,
           child: Text(
             _labels[strength],
-            style: AppTypography.caption.copyWith(
-              color: strength == 0 ? AppColors.textMuted : color,
-              fontWeight: FontWeight.w600,
-            ),
+            style: AppTypography.caption.copyWith(color: s.inkSecondary),
           ),
         ),
       ],

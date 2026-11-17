@@ -6,6 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/bridge/wallet_bridge.dart';
 import 'package:templar_wallet/features/swap/swap_screen.dart';
+import 'package:templar_wallet/shared/widgets/buttons.dart';
+import 'package:templar_wallet/theme/app_layout.dart';
+import 'package:templar_wallet/theme/app_typography.dart';
 
 Widget _screen() => ChangeNotifierProvider<AppState>(
   create: (_) => AppState()
@@ -33,22 +36,30 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
+    AppLayout.debugMobileOverride = true;
+    addTearDown(() => AppLayout.debugMobileOverride = null);
 
     await tester.pumpWidget(_screen());
     await tester.pumpAndSettle();
 
     expect(find.text('Local order book'), findsOneWidget);
-    expect(find.text('LOCAL ROUTING · TESTNET'), findsOneWidget);
     expect(find.text('3 open routes'), findsOneWidget);
-    expect(find.text('Liquid swaps · live settlement'), findsOneWidget);
-    expect(find.text('Bitcoin routes · live HTLC testnet'), findsOneWidget);
+    expect(find.text('Testnet'), findsOneWidget);
     expect(find.text('New offer'), findsOneWidget);
     expect(find.text('Maker posts; taker completes'), findsOneWidget);
     expect(find.text('Two-wallet test'), findsOneWidget);
+    expect(find.textContaining('LOCAL ROUTING'), findsNothing);
     expect(find.textContaining('Trade across'), findsNothing);
 
-    final title = tester.widget<Text>(find.text('Local order book'));
-    expect(title.style?.fontSize, lessThanOrEqualTo(21));
+    // The page's name is the phone page title, not a card heading.
+    final title = tester.widget<Text>(find.text('LiquiDEX').first);
+    expect(
+      title.style?.fontSize,
+      AppTypography.pageTitleOf(
+        tester.element(find.text('LiquiDEX').first),
+      ).fontSize,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('market keeps the same restrained hierarchy on desktop', (
@@ -61,9 +72,14 @@ void main() {
     await tester.pumpWidget(_screen());
     await tester.pumpAndSettle();
 
-    final title = tester.widget<Text>(find.text('Local order book'));
-    expect(title.style?.fontSize, 21);
-    expect(find.text('3 MARKETS'), findsOneWidget);
-    expect(find.text('HTLC DEMO'), findsNWidgets(2));
+    final title = tester.widget<Text>(find.text('LiquiDEX').first);
+    expect(title.style?.fontSize, AppTypography.pageTitle.fontSize);
+    expect(find.text('Markets · 3'), findsOneWidget);
+    // Venues are sentence-case quiet tags, never shouted.
+    expect(find.text('HTLC demo'), findsNWidgets(2));
+    expect(find.text('HTLC DEMO'), findsNothing);
+    // Exactly one filled accent control: "New offer".
+    expect(find.byType(PrimaryButton), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

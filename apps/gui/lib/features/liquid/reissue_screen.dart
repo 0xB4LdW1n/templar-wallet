@@ -15,8 +15,10 @@ import '../../shared/widgets/cards.dart';
 import '../../shared/widgets/code_box.dart';
 import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/page_header.dart';
+import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import 'form_parts.dart';
 
 class ReissueScreen extends StatefulWidget {
   const ReissueScreen({super.key});
@@ -96,15 +98,29 @@ class _ReissueScreenState extends State<ReissueScreen> {
         ),
       ];
       if (mounted) {
+        final wanted = _requestedAssetId();
         setState(() {
           _reissuableAssets = reissuable;
           _tokenRecorded = recordedIds;
-          _selectedAsset = reissuable.isNotEmpty ? reissuable.first : null;
+          _selectedAsset =
+              reissuable.where((a) => a.assetId == wanted).firstOrNull ??
+              (reissuable.isNotEmpty ? reissuable.first : null);
           _loadingAssets = false;
         });
       }
     } catch (e) {
       if (mounted) setState(() => _loadingAssets = false);
+    }
+  }
+
+  /// The asset the caller asked for (`?asset=<id>`, from a row or an asset's
+  /// detail), or null. Read after the first frame: the router's state is an
+  /// inherited lookup.
+  String? _requestedAssetId() {
+    try {
+      return GoRouterState.of(context).uri.queryParameters['asset'];
+    } catch (_) {
+      return null; // Not under the router (a widget test).
     }
   }
 
@@ -195,9 +211,12 @@ class _ReissueScreenState extends State<ReissueScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: PageBackground.flat(
-        child: Center(
+        child: Align(
+          alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
+            constraints: const BoxConstraints(
+              maxWidth: AppSpacing.formMaxWidth,
+            ),
             child: _result != null
                 ? _buildResult()
                 : _reviewing
@@ -209,20 +228,20 @@ class _ReissueScreenState extends State<ReissueScreen> {
     );
   }
 
+  Widget _backToAssets() => GhostButton(
+    label: 'Back to assets',
+    icon: Icons.arrow_back,
+    onPressed: () => context.go(AppRoutes.liquid),
+  );
+
   Widget _buildForm() {
+    final reg = AssetRegistryService.instance;
+    final phone = AppLayout.isPhone(context);
+    final asset = _selectedAsset;
     return ListView(
       padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
       children: [
-        PageHeader(
-          title: 'Reissue',
-          subtitle: 'Mint additional supply of an existing asset',
-          actions: [
-            GhostButton(
-              label: 'Back to Liquid',
-              onPressed: () => context.go(AppRoutes.liquid),
-            ),
-          ],
-        ),
+        PageHeader(title: 'Reissue', actions: [_backToAssets()]),
         const InfoBanner(
           message:
               'Reissuing requires holding the asset\'s reissuance token. '
@@ -235,30 +254,27 @@ class _ReissueScreenState extends State<ReissueScreen> {
           const InfoBanner(
             title: 'No reissuable assets',
             message:
-                'This wallet holds no Liquid assets that could be reissued. Issue an asset with "Create reissuance token" enabled to be able to mint more supply later.',
+                'This wallet holds no Liquid assets that could be reissued. '
+                'Issue an asset with "Create reissuance token" enabled to be '
+                'able to mint more supply later.',
           )
         else ...[
-          FormCard(
-            title: 'Asset',
+          FieldBlock(
+            label: 'Asset',
             child: DropdownButtonFormField<String>(
-              initialValue: _selectedAsset?.assetId,
-              // Phone only: the selected label fills the field and a long
-              // asset name ellipsises. Unbounded, "USDt — PEGx USDt Testnet
-              // (token not verified)" painted 54 px past the right edge of a
-              // phone. The desktop field is wide enough and keeps its arrow
-              // beside the text.
-              isExpanded: AppLayout.isPhone(context),
+              initialValue: asset?.assetId,
+              // The selected label fills the field and a long asset name
+              // ellipsises instead of painting past the edge.
+              isExpanded: true,
               items: _reissuableAssets
                   .map(
                     (a) => DropdownMenuItem(
                       value: a.assetId,
                       child: Text(
-                        '${AssetRegistryService.instance.displayTicker(a)} — ${AssetRegistryService.instance.displayName(a)}'
-                        '${_tokenRecorded.contains(a.assetId) ? '' : '  (token not verified)'}',
-                        maxLines: AppLayout.isPhone(context) ? 1 : null,
-                        overflow: AppLayout.isPhone(context)
-                            ? TextOverflow.ellipsis
-                            : null,
+                        '${reg.displayTicker(a)} — ${reg.displayName(a)}'
+                        '${_tokenRecorded.contains(a.assetId) ? '' : '  (token not recorded here)'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   )
@@ -271,44 +287,43 @@ class _ReissueScreenState extends State<ReissueScreen> {
               decoration: const InputDecoration(hintText: 'Select asset'),
             ),
           ),
-          if (_selectedAsset != null) ...[
+          if (asset != null) ...[
             const SizedBox(height: AppSpacing.lg),
             SummaryCard(
               rows: [
                 (
                   label: 'Current holdings',
-                  value: _selectedAsset!.displayAmount,
+                  value: asset.displayAmount,
                   isMono: false,
                 ),
-                (
-                  label: 'Base units',
-                  value: '${_selectedAsset!.amount}',
-                  isMono: true,
-                ),
+                (label: 'Base units', value: '${asset.amount}', isMono: true),
               ],
             ),
           ],
-          const SizedBox(height: AppSpacing.lg),
-          FormCard(
-            title: 'Additional amount',
+          const SizedBox(height: AppSpacing.xl),
+          FieldBlock(
+            label: 'Amount to mint',
+            help: 'In base units',
             child: TextField(
               controller: _amountController,
               keyboardType: TextInputType.number,
+              style: AppTypography.numeric,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: 'Amount to mint (base units)',
-              ),
+              decoration: const InputDecoration(hintText: '0'),
             ),
           ),
           if (_error != null) ...[
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.lg),
             DangerBanner(message: _error!),
           ],
           const SizedBox(height: AppSpacing.xl),
-          PrimaryButton(
-            label: 'Review reissuance',
-            isFullWidth: true,
-            onPressed: _onReview,
+          Align(
+            alignment: Alignment.centerRight,
+            child: PrimaryButton(
+              label: 'Review',
+              isFullWidth: phone,
+              onPressed: _onReview,
+            ),
           ),
         ],
       ],
@@ -316,25 +331,19 @@ class _ReissueScreenState extends State<ReissueScreen> {
   }
 
   Widget _buildReview() {
+    final reg = AssetRegistryService.instance;
     final asset = _selectedAsset!;
     final amount = _amountController.text.trim();
+    final s = AppScheme.of(context);
     return ListView(
       padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
       children: [
-        PageHeader(
-          title: 'Confirm Reissuance',
-          subtitle: 'Review the details before broadcasting',
-          actions: [
-            GhostButton(
-              label: 'Back to Liquid',
-              onPressed: () => context.go(AppRoutes.liquid),
-            ),
-          ],
-        ),
+        PageHeader(title: 'Confirm reissuance', actions: [_backToAssets()]),
         const WarningBanner(
           title: 'Supply increase',
           message:
-              'Confirming will mint additional units on-chain and permanently increase the total supply of this asset.',
+              'Confirming will mint additional units on-chain and permanently '
+              'increase the total supply of this asset.',
         ),
         if (!_tokenRecorded.contains(asset.assetId)) ...[
           const SizedBox(height: AppSpacing.md),
@@ -347,35 +356,40 @@ class _ReissueScreenState extends State<ReissueScreen> {
         ],
         const SizedBox(height: AppSpacing.xl),
         SummaryCard(
-          title: 'Reissuance summary',
+          title: 'Reissuance',
           rows: [
             (label: 'Operation', value: 'Reissue', isMono: false),
             (
               label: 'Asset',
-              value:
-                  '${AssetRegistryService.instance.displayTicker(asset)} — ${AssetRegistryService.instance.displayName(asset)}',
+              value: '${reg.displayTicker(asset)} — ${reg.displayName(asset)}',
               isMono: false,
             ),
-            (label: 'Asset ID', value: asset.assetId, isMono: true),
             (
               label: 'Amount to mint',
               value: '$amount base units',
               isMono: false,
             ),
             (
-              label: 'Resulting action',
+              label: 'Result',
               value: 'Total supply increases by $amount base units',
               isMono: false,
             ),
           ],
         ),
+        const SizedBox(height: AppSpacing.lg),
+        CodeBox(label: 'Asset ID', value: asset.assetId, maxLines: 2),
         if (_error != null) ...[
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
           DangerBanner(
             message: _error!,
             action: _errorDetail == null
                 ? null
-                : Text(_errorDetail!, style: AppTypography.caption),
+                : Text(
+                    _errorDetail!,
+                    style: AppTypography.caption.copyWith(
+                      color: s.inkSecondary,
+                    ),
+                  ),
           ),
         ],
         const SizedBox(height: AppSpacing.xl),
@@ -386,24 +400,12 @@ class _ReissueScreenState extends State<ReissueScreen> {
               label: 'Back',
               onPressed: () => setState(() => _reviewing = false),
             ),
-            const SizedBox(width: AppSpacing.md),
-            if (_submitting)
-              Row(
-                children: [
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Text('Broadcasting…', style: AppTypography.caption),
-                ],
-              )
-            else
-              PrimaryButton(
-                label: 'Confirm & Reissue',
-                onPressed: _onConfirmReissue,
-              ),
+            const SizedBox(width: AppSpacing.sm),
+            PrimaryButton(
+              label: _submitting ? 'Broadcasting…' : 'Reissue',
+              isLoading: _submitting,
+              onPressed: _onConfirmReissue,
+            ),
           ],
         ),
       ],
@@ -415,28 +417,12 @@ class _ReissueScreenState extends State<ReissueScreen> {
     return ListView(
       padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
       children: [
-        PageHeader(
-          title: 'Reissued',
-          subtitle: 'Additional supply minted successfully',
-          actions: [
-            GhostButton(
-              label: 'Back to Liquid',
-              onPressed: () => context.go(AppRoutes.liquid),
-            ),
-          ],
-        ),
-        const InfoBanner(message: 'Reissuance transaction broadcast on-chain.'),
+        PageHeader(title: 'Reissued', actions: [_backToAssets()]),
+        const InfoBanner(message: 'Reissuance transaction broadcast on-chain'),
         const SizedBox(height: AppSpacing.xl),
-        SectionCard(
-          title: 'Result',
-          child: Column(
-            children: [
-              CodeBox(label: 'Asset ID', value: result.assetId),
-              const SizedBox(height: AppSpacing.lg),
-              CodeBox(label: 'TxID', value: result.txid),
-            ],
-          ),
-        ),
+        CodeBox(label: 'Asset ID', value: result.assetId, maxLines: 2),
+        const SizedBox(height: AppSpacing.lg),
+        CodeBox(label: 'TxID', value: result.txid, maxLines: 2),
         const SizedBox(height: AppSpacing.xl),
         PrimaryButton(
           label: 'Done',

@@ -2,159 +2,241 @@ import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
 
-/// Resolved color scheme — the hybrid design language (Obsidian glass shell ×
-/// Instrument data grammar), resolved once per build via [AppScheme.of].
+/// The resolved colour scheme: one neutral ramp ("iron"), three inks, one
+/// accent. Resolved once per build via [AppScheme.of].
 ///
 /// Screens read `final s = AppScheme.of(context);` instead of branching on
 /// `Theme.of(context).brightness` at every call site. Accent-derived values
-/// route through the runtime-mutable [AppColors.accent] family, so per-wallet
+/// route through the runtime-mutable [AppColors.accent], so per-wallet
 /// re-tinting keeps working (never use these in const contexts).
+///
+/// The rules that go with these tokens are in design.md.
 class AppScheme {
   const AppScheme._(this.isDark);
+
+  /// For the context-free [ThemeData] builder only; widgets use [of].
+  const AppScheme.forBrightness(Brightness b) : isDark = b == Brightness.dark;
+
   final bool isDark;
 
   static AppScheme of(BuildContext context) =>
       AppScheme._(Theme.of(context).brightness == Brightness.dark);
 
-  // ── Backdrop ────────────────────────────────────────────────────────────────
-  /// Page gradient for the entry screens ONLY (home picker, welcome). Every
-  /// surface inside an open wallet is flat — see `PageBackground.flat`.
-  ///
-  /// Neutral, not accent-derived. The ground used to be a wash of the brand
-  /// crimson, which meant the app's one signal colour was also its wallpaper —
-  /// nothing could stand out against it, and every wallet the user re-tinted
-  /// repainted the whole room. Dark is black with a two-step lift for depth;
-  /// light is grey to white. Brand now lives only where it means something:
-  /// the mark, the accent rule, the active state.
-  List<Color> get bgGradient => isDark
-      ? const [Color(0xFF000000), Color(0xFF060608), Color(0xFF0B0B0E)]
-      : const [Color(0xFFE9ECF1), Color(0xFFF4F6F8), Color(0xFFFFFFFF)];
+  // ── Surfaces: four steps, never a fifth ────────────────────────────────────
 
-  /// Flat page fill used everywhere inside a wallet.
+  /// The deepest step: the sidebar and the phone's tab bar. Chrome recedes.
+  Color get chrome => isDark ? AppColors.chromeDark : AppColors.chromeLight;
+
+  /// The page.
   Color get canvas =>
       isDark ? AppColors.backgroundDark : AppColors.backgroundLight;
 
-  // ── Cards ──────────────────────────────────────────────────────────────────
-  // Two steps of the SAME translucent surface, shared by the home gallery and
-  // the sidebar so both read as one material. Never gradients: the brand
-  // gradient has to keep showing through, and an opaque fill would chop it
-  // into blocks.
-  //
-  // There is deliberately no alternating tone. A checkerboard made half the
-  // cards look disabled next to the other half.
+  /// The card.
+  Color get panel => isDark ? AppColors.surfaceDark : AppColors.surfaceLight;
 
-  Color get cardBase => isDark
-      ? Colors.white.withValues(alpha: 0.075)
-      : Colors.white.withValues(alpha: 0.88);
-
-  /// The card under the pointer — the same surface, one step firmer.
-  Color get cardHover => isDark
-      ? Colors.white.withValues(alpha: 0.14)
-      : Colors.white.withValues(alpha: 1.0);
-
-  /// Soft accent bloom behind the backdrop (decorative only). Kept faint —
-  /// the ground is black now, and a bloom that reads as a colour would put the
-  /// brand wash straight back.
-  Color get bloom => AppColors.accent.withValues(alpha: isDark ? 0.07 : 0.06);
-
-  // ── Surfaces ────────────────────────────────────────────────────────────────
-  /// Translucent panel fill — page gradient bleeds through (glass shell).
-  Color get surfaceGlass =>
-      isDark ? const Color(0x1CFFFFFF) : const Color(0xF2FFFFFF);
-
-  /// Specular top-edge gradient stops for glass panels.
-  List<Color> get specular => isDark
-      ? const [Color(0x17FFFFFF), Color(0x05FFFFFF)]
-      : const [Color(0xBFFFFFFF), Color(0x66FFFFFF)];
-
-  /// Data well — high-opacity backing behind critical data (guardrail: WCAG AA
-  /// for addresses/amounts/descriptors). Never make this translucent.
-  Color get surfaceSolid =>
-      isDark ? const Color(0xF50E0E11) : const Color(0xFFFFFFFF);
-
-  /// Raised strips: panel headers, table heads.
-  Color get surfaceRaised =>
-      isDark ? const Color(0xFF1B1B21) : const Color(0xFFEAEDF2);
-
-  /// Zebra row tint inside panels/tables.
-  Color get zebra => isDark ? const Color(0x14FFFFFF) : const Color(0xFFF4F6F9);
-
-  // ── Panels on a flat ground (phone) ────────────────────────────────────────
-  //
-  // Inside a wallet on a phone every surface sits on the flat [canvas], so a
-  // translucent fill has nothing to let through and a gradient over one hides
-  // it: a `BoxDecoration` paints its gradient *instead of* its colour, which
-  // is how the hero ended up near-black on a black ground. These are the
-  // composited results — two steps and no more (see design.md).
-
-  /// The card: [surfaceGlass] already resolved against the page.
-  Color get panel => Color.alphaBlend(surfaceGlass, canvas);
-
-  /// One step above [panel] — the tile an icon sits on inside a card, the
-  /// well behind a figure. Never a third step.
+  /// Raised: a field, a glyph tile, a secondary button, the selected row or
+  /// segment. The one tone above [panel].
   Color get panelInset =>
-      isDark ? const Color(0xFF26262C) : const Color(0xFFEBEEF3);
+      isDark ? AppColors.surfaceDark2 : AppColors.raisedLight;
 
-  /// The one tone BELOW [panel]: the phone's navigation bar. Chrome recedes
-  /// (design.md), so the bar sits under the cards rather than over them —
-  /// and it is a surface, not a hole: on an OLED ground a translucent black
-  /// bar left the icons floating with nothing under them.
-  Color get chrome =>
-      isDark ? const Color(0xFF121216) : const Color(0xFFF7F8FA);
+  /// A recess inside a card: the track of a segmented control, the box an
+  /// address or descriptor is printed in. The page tone, so it reads as cut
+  /// into the card rather than stacked on it.
+  Color get well => canvas;
 
-  /// Hover row tint (Instrument grammar).
-  Color get hover => AppColors.accent.withValues(alpha: isDark ? 0.09 : 0.07);
+  /// The fill of the selected thing when it sits ON A CARD — a chosen chip,
+  /// a selected row in a table. Selection is a surface step, not the accent.
+  Color get selected => panelInset;
 
-  // Dark-mode note: every surface and stroke above sits one step brighter
-  // than it did. On an OLED-black ground a 5%-white card and a 14%-white
-  // hairline were within a hair of the page itself — panels had no visible
-  // edge, table rules disappeared, and the whole shell read as one flat black
-  // sheet. Light mode is unchanged; it never had the problem.
+  /// The fill of the selected thing when it sits on the page, the chrome or
+  /// a well — a nav row, the thumb of a segmented control, the current tab.
+  /// On dark that is the same raised step; on light those grounds are
+  /// already grey, so the step up from them is white.
+  Color get thumb => isDark ? panelInset : panel;
 
-  // ── Strokes ─────────────────────────────────────────────────────────────────
-  // Hairlines carry the whole layout in light mode — every panel edge, table
-  // rule and quiet button outline is one of these. The previous blush pair
-  // (#F0E2E3 / #E6C9CB) was under a 1.2:1 ratio against white and vanished on
-  // a bright screen, so they are neutral and two steps darker now.
-  Color get edge => isDark ? const Color(0x33FFFFFF) : const Color(0xFFD5DAE2);
-  Color get edgeBright =>
-      isDark ? const Color(0x5CFFFFFF) : const Color(0xFFFFFFFF);
-  Color get edgeStrong =>
-      isDark ? const Color(0xFF4A4A54) : const Color(0xFFB3BBC7);
+  /// Row under the pointer.
+  Color get hover => ink.withValues(alpha: isDark ? 0.045 : 0.04);
 
-  // ── Ink ─────────────────────────────────────────────────────────────────────
-  // Light-mode ink is darker across the board: #6E5A5C secondary text on a
-  // near-white card was ~4.0:1 and #9C8A8C captions ~2.6:1 — under AA for body
-  // copy. These clear AA (>=4.5:1) for secondary and land close to it for the
-  // faint tier, which is only ever used for non-essential labels.
-  Color get ink => isDark ? const Color(0xFFF6F7F9) : const Color(0xFF0E1116);
+  /// Row under a press.
+  Color get pressed => ink.withValues(alpha: isDark ? 0.08 : 0.07);
+
+  /// Behind a dialog or sheet.
+  Color get scrim => Colors.black.withValues(alpha: isDark ? 0.62 : 0.36);
+
+  // ── Strokes ────────────────────────────────────────────────────────────────
+
+  /// The hairline: every card edge, every row rule.
+  Color get edge => ink.withValues(alpha: isDark ? 0.08 : 0.12);
+
+  /// A control's outline, a selected card's edge.
+  Color get edgeStrong => ink.withValues(alpha: isDark ? 0.18 : 0.24);
+
+  /// The keyboard-focus ring and a focused field. Neutral on purpose: the
+  /// accent is red, and a red ring around a field reads as an error.
+  Color get focus => ink.withValues(alpha: isDark ? 0.55 : 0.6);
+
+  // ── Ink: three roles ───────────────────────────────────────────────────────
+  Color get ink => isDark ? AppColors.textPrimaryDark : AppColors.textPrimary;
   Color get inkSecondary =>
-      isDark ? const Color(0xFFB6BCC6) : const Color(0xFF454E5B);
-  Color get inkFaint =>
-      isDark ? const Color(0xFF8B929D) : const Color(0xFF69737F);
+      isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
 
-  // ── Status / network / chain (theme-stable, re-exported for one-stop use) ──
-  // Light-mode status colours are darkened from the raw brand values: the
-  // #EF4444 danger and #16A34A success read fine as fills but fail as text on
-  // white, and status here is often a caption.
-  Color get success => isDark ? const Color(0xFF3DD68C) : const Color(0xFF15803D);
-  Color get warning => isDark ? const Color(0xFFE5B454) : const Color(0xFFB45309);
-  Color get danger => isDark ? const Color(0xFFF06A6A) : const Color(0xFFD32020);
-  Color get testnet => isDark ? const Color(0xFFE5B454) : const Color(0xFFB45309);
-  Color get bitcoin => AppColors.bitcoin;
+  /// Meta and captions only — it sits near 4.5:1, not above it.
+  Color get inkFaint => isDark ? AppColors.textMutedDark : AppColors.textMuted;
+
+  // ── Status / chain ─────────────────────────────────────────────────────────
+  // The light values are darkened so they pass as text on white: status is
+  // often a caption.
+  Color get success =>
+      isDark ? AppColors.successMuted : const Color(0xFF15803D);
+  Color get warning =>
+      isDark ? AppColors.warningMuted : const Color(0xFFA8590B);
+  Color get danger =>
+      isDark ? const Color(0xFFF06A6A) : const Color(0xFFD32020);
+  Color get testnet => warning;
+
+  /// A fee bump (design.md, "Colour as data"): the double bolt of "Speed
+  /// up", and — as a fill — the state of a transaction whose fee was
+  /// raised. Yellow: the fee's amber, brightened into a signal.
+  Color get boost => const Color(0xFFF5C518);
+
+  /// [boost] as a glyph on a neutral surface: itself on dark, deepened on
+  /// light so the bolt still reads.
+  Color get boostGlyph => isDark ? boost : const Color(0xFFA16207);
+
+  /// Ink on a [boost] fill.
+  Color get onBoost => const Color(0xFF16171A);
+
+  /// The tick of a bump that was made, on a [boost] fill: a green deep
+  /// enough to stand on the yellow in both themes.
+  Color get boostDone => const Color(0xFF15803D);
+
+  /// A wait: the dot of a pending status and the breathing edge of its row
+  /// in Activity. Orange, apart from [warning]'s amber — a pending payment
+  /// is not a problem, it is in motion.
+  Color get pending =>
+      isDark ? const Color(0xFFF28C38) : const Color(0xFFC2590A);
+  Color get bitcoin => isDark ? AppColors.bitcoin : const Color(0xFFC46F00);
   Color get liquid => isDark ? const Color(0xFF35B8B0) : AppColors.liquid;
 
-  // ── Accent (runtime-mutable — never const) ─────────────────────────────────
-  Color get accent => AppColors.accent;
-  Color get accentSoft => AppColors.accent.withValues(alpha: isDark ? 0.16 : 0.12);
-  Color get accentGlow => AppColors.accent.withValues(alpha: isDark ? 0.32 : 0.22);
+  // ── Data hues ──────────────────────────────────────────────────────────────
+  // Colour that states a fact (design.md, "Colour as data"): the role of a
+  // box in a transaction's flow, the size tier of a coin, an asset's slice
+  // of a chart, the colour a wallet was given. Never chrome, never a title.
+  // The light values are darkened so each passes as text on white.
+  Color get hueSlate =>
+      isDark ? const Color(0xFF8B93A7) : const Color(0xFF5F6878);
+  Color get hueTeal =>
+      isDark ? const Color(0xFF35B8AC) : const Color(0xFF0B7F75);
+  Color get hueBlue =>
+      isDark ? const Color(0xFF5D9BE8) : const Color(0xFF2B68BC);
+  Color get hueViolet =>
+      isDark ? const Color(0xFFA78BFA) : const Color(0xFF7446DB);
+  Color get hueGold =>
+      isDark ? const Color(0xFFE8B54A) : const Color(0xFF8F6200);
+  Color get hueRose =>
+      isDark ? const Color(0xFFE879A6) : const Color(0xFFBC3470);
 
-  // ── Shadows ─────────────────────────────────────────────────────────────────
-  List<BoxShadow> get panelShadow => [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: isDark ? 0.55 : 0.10),
-          blurRadius: 22,
-          offset: const Offset(0, 9),
-        ),
-      ];
+  /// The slices of a chart, in a fixed order, so an asset keeps its colour
+  /// from one screen to the next. Chain coins use [bitcoin] / [liquid].
+  List<Color> get series => [
+    hueBlue,
+    hueViolet,
+    hueGold,
+    hueRose,
+    hueTeal,
+    hueSlate,
+  ];
+
+  /// A surface washed with [hue]: the fill of a thing whose colour is data.
+  /// A few percent over [on] (the card by default), never a saturated slab.
+  Color wash(Color hue, {Color? on}) => Color.alphaBlend(
+    hue.withValues(alpha: isDark ? 0.10 : 0.07),
+    on ?? panel,
+  );
+
+  /// The hairline of a washed surface.
+  Color washEdge(Color hue) => hue.withValues(alpha: isDark ? 0.42 : 0.5);
+
+  // The roles in a transaction's flow.
+  /// Change: the part that comes back to this wallet.
+  Color get flowChange => hueBlue;
+
+  /// The network fee: the part that is spent and gone.
+  Color get flowFee => warning;
+
+  // ── Accent (runtime-mutable — never const) ─────────────────────────────────
+  // A fill, a line in the chart, the seal. Not a text colour on a dark
+  // surface: lightened enough to read there it would be the danger red.
+
+  Color get accent => AppColors.accent;
+
+  /// Ink on an accent fill.
+  Color get onAccent => AppColors.onAccent;
+
+  /// The accent as a glyph: the icon of a secondary or ghost button, the
+  /// icon of the current destination, a spinner. The accent itself where it
+  /// already stands 3:1 clear of the raised surface; otherwise lifted (on
+  /// dark) or deepened (on light) just far enough to — still the wallet's
+  /// own colour, and still short of the danger red, which is kept brighter
+  /// on purpose. Glyphs only: text is never set in it.
+  Color get accentGlyph {
+    final base = AppColors.accent;
+    // Asked for by every button and nav row on every build: worked out
+    // once per accent and brightness.
+    final key = Object.hash(base.toARGB32(), isDark);
+    if (key == _glyphKey) return _glyph;
+    _glyphKey = key;
+    return _glyph = _glyphOf(base);
+  }
+
+  static int? _glyphKey;
+  static Color _glyph = AppColors.accentDefault;
+
+  Color _glyphOf(Color base) {
+    final ground = panelInset;
+    if (_contrast(base, ground) >= 3) return base;
+    final hsl = HSLColor.fromColor(base);
+    var l = hsl.lightness;
+    for (var i = 0; i < 40; i++) {
+      l = (l + (isDark ? 0.02 : -0.02)).clamp(0.0, 1.0);
+      final c = hsl.withLightness(l).toColor();
+      if (_contrast(c, ground) >= 3) return c;
+    }
+    return hsl.withLightness(l).toColor();
+  }
+
+  static double _contrast(Color a, Color b) {
+    final la = a.computeLuminance();
+    final lb = b.computeLuminance();
+    final hi = la > lb ? la : lb;
+    final lo = la > lb ? lb : la;
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  /// The chart's area under its line — the one tint of the accent in the app.
+  Color get accentSoft =>
+      AppColors.accent.withValues(alpha: isDark ? 0.16 : 0.12);
+
+  // ── Elevation ──────────────────────────────────────────────────────────────
+
+  /// Cards cast nothing on dark (surface steps and hairlines do the work)
+  /// and a whisper on light.
+  List<BoxShadow> get panelShadow => isDark
+      ? const []
+      : const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 2,
+            offset: Offset(0, 1),
+          ),
+        ];
+
+  /// Things that float over the page: dialogs, sheets, menus, tooltips.
+  List<BoxShadow> get floatShadow => [
+    BoxShadow(
+      color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.1),
+      blurRadius: isDark ? 40 : 24,
+      offset: Offset(0, isDark ? 16 : 8),
+    ),
+  ];
 }

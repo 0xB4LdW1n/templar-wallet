@@ -5,10 +5,12 @@ import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/glass_dialog.dart';
+import '../../shared/widgets/app_dialog.dart';
+import '../../services/price_service.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import '../dashboard/models/dashboard_data.dart';
+import '../liquid/form_parts.dart';
 import 'models/swap_offer.dart';
 
 Future<AtomicSwap?> openAtomicOfferFlow(BuildContext context) {
@@ -68,9 +70,7 @@ class _AtomicOfferDialogState extends State<_AtomicOfferDialog> {
     final btc = _baseUnits(_btc.text, 8);
     final liquid = _baseUnits(_liquid.text, precision);
     if (btc == null || liquid == null || btc < 1000 || liquid < 1000) {
-      setState(
-        () => _error = 'Both amounts must be at least 1,000 base units.',
-      );
+      setState(() => _error = 'Both amounts must be at least 1,000 base units');
       return;
     }
     setState(() {
@@ -102,6 +102,14 @@ class _AtomicOfferDialogState extends State<_AtomicOfferDialog> {
     }
   }
 
+  /// The BTC amount's fiat echo, from the price service; null (no line)
+  /// until both an amount and a price exist.
+  String? _btcFiat() {
+    final sats = _baseUnits(_btc.text, 8);
+    if (sats == null || sats <= 0) return null;
+    return PriceService.instance.fiatDisplay(sats);
+  }
+
   @override
   Widget build(BuildContext context) => AppDialog(
     title: const Text('New cross-chain offer'),
@@ -119,68 +127,80 @@ class _AtomicOfferDialogState extends State<_AtomicOfferDialog> {
                   'keys never leave this device.',
             ),
             const SizedBox(height: AppSpacing.lg),
-            DropdownButtonFormField<String>(
-              initialValue: _direction,
-              decoration: const InputDecoration(labelText: 'You offer'),
-              items: const [
-                DropdownMenuItem(
-                  value: 'btc-to-liquid',
-                  child: Text('BTC · receive Liquid asset'),
-                ),
-                DropdownMenuItem(
-                  value: 'liquid-to-btc',
-                  child: Text('Liquid asset · receive BTC'),
-                ),
-              ],
-              onChanged: _busy
-                  ? null
-                  : (value) => setState(() => _direction = value!),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _btc,
-              enabled: !_busy,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'BTC amount',
-                suffixText: 'tBTC',
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            DropdownButtonFormField<AssetBalance>(
-              initialValue: _asset,
-              decoration: const InputDecoration(labelText: 'Liquid asset'),
-              items: [
-                for (final asset in widget.assets)
+            FieldBlock(
+              label: 'You offer',
+              child: DropdownButtonFormField<String>(
+                initialValue: _direction,
+                isExpanded: true,
+                items: const [
                   DropdownMenuItem(
-                    value: asset,
-                    child: Text('${asset.ticker} · ${asset.name}'),
+                    value: 'btc-to-liquid',
+                    child: Text('BTC · receive Liquid asset'),
                   ),
-              ],
-              onChanged: _busy
-                  ? null
-                  : (value) => setState(() => _asset = value),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _liquid,
-              enabled: !_busy,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+                  DropdownMenuItem(
+                    value: 'liquid-to-btc',
+                    child: Text('Liquid asset · receive BTC'),
+                  ),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() => _direction = value!),
               ),
-              decoration: InputDecoration(
-                labelText: 'Liquid amount',
-                suffixText: _asset?.ticker ?? 'asset',
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            FieldBlock(
+              label: 'BTC amount',
+              help: _btcFiat(),
+              child: TextField(
+                controller: _btc,
+                enabled: !_busy,
+                style: AppTypography.numeric,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(suffixText: 'tBTC'),
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            FieldBlock(
+              label: 'Liquid asset',
+              child: DropdownButtonFormField<AssetBalance>(
+                initialValue: _asset,
+                isExpanded: true,
+                items: [
+                  for (final asset in widget.assets)
+                    DropdownMenuItem(
+                      value: asset,
+                      child: Text(
+                        '${asset.ticker} · ${asset.name}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() => _asset = value),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            FieldBlock(
+              label: 'Liquid amount',
+              child: TextField(
+                controller: _liquid,
+                enabled: !_busy,
+                style: AppTypography.numeric,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  suffixText: _asset?.ticker ?? 'asset',
+                ),
               ),
             ),
             if (_error != null) ...[
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                _error!,
-                style: AppTypography.caption.copyWith(color: Colors.redAccent),
-              ),
+              const SizedBox(height: AppSpacing.lg),
+              DangerBanner(message: _error!),
             ],
           ],
         ),

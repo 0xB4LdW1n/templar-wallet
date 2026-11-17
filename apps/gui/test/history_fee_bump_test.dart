@@ -5,9 +5,14 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/bridge/wallet_bridge.dart';
+import 'package:templar_wallet/features/history/activity_rows.dart';
 import 'package:templar_wallet/features/history/history_screen.dart';
 import 'package:templar_wallet/features/history/models/transaction.dart';
+import 'package:templar_wallet/features/history/speed_up_button.dart';
+import 'package:templar_wallet/shared/widgets/buttons.dart';
+import 'package:templar_wallet/shared/widgets/live_edge.dart';
 import 'package:templar_wallet/theme/app_colors.dart';
+import 'package:templar_wallet/theme/app_scheme.dart';
 
 class _ActivityBridge implements WalletBridge {
   @override
@@ -59,15 +64,41 @@ void main() {
     await tester.pumpWidget(_screen(_ActivityBridge()));
     await tester.pumpAndSettle();
 
-    expect(find.text('PENDING'), findsOneWidget);
+    // The day group and the row's state both say it, in sentence case.
     expect(find.text('Pending'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, 'Speed up'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, 'Cancel'), findsOneWidget);
-    expect(find.byIcon(Icons.bolt_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.cancel_outlined), findsOneWidget);
+    // The row's subtitle: txid, then a warning dot (an inline placeholder in
+    // the plain text) and the word.
+    expect(find.textContaining(RegExp(r'· \uFFFC?Pending')), findsOneWidget);
+    expect(find.widgetWithText(SecondaryButton, 'Speed up'), findsOneWidget);
+    expect(find.widgetWithText(GhostButton, 'Cancel'), findsOneWidget);
+    // "Speed up" wears the yellow double bolt.
+    final bolt = tester.widget<DoubleBolt>(
+      find.descendant(
+        of: find.widgetWithText(SecondaryButton, 'Speed up'),
+        matching: find.byType(DoubleBolt),
+      ),
+    );
+    expect(
+      bolt.color,
+      AppScheme.of(tester.element(find.byType(HistoryScreen))).boostGlyph,
+    );
 
-    final pending = tester.widget<Text>(find.text('Pending'));
-    expect(pending.style?.color, isNot(AppColors.warning));
+    // The word stays quiet ink: the warning is the 6 px dot beside it,
+    // never the text.
+    final label = tester.widget<Text>(find.text('Pending'));
+    expect(label.style?.color, isNot(AppColors.warning));
+
+    // The row itself is marked: an orange outline that breathes for as long
+    // as the transaction is unconfirmed.
+    final scheme = AppScheme.of(tester.element(find.byType(HistoryScreen)));
+    final edge = tester.widget<LiveEdge>(
+      find.descendant(
+        of: find.byType(PendingEdge),
+        matching: find.byType(LiveEdge),
+      ),
+    );
+    expect(edge.mode, LiveEdgeMode.breathing);
+    expect(edge.color, scheme.pending);
 
     await tester.tap(find.text('Speed up'));
     await tester.pumpAndSettle();

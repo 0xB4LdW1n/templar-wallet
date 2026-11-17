@@ -10,20 +10,20 @@ import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../services/asset_registry_service.dart';
 import '../../services/cosigner_label_store.dart';
+import '../../services/fee_bump_store.dart';
 import '../../services/issued_asset_store.dart';
 import '../../services/price_history_service.dart';
 import '../../services/price_service.dart';
 import '../../shared/models/cosigner_label.dart';
-import '../../shared/relative_time.dart';
 import '../../shared/widgets/asset_card.dart';
+import '../../shared/widgets/asset_logo.dart';
 import '../../shared/widgets/badges.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/cosigner_label_editor.dart';
 import '../../shared/widgets/cosigner_ring.dart';
-import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/plain_card.dart';
 import '../../shared/widgets/hybrid_kit.dart';
 import '../../shared/widgets/list_rows.dart';
-import '../../shared/widgets/page_header.dart';
 import '../../shared/widgets/privacy.dart';
 import '../../shared/widgets/segmented_switch.dart';
 import '../../shared/widgets/value_chart.dart';
@@ -31,11 +31,22 @@ import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import '../history/fee_bump_fold.dart';
+import '../liquid/asset_detail_dialog.dart';
 import '../wallet_info/models/wallet_info.dart';
 import 'models/balance_history.dart';
 import '../utxos/models/pending_consolidation.dart';
 import '../../services/pending_consolidation_store.dart';
 import 'models/dashboard_data.dart';
+
+// The Dashboard — the app's first moment (design.md, "The moments").
+//
+// The balance and its chart are the one rich thing on the page; everything
+// around them is quiet. Top to bottom: the wallet's name and identity, the
+// hero (figure, its other denomination and its change, Send and Receive, the
+// chart and its two controls), the keys of a shared wallet, then one card per
+// chain with its lists inside it. Send is the screen's one filled accent
+// control.
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -154,6 +165,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return data.withActivity([...extra, ...data.recentActivity]);
   }
 
+  /// Drops the second transaction of a fee bump — a CPFP child, a replaced
+  /// original — from the recent activity, as Activity folds it into the
+  /// payment it belongs to: here it would read as a payment of its own.
+  Future<DashboardData> _withoutBumpTwins(
+    String walletId,
+    DashboardData data,
+  ) async {
+    final List<FeeBumpRecord> records;
+    try {
+      records = await FeeBumpStore.instance.listFor(walletId);
+    } catch (_) {
+      return data;
+    }
+    final gone = feeBumpHiddenTxids({
+      for (final t in data.recentActivity) t.txid: t.confirmations > 0,
+    }, records);
+    if (gone.isEmpty) return data;
+    return data.withActivity([
+      for (final t in data.recentActivity)
+        if (!gone.contains(t.txid)) t,
+    ]);
+  }
+
   Future<void> _load() async {
     if (!mounted) return;
     if (context.read<AppState>().syncState == SyncState.syncing) return;
@@ -183,9 +217,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // BDK picks it up on the next sync. Home would otherwise show the coins
     // gone from UTXOs and nothing at all here.
     data = await _withPendingConsolidations(walletId, data);
+    data = await _withoutBumpTwins(walletId, data);
     final hidden = await IssuedAssetStore.instance.getHiddenAssets();
     final issued = await IssuedAssetStore.instance.getIssuedAssets(walletId);
-    // Fingerprint + xpub for the hero badge — non-fatal if unavailable.
+    // Fingerprint + xpub for the header's identity line — non-fatal if
+    // unavailable.
     WalletInfo? info;
     try {
       info = await _bridge.getWalletInfo(walletId);
@@ -258,10 +294,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       body: PageBackground.flat(
         child: _loading
-            ? const DashboardShimmer()
+            ? const _DashboardSkeleton()
             : _data == null
             ? _DashboardError(
-                message: _error ?? 'Could not load the wallet.',
+                message: _error ?? 'Could not load the wallet',
                 onRetry: _reload,
                 onRepair: _canRepair ? _repairWallet : null,
                 repairing: _repairing,
@@ -278,6 +314,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     setState(() => _showHidden = !_showHidden),
               ),
       ),
+    );
+  }
+}
+
+// ── Page frame ────────────────────────────────────────────────────────────────
+
+/// The page's gutter and its capped content column, shared by the content,
+/// the skeleton and the error so the three line up exactly.
+class _PageColumn extends StatelessWidget {
+  const _PageColumn({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
+      children: [
+        Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: AppSpacing.contentMaxWidth,
+            ),
+            child: child,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -308,21 +372,18 @@ class _DashboardError extends StatelessWidget {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
     return Center(
-      // The ListView gutter does not apply on this branch: without it the
-      // card's border touches both screen edges on a phone.
       child: Padding(
-        padding: EdgeInsets.all(phone ? AppSpacing.lg : 0),
+        padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
-          child: GlassCard(
+          child: PlainCard(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.error_outline_rounded, size: 40, color: s.danger),
-                const SizedBox(height: AppSpacing.md),
                 Text(
                   'Could not open this wallet',
-                  style: AppTypography.sectionTitleOf(context),
+                  style: AppTypography.sectionTitle.copyWith(color: s.ink),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
@@ -330,7 +391,6 @@ class _DashboardError extends StatelessWidget {
                   style: AppTypography.bodySmall.copyWith(
                     color: s.inkSecondary,
                   ),
-                  textAlign: TextAlign.center,
                 ),
                 if (onRepair != null) ...[
                   const SizedBox(height: AppSpacing.md),
@@ -342,25 +402,31 @@ class _DashboardError extends StatelessWidget {
                     style: AppTypography.caption.copyWith(
                       color: s.inkSecondary,
                     ),
-                    textAlign: TextAlign.center,
                   ),
                 ],
-                const SizedBox(height: AppSpacing.lg),
-                PrimaryButton(
-                  label: 'Retry',
-                  onPressed: onRetry,
-                  isFullWidth: phone,
+                const SizedBox(height: AppSpacing.xl),
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    SecondaryButton(
+                      label: 'Try again',
+                      icon: Icons.refresh_outlined,
+                      onPressed: onRetry,
+                      isFullWidth: phone,
+                    ),
+                    if (onRepair != null)
+                      SecondaryButton(
+                        label: repairing
+                            ? 'Repairing…'
+                            : 'Rebuild from the keys',
+                        icon: Icons.healing_outlined,
+                        isLoading: repairing,
+                        isFullWidth: phone,
+                        onPressed: repairing ? null : onRepair,
+                      ),
+                  ],
                 ),
-                if (onRepair != null) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  SecondaryButton(
-                    label: repairing ? 'Repairing…' : 'Rebuild from the keys',
-                    icon: Icons.healing_rounded,
-                    isLoading: repairing,
-                    isFullWidth: true,
-                    onPressed: repairing ? null : onRepair,
-                  ),
-                ],
               ],
             ),
           ),
@@ -369,6 +435,156 @@ class _DashboardError extends StatelessWidget {
     );
   }
 }
+
+// ── Loading ───────────────────────────────────────────────────────────────────
+
+/// The page during the first load: the same blocks in the same places, their
+/// figures replaced by placeholders, so nothing jumps when the data lands.
+class _DashboardSkeleton extends StatelessWidget {
+  const _DashboardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    if (AppLayout.isPhone(context)) {
+      return _PageColumn(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            HeroPanel(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: AppSpacing.lg),
+                  const ShimmerBox(width: 96, height: 12),
+                  const SizedBox(height: AppSpacing.lg),
+                  const ShimmerBox(width: 200, height: 36),
+                  const SizedBox(height: AppSpacing.sm),
+                  const ShimmerBox(width: 240, height: 16),
+                  const SizedBox(height: AppSpacing.lg),
+                  const ShimmerBox(width: double.infinity, height: 160),
+                  const SizedBox(height: AppSpacing.xxxl + AppSpacing.lg),
+                  Row(
+                    children: const [
+                      Expanded(
+                        child: ShimmerBox(
+                          width: double.infinity,
+                          height: AppSpacing.phoneControlHeight,
+                          borderRadius: AppSpacing.radiusPhoneControl,
+                        ),
+                      ),
+                      SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: ShimmerBox(
+                          width: double.infinity,
+                          height: AppSpacing.phoneControlHeight,
+                          borderRadius: AppSpacing.radiusPhoneControl,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            const ShimmerBox(width: 64, height: 12),
+            const SizedBox(height: AppSpacing.md),
+            _skeletonCard(3),
+          ],
+        ),
+      );
+    }
+
+    return _PageColumn(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const ShimmerBox(width: 200, height: 32),
+          const SizedBox(height: AppSpacing.sm),
+          const ShimmerBox(width: 160, height: 16),
+          const SizedBox(height: AppSpacing.xl),
+          HeroPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(height: AppSpacing.sm),
+                          ShimmerBox(width: 96, height: 12),
+                          SizedBox(height: AppSpacing.md),
+                          ShimmerBox(width: 280, height: 44),
+                          SizedBox(height: AppSpacing.sm),
+                          ShimmerBox(width: 320, height: 16),
+                        ],
+                      ),
+                    ),
+                    ShimmerBox(width: 88, height: AppSpacing.controlHeight),
+                    SizedBox(width: AppSpacing.sm),
+                    ShimmerBox(width: 108, height: AppSpacing.controlHeight),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                const Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    ShimmerBox(width: 180, height: 32),
+                    SizedBox(width: AppSpacing.md),
+                    ShimmerBox(width: 280, height: 32),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                const ShimmerBox(width: double.infinity, height: 280),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _skeletonCard(3)),
+              const SizedBox(width: AppSpacing.xl),
+              Expanded(child: _skeletonCard(3)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _skeletonCard(int rows) => PlainCard(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            ShimmerBox(width: 24, height: 24, borderRadius: 999),
+            SizedBox(width: AppSpacing.md),
+            ShimmerBox(width: 96, height: 16),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        const ShimmerBox(width: 200, height: 28),
+        for (var i = 0; i < rows; i++) ...[
+          const SizedBox(height: AppSpacing.lg),
+          const Row(
+            children: [
+              ShimmerBox(width: kListTile, height: kListTile),
+              SizedBox(width: AppSpacing.md),
+              Expanded(child: ShimmerBox(width: double.infinity, height: 16)),
+            ],
+          ),
+        ],
+      ],
+    ),
+  );
+}
+
+// ── Content ───────────────────────────────────────────────────────────────────
 
 class _DashboardContent extends StatelessWidget {
   const _DashboardContent({
@@ -393,82 +609,209 @@ class _DashboardContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final phone = AppLayout.isPhone(context);
-    return ListView(
-      padding: phone
-          ? const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              AppSpacing.md,
-              AppSpacing.lg,
-              AppSpacing.lg,
-            )
-          : const EdgeInsets.all(AppSpacing.xl),
-      children: [
-        // The mobile shell's own header already names the wallet directly
-        // above; repeating it here cost ~116 dp before the balance. The
-        // network answer (TESTNET) moves into the hero's greeting row.
-        if (!phone)
+    return _PageColumn(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // The mobile shell's own header already names the wallet directly
+          // above; a phone opens on the balance.
+          if (!phone)
+            Reveal(
+              child: _WalletHeader(name: data.walletName, info: walletInfo),
+            ),
           Reveal(
-            child: PageHeader(
-              title: data.walletName,
-              subtitle: 'Dashboard',
-              actions: const [TestnetBadge()],
+            delay: 1,
+            child: _Hero(
+              data: data,
+              history: history,
+              historyFailed: historyFailed,
             ),
           ),
-        Reveal(
-          delay: 1,
-          child: _BrandHero(
-            data: data,
-            walletInfo: walletInfo,
-            history: history,
-            historyFailed: historyFailed,
+          // A shared wallet's keys, on the screen people actually open.
+          if ((walletInfo?.cosignerKeys.length ?? 0) > 1) ...[
+            const SizedBox(height: AppSpacing.xl),
+            Reveal(delay: 2, child: _CosignerCard(info: walletInfo!)),
+          ],
+          if (phone) ...[
+            // One assets list and one activity list, both chains folded in:
+            // a row already says which asset it is by its glyph and name.
+            const SizedBox(height: AppSpacing.xl),
+            Reveal(
+              delay: 2,
+              child: _PhoneAssets(
+                data: data,
+                issuedAssets: issuedAssets,
+                hiddenAssets: hiddenAssets,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            Reveal(delay: 3, child: _PhoneActivity(data: data)),
+          ] else ...[
+            const SizedBox(height: AppSpacing.xl),
+            Reveal(
+              delay: 2,
+              child: _ChainSections(
+                data: data,
+                issuedAssets: issuedAssets,
+                hiddenAssets: hiddenAssets,
+                showHidden: showHidden,
+                onToggleShowHidden: onToggleShowHidden,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Header (desktop) ──────────────────────────────────────────────────────────
+// The wallet's name as the page title, and under it the one line of identity:
+// what kind of wallet, and the master fingerprint that tells it apart from
+// every other wallet built on another seed. The network sits on the right.
+//
+// Same metrics as `PageHeader`, which takes its meta as a plain string; this
+// line carries a mono fingerprint and a copy button.
+
+class _WalletHeader extends StatelessWidget {
+  const _WalletHeader({required this.name, required this.info});
+
+  final String name;
+  final WalletInfo? info;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final type = context.select<AppState, String?>((st) => st.activeWalletType);
+    final fp = info?.masterFingerprint ?? '';
+    // A hardware wallet's label already carries its fingerprint.
+    final typeLabel = type == null || type.isEmpty
+        ? null
+        : (fp.isNotEmpty && type.contains(fp)
+              ? type.replaceAll(' ($fp)', '')
+              : type);
+    final hasMeta = typeLabel != null || fp.isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.pageTitle.copyWith(color: s.ink),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.lg),
+              const TestnetBadge(),
+            ],
           ),
+          if (hasMeta)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              child: Row(
+                children: [
+                  if (typeLabel != null)
+                    Text(
+                      typeLabel,
+                      style: AppTypography.caption.copyWith(
+                        color: s.inkSecondary,
+                      ),
+                    ),
+                  if (typeLabel != null && fp.isNotEmpty)
+                    Text(
+                      '  ·  ',
+                      style: AppTypography.caption.copyWith(color: s.inkFaint),
+                    ),
+                  if (fp.isNotEmpty) ...[
+                    Text(
+                      fp,
+                      style: AppTypography.monoSmall.copyWith(
+                        color: s.inkSecondary,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    _CopyKeyButton(info: info!),
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Copies the wallet's xpub — the fingerprint alone is not enough to
+/// reconstruct it — or the fingerprint when there is no single xpub
+/// (multisig). The glyph turns into a check for a moment.
+class _CopyKeyButton extends StatefulWidget {
+  const _CopyKeyButton({required this.info});
+  final WalletInfo info;
+
+  @override
+  State<_CopyKeyButton> createState() => _CopyKeyButtonState();
+}
+
+class _CopyKeyButtonState extends State<_CopyKeyButton> {
+  bool _copied = false;
+  Timer? _reset;
+
+  bool get _hasXpub => widget.info.xpub.isNotEmpty;
+
+  @override
+  void dispose() {
+    _reset?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _copy() async {
+    final text = _hasXpub ? widget.info.xpub : widget.info.masterFingerprint;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    setState(() => _copied = true);
+    _reset?.cancel();
+    _reset = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _copied = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final what = _hasXpub ? 'xpub' : 'fingerprint';
+    return IconButton(
+      tooltip: _copied ? 'Copied' : 'Copy $what',
+      onPressed: _copy,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(
+        width: AppSpacing.xl,
+        height: AppSpacing.xl,
+      ),
+      iconSize: AppSpacing.iconSmall,
+      color: s.inkSecondary,
+      icon: AnimatedSwitcher(
+        duration: AppMotion.of(context, AppMotion.quick),
+        switchInCurve: AppMotion.settle,
+        transitionBuilder: (child, anim) =>
+            FadeTransition(opacity: anim, child: child),
+        child: Icon(
+          _copied ? Icons.check_outlined : Icons.content_copy_outlined,
+          key: ValueKey(_copied),
         ),
-        // A shared wallet's keys, on the screen people actually open. The
-        // same card on both layouts: it is one ring and a caption, and a
-        // phone has room for exactly that.
-        if ((walletInfo?.cosignerKeys.length ?? 0) > 1) ...[
-          const SizedBox(height: AppSpacing.xl),
-          Reveal(delay: 2, child: _CosignerCard(info: walletInfo!)),
-        ],
-        if (phone) ...[
-          // One assets list and one activity list, both chains folded in. A
-          // row already says which chain it belongs to — its glyph, its name
-          // — so a panel per chain was saying it a second time and cost the
-          // screen two headers, two balances and two "latest" lists.
-          const SizedBox(height: AppSpacing.xl),
-          Reveal(
-            delay: 2,
-            child: _PhoneAssets(
-              data: data,
-              issuedAssets: issuedAssets,
-              hiddenAssets: hiddenAssets,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xl),
-          Reveal(delay: 3, child: _PhoneActivity(data: data)),
-        ] else ...[
-          const SizedBox(height: AppSpacing.lg),
-          Reveal(
-            delay: 2,
-            child: _ChainSections(
-              data: data,
-              issuedAssets: issuedAssets,
-              hiddenAssets: hiddenAssets,
-              showHidden: showHidden,
-              onToggleShowHidden: onToggleShowHidden,
-            ),
-          ),
-        ],
-      ],
+      ),
     );
   }
 }
 
 // ── Keys ────────────────────────────────────────────────────────────────────
-// Who can sign for this wallet, in the place people look first. Until now a
-// multisig's keys lived only on Wallet info, as raw `[fingerprint/path]tpub…`
-// strings — accurate, and no help at all in answering "is my phone still one
-// of these three".
+// Who can sign for this wallet, in the place people look first. It is the
+// roster, not a count of signatures on a transaction, so no seal here.
 
 class _CosignerCard extends StatefulWidget {
   const _CosignerCard({required this.info});
@@ -539,8 +882,9 @@ class _CosignerCardState extends State<_CosignerCard> {
     final entries = _entries;
     final phone = AppLayout.isPhone(context);
     final shown = math.min(entries.length, maxRingIcons);
+    final m = widget.info.requiredSigs;
 
-    return GlassCard(
+    return PlainCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -549,56 +893,57 @@ class _CosignerCardState extends State<_CosignerCard> {
               Expanded(
                 child: Text(
                   'Keys',
-                  style: AppTypography.sectionTitleOf(context),
+                  style: AppTypography.sectionTitle.copyWith(color: s.ink),
                 ),
               ),
-              TextButton(
+              GhostButton(
+                label: entries.length > shown ? 'See all' : 'Details',
                 onPressed: () => _openRoster(),
-                child: Text(entries.length > shown ? 'See all' : 'Details'),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
+          const SizedBox(height: AppSpacing.lg),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               CosignerRing(
                 entries: entries,
-                requiredSigs: widget.info.requiredSigs,
-                size: phone ? 124 : 138,
+                requiredSigs: m,
+                size: phone ? 124 : 136,
                 onTapEntry: (e) => _openRoster(e.index),
                 onTapMore: () => _openRoster(),
               ),
-              const SizedBox(width: AppSpacing.lg),
+              const SizedBox(width: AppSpacing.xl),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.info.requiredSigs == null
+                      m == null
                           ? '${entries.length} keys'
-                          : 'Any ${widget.info.requiredSigs} of '
-                                '${entries.length} keys can sign.',
-                      style: AppTypography.bodySmall,
+                          : 'Any $m of ${entries.length} keys can sign',
+                      style: AppTypography.body.copyWith(color: s.ink),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     // The names, in order, so the ring's glyphs mean
                     // something without hovering every one of them.
                     for (final e in entries.take(maxRingIcons))
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 2),
+                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                         child: Row(
                           children: [
                             Icon(
                               e.label.icon,
-                              size: 13,
-                              color: e.label.color ?? s.inkFaint,
+                              size: AppSpacing.iconSmall,
+                              color: s.inkSecondary,
                             ),
                             const SizedBox(width: AppSpacing.sm),
                             Expanded(
                               child: Text(
-                                e.isLocal ? '${e.name} · this device' : e.name,
-                                style: AppTypography.caption,
+                                e.isLocal ? '${e.name} · this wallet' : e.name,
+                                style: AppTypography.caption.copyWith(
+                                  color: s.inkSecondary,
+                                ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -623,305 +968,45 @@ class _CosignerCardState extends State<_CosignerCard> {
   }
 }
 
-// ── Brand hero ──────────────────────────────────────────────────────────────
-// A time-of-day greeting, the whole-portfolio net worth as the headline (the
-// wallet's name already sits in the page header above), the fingerprint as a
-// small copyable identity line, and the primary actions.
-
-class _BrandHero extends StatefulWidget {
-  const _BrandHero({
-    required this.data,
-    required this.walletInfo,
-    required this.history,
-    required this.historyFailed,
-  });
-  final DashboardData data;
-  final WalletInfo? walletInfo;
-  final BalanceHistory? history;
-  final bool historyFailed;
-
-  @override
-  State<_BrandHero> createState() => _BrandHeroState();
-}
-
-class _BrandHeroState extends State<_BrandHero> {
-  /// Phone only: the headline shows the coin balance instead of the fiat
-  /// estimate — and the chart follows it. One tap on the number swaps both,
-  /// where the desktop keeps a separate unit switch under the chart.
-  bool _coinFirst = false;
-
-  String get _greeting {
-    final h = DateTime.now().hour;
-    if (h < 12) return 'Good morning';
-    if (h < 18) return 'Good afternoon';
-    return 'Good evening';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final phone = AppLayout.isPhone(context);
-    // Pure watch-only wallets cannot sign — no Send anywhere.
-    final watchOnly = context.watch<AppState>().isActiveWalletWatchOnly;
-
-    final greeting = Text(
-      _greeting.toUpperCase(),
-      style: AppTypography.navSection.copyWith(
-        color: s.inkSecondary,
-        letterSpacing: 1.4,
-      ),
-    );
-
-    if (phone) {
-      // The wallet's front door, and the only tile on the page that is not a
-      // list: what it is worth, what it did, and the two verbs. One eyebrow
-      // names the figure and the network, the number owns the row, the chart
-      // states the last stretch, and Send is the single filled control on the
-      // screen. The greeting and the fingerprint are gone — the first was a
-      // row of chrome above the balance, the second is identity and lives in
-      // Settings › Wallet info.
-      return HeroPanel(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.cardPaddingSmall + 2,
-          AppSpacing.cardPaddingSmall,
-          AppSpacing.cardPaddingSmall + 2,
-          AppSpacing.cardPaddingSmall + 2,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _HeroEyebrow(),
-            const SizedBox(height: AppSpacing.xs),
-            _PhoneBalance(
-              assets: widget.data.assets,
-              coinFirst: _coinFirst,
-              onSwap: () => setState(() => _coinFirst = !_coinFirst),
-              note: _lastMoveNote(widget.data.recentActivity),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            _PortfolioChart(
-              history: widget.history,
-              historyFailed: widget.historyFailed,
-              fiatOverride: !_coinFirst,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            _HeroActions(showSend: !watchOnly),
-          ],
-        ),
-      );
-    }
-
-    final send = AccentButton(
-      label: 'Send',
-      icon: Icons.send,
-      isFullWidth: phone,
-      onPressed: () => context.go(AppRoutes.send),
-    );
-    final receive = SecondaryButton(
-      label: 'Receive',
-      icon: Icons.call_received,
-      isFullWidth: phone,
-      onPressed: () => context.go(AppRoutes.receive),
-    );
-
-    return HeroPanel(
-      padding: EdgeInsets.all(
-        phone ? AppSpacing.cardPaddingSmall : AppSpacing.cardPadding,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (phone)
-                // The page header is gone on a phone; the network chip
-                // takes the greeting row's right edge instead.
-                Row(
-                  children: [
-                    Expanded(child: greeting),
-                    const TestnetBadge(),
-                  ],
-                )
-              else
-                greeting,
-              const SizedBox(height: AppSpacing.sm),
-              _NetWorth(assets: widget.data.assets),
-              if (widget.walletInfo != null) ...[
-                const SizedBox(height: AppSpacing.xs),
-                _WalletKeyBadge(info: widget.walletInfo!),
-              ],
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          _PortfolioChart(
-            history: widget.history,
-            historyFailed: widget.historyFailed,
-          ),
-          SizedBox(height: phone ? AppSpacing.md : AppSpacing.lg),
-          if (phone)
-            // Two equal halves; Receive alone spans the width.
-            Row(
-              children: [
-                if (!watchOnly) ...[
-                  Expanded(child: send),
-                  const SizedBox(width: AppSpacing.sm),
-                ],
-                Expanded(child: receive),
-              ],
-            )
-          else
-            Row(
-              children: [
-                if (!watchOnly) ...[send, const SizedBox(width: AppSpacing.sm)],
-                receive,
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Net worth headline ────────────────────────────────────────────────────────
-// Whole-portfolio value: the fiat sum of native coins (BTC + LBTC) in the
-// user's selected currency, with the Bitcoin-denominated equivalent beneath.
-// Tokens without a price feed are shown in the assets grid but not valued here.
+// ── Hero ──────────────────────────────────────────────────────────────────────
+// The figure, its other denomination and its change, the two verbs, and the
+// chart. The figure is the whole-portfolio value of the native coins (BTC +
+// LBTC); tokens without a price feed are listed below but not valued here.
 //
-// Clicking the headline swaps the two lines: coin-denominated on top, fiat
-// underneath. Fiat is an estimate from a third-party feed and the coin balance
-// is the fact, so getting to the fact must never cost more than one click.
-// The choice is per-visit state, not a preference — the settings toggle
-// (BTC/sats) still decides *which* coin unit this shows.
-
-class _NetWorth extends StatefulWidget {
-  const _NetWorth({required this.assets});
-  final List<AssetBalance> assets;
-
-  @override
-  State<_NetWorth> createState() => _NetWorthState();
-}
-
-class _NetWorthState extends State<_NetWorth> {
-  /// Headline shows the coin balance instead of the fiat estimate.
-  bool _coinFirst = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final useSats = context.select<AppState, bool>((st) => st.useSats);
-    // Depend on the currency too so the headline rebuilds when it changes.
-    context.select<AppState, String>((st) => st.fiatCurrency);
-    final hidden = balancesHidden(context);
-    final phone = AppLayout.isPhone(context);
-    final nativeSats = widget.assets
-        .where((a) => a.ticker == 'BTC' || a.ticker == 'LBTC')
-        .fold<int>(0, (sum, a) => sum + a.amount);
-    final price = PriceService.instance;
-    return AnimatedBuilder(
-      animation: price,
-      builder: (_, _) {
-        final unitStr = PriceService.formatUnit(nativeSats, sat: useSats);
-        // With no price feed there is only one number to show, so the swap has
-        // nothing to swap to and the headline stays plain text.
-        final swappable = price.hasPrice;
-        final showCoin = _coinFirst || !swappable;
-        final headline = showCoin
-            ? unitStr
-            : price.totalFiatDisplay(nativeSats);
-        final under = !swappable
-            ? 'Net worth'
-            : showCoin
-            ? 'Net worth · ≈ ${price.totalFiatDisplay(nativeSats)}'
-            : 'Net worth · ≈ $unitStr';
-
-        Widget headlineText = GradientText(
-          hidden ? kMaskedAmount : headline,
-          style: phone
-              ? AppTypography.balanceHeroOf(context)
-              : AppTypography.balanceHero.copyWith(fontSize: 38),
-          // One line on a phone: the FittedBox below scales it, never wraps.
-          maxLines: phone ? 1 : null,
-        );
-        if (phone) {
-          // A long sats figure scales down to the column instead of wrapping
-          // the headline onto two lines.
-          headlineText = FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: headlineText,
-          );
-        }
-        if (swappable) {
-          // Touch has no hover cursor or tooltip to say the number is
-          // tappable, so on a phone a small swap glyph rides beside it.
-          final body = phone
-              ? Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(child: headlineText),
-                    const SizedBox(width: AppSpacing.xs),
-                    Icon(Icons.swap_vert_rounded, size: 18, color: s.inkFaint),
-                  ],
-                )
-              : headlineText;
-          headlineText = MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              onTap: () => setState(() => _coinFirst = !_coinFirst),
-              behavior: HitTestBehavior.opaque,
-              child: Tooltip(
-                message: showCoin
-                    ? 'Show ${price.currency}'
-                    : 'Show ${useSats ? 'sats' : 'BTC'}',
-                child: body,
-              ),
-            ),
-          );
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Flexible(child: headlineText),
-                const SizedBox(width: AppSpacing.sm),
-                const PrivacyToggle(size: 19),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              hidden && swappable ? 'Net worth · hidden' : under,
-              style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-// ── Portfolio chart ───────────────────────────────────────────────────────────
-// Native-coin balance over time, valued in fiat by default (matching the
-// headline above) or shown as the raw coin balance. Everything is derived from
-// two inputs: the wallet's balance history (a step function) and the BTC price
-// series — neither of which is required for the hero to render.
+// Tapping the figure swaps fiat for coin, and the chart follows: one unit for
+// the whole hero, one way to change it. Fiat is an estimate from a third-party
+// feed and the coin balance is the fact, so getting to the fact never costs
+// more than one tap. The choice is per-visit state, not a preference — the
+// settings toggle (BTC/sats) still decides *which* coin unit this shows.
+//
+// The chart is native-coin balance over time, valued in fiat (or shown as the
+// raw coin balance). Everything is derived from two inputs: the wallet's
+// balance history (a step function) and the BTC price series — neither of
+// which is required for the hero to render.
 
 enum _ChartRange {
-  h24('24H', '1D', Duration(hours: 24), 1),
-  d7('7D', '1W', Duration(days: 7), 7),
-  d30('30D', '1M', Duration(days: 30), 30),
-  d90('90D', '3M', Duration(days: 90), 90),
-  y1('1Y', '1Y', Duration(days: 365), 365),
-  all('All', 'ALL', null, 365);
+  h24('24H', '1D', 'in 24 hours', Duration(hours: 24), 1),
+  d7('7D', '1W', 'in 7 days', Duration(days: 7), 7),
+  d30('30D', '1M', 'in 30 days', Duration(days: 30), 30),
+  d90('90D', '3M', 'in 90 days', Duration(days: 90), 90),
+  y1('1Y', '1Y', 'in 1 year', Duration(days: 365), 365),
+  all('All', 'All', 'all time', null, 365);
 
-  const _ChartRange(this.label, this.shortLabel, this.window, this.priceDays);
+  const _ChartRange(
+    this.label,
+    this.shortLabel,
+    this.period,
+    this.window,
+    this.priceDays,
+  );
 
   final String label;
 
   /// The phone's word for the range: six of them share one row there.
   final String shortLabel;
+
+  /// What a change over this range is compared to: "+3.1% in 30 days".
+  final String period;
 
   /// null = the whole history.
   final Duration? window;
@@ -930,29 +1015,28 @@ enum _ChartRange {
 
 enum _ChainFilter { all, btc, liquid }
 
-class _PortfolioChart extends StatefulWidget {
-  const _PortfolioChart({
+class _Hero extends StatefulWidget {
+  const _Hero({
+    required this.data,
     required this.history,
     required this.historyFailed,
-    this.fiatOverride,
   });
+  final DashboardData data;
   final BalanceHistory? history;
 
   /// The history call failed — say so instead of loading forever.
   final bool historyFailed;
 
-  /// Fiat or coin, decided outside (the phone hero's headline tap). Null
-  /// leaves the choice to the unit switch under the chart, as on desktop.
-  final bool? fiatOverride;
-
   @override
-  State<_PortfolioChart> createState() => _PortfolioChartState();
+  State<_Hero> createState() => _HeroState();
 }
 
-class _PortfolioChartState extends State<_PortfolioChart> {
+class _HeroState extends State<_Hero> {
+  /// The figure (and the chart) shows the coin balance instead of fiat.
+  bool _coinFirst = false;
+
   _ChartRange _range = _ChartRange.d30;
   _ChainFilter _chain = _ChainFilter.all;
-  bool _fiatMode = true;
 
   List<PricePoint> _prices = const [];
   bool _pricesLoaded = false;
@@ -962,6 +1046,9 @@ class _PortfolioChartState extends State<_PortfolioChart> {
   List<ChartPoint>? _series;
   String _seriesKey = '';
   Timer? _edgeTimer;
+
+  /// The sample under the desktop pointer, read out in the controls row.
+  ChartPoint? _hover;
 
   @override
   void initState() {
@@ -1007,7 +1094,7 @@ class _PortfolioChartState extends State<_PortfolioChart> {
   }
 
   @override
-  void didUpdateWidget(covariant _PortfolioChart old) {
+  void didUpdateWidget(covariant _Hero old) {
     super.didUpdateWidget(old);
     // The "All" range asks for as many days of price as the history spans.
     if (old.history != widget.history) _loadPrices();
@@ -1053,10 +1140,26 @@ class _PortfolioChartState extends State<_PortfolioChart> {
 
   void _selectRange(_ChartRange r) {
     if (r == _range) return;
-    setState(() => _range = r);
+    setState(() {
+      _range = r;
+      _hover = null;
+    });
     _syncEdgeTimer();
     _loadPrices();
   }
+
+  void _selectChain(_ChainFilter c) {
+    if (c == _chain) return;
+    setState(() {
+      _chain = c;
+      _hover = null;
+    });
+  }
+
+  void _swapUnit() => setState(() {
+    _coinFirst = !_coinFirst;
+    _hover = null;
+  });
 
   int _chainSats(BalanceHistoryPoint p) => switch (_chain) {
     _ChainFilter.all => p.btcSats + p.lbtcSats,
@@ -1123,9 +1226,10 @@ class _PortfolioChartState extends State<_PortfolioChart> {
     return out;
   }
 
-  /// Built series, memoized on its inputs. [ValueChart] restarts its draw
-  /// animation whenever the list identity changes, so an unrelated rebuild
-  /// (a price tick, a sync notification) must hand back the very same list.
+  /// Built series, memoized on its inputs. [ValueChart] draws itself again
+  /// whenever the list identity changes, so an unrelated rebuild (a price
+  /// tick, a sync notification, the pointer moving) must hand back the very
+  /// same list.
   List<ChartPoint> _seriesPoints(BalanceHistory? history, bool fiat) {
     // Keyed on content, not identity: a hash collision here would serve a
     // stale line for a different range or balance.
@@ -1173,292 +1277,646 @@ class _PortfolioChartState extends State<_PortfolioChart> {
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final useSats = context.select<AppState, bool>((st) => st.useSats);
-    final hidden = balancesHidden(context);
-    final history = widget.history;
     final phone = AppLayout.isPhone(context);
+    final useSats = context.select<AppState, bool>((st) => st.useSats);
+    // Depend on the currency too, so the figure rebuilds when it changes.
+    context.select<AppState, String>((st) => st.fiatCurrency);
+    final hidden = balancesHidden(context);
+    // Pure watch-only wallets cannot sign — no Send anywhere.
+    final watchOnly = context.select<AppState, bool>(
+      (st) => st.isActiveWalletWatchOnly,
+    );
+    final history = widget.history;
+    int held(String ticker) => widget.data.assets
+        .where((a) => a.ticker == ticker)
+        .fold<int>(0, (sum, a) => sum + a.amount);
+    final bothChains =
+        history != null && history.hasBitcoin && history.hasLiquid;
+    // The chain switch is one choice for the whole hero: it filters the
+    // figure, its other denomination and the chart together. It only exists
+    // on a wallet with both chains, so anything else reads as "all".
+    final chain = bothChains ? _chain : _ChainFilter.all;
+    final nativeSats = switch (chain) {
+      _ChainFilter.all => held('BTC') + held('LBTC'),
+      _ChainFilter.btc => held('BTC'),
+      _ChainFilter.liquid => held('LBTC'),
+    };
+    final balanceLabel = switch (chain) {
+      _ChainFilter.all => 'Total balance',
+      _ChainFilter.btc => 'Bitcoin balance',
+      _ChainFilter.liquid => 'Liquid balance',
+    };
 
     return AnimatedBuilder(
       animation: PriceService.instance,
       builder: (context, _) {
-        // Offline (or rate-limited): coin balance is still the truth, so show
-        // that rather than an empty chart.
+        final price = PriceService.instance;
+        // With no price feed there is only one number to show, so the swap
+        // has nothing to swap to and the figure stays plain text.
+        final swappable = price.hasPrice;
+        final showCoin = _coinFirst || !swappable;
+        final coinStr = PriceService.formatUnit(
+          nativeSats,
+          sat: useSats,
+          coin: chain == _ChainFilter.liquid ? 'LBTC' : 'BTC',
+        );
+        final fiatStr = price.totalFiatDisplay(nativeSats);
+
+        // Offline (or rate-limited): coin balance is still the truth, so the
+        // chart shows that rather than nothing. Until the series lands,
+        // priceAt falls back to the spot price; with neither, every balance
+        // would be multiplied by zero into a flat line, so stay on coin.
         final priceUnavailable = _pricesLoaded && _prices.isEmpty;
-        // Until the series lands, priceAt falls back to the spot price. With
-        // neither we would multiply every balance by zero and draw a flat $0
-        // line, so stay on coin balance until some price exists. Computed
-        // inside the builder so the arrival of the spot price re-evaluates it.
-        final hasAnyPrice =
-            _prices.isNotEmpty || PriceService.instance.btcPrice > 0;
-        final fiatWanted = widget.fiatOverride ?? _fiatMode;
-        final fiat = fiatWanted && !priceUnavailable && hasAnyPrice;
+        final hasAnyPrice = _prices.isNotEmpty || price.btcPrice > 0;
+        final fiat = !showCoin && !priceUnavailable && hasAnyPrice;
         final points = _seriesPoints(history, fiat);
-        final symbol = PriceService.instance.symbol;
-        // Only meaningful when the wallet actually has both chains.
-        final bothChains =
-            history != null && history.hasBitcoin && history.hasLiquid;
+        final symbol = price.symbol;
+
+        final figure = _Figure(
+          value: hidden ? kMaskedAmount : (showCoin ? coinStr : fiatStr),
+          splitUnit: showCoin && !hidden,
+          swapTo: swappable
+              ? (showCoin ? price.currency : (useSats ? 'sats' : 'BTC'))
+              : null,
+          onSwap: swappable ? _swapUnit : null,
+        );
+        final quiet = _QuietLine(
+          other: swappable && !hidden ? (showCoin ? fiatStr : coinStr) : null,
+          delta: _delta(points),
+          period: _range.period,
+        );
 
         final chart = ValueChart(
-          height: phone ? 136 : 132,
+          height: phone ? 160 : 280,
           points: points,
-          // A bare line at this size read as decoration. Three rules behind
-          // it and a dot landing on the newest sample make it a chart, at no
-          // cost in labels. Desktop keeps the plain line it always had.
-          gridLines: phone ? 3 : 0,
-          markLatest: phone,
+          axes: true,
+          markLatest: true,
+          showReadout: phone,
+          onCursor: phone ? null : (p) => setState(() => _hover = p),
           formatValue: (v) => hidden
               ? kMaskedAmount
               : fiat
-              ? _fiatLabel(v, symbol)
+              ? PriceService.formatFiat(v, symbol)
               : PriceService.formatUnit(v.round(), sat: useSats),
+          formatAxis: (v, step) => hidden
+              ? ''
+              : fiat
+              ? _axisLabel(v, step, prefix: symbol)
+              : useSats
+              ? _axisLabel(v, step)
+              : _axisLabel(v / 1e8, step / 1e8),
           emptyMessage: history != null
-              ? 'Not enough history yet'
+              ? 'No history yet'
               : widget.historyFailed
               ? 'Balance history unavailable'
               : 'Loading history…',
-          // Replay the sweep only when the user changes the view, not on
-          // the per-minute edge refresh.
+          // Draw again only when the user changes the view, not on the
+          // per-minute edge refresh.
           animationKey: '${_range.name}|${_chain.name}|$fiat',
         );
-        final priceNote = fiatWanted && priceUnavailable
+        final priceNote = !showCoin && priceUnavailable
             ? Padding(
-                padding: const EdgeInsets.only(top: AppSpacing.xs),
+                padding: const EdgeInsets.only(top: AppSpacing.sm),
                 child: Text(
-                  'Price history unavailable — showing coin balance',
+                  'No price history yet — the chart shows the coin balance',
                   style: AppTypography.caption.copyWith(color: s.inkFaint),
                 ),
               )
             : null;
 
         if (phone) {
-          // The chart first, then one row of words for the range with the
-          // change over it at the right, and — only when the wallet has
-          // both chains — a second, quieter row to pick one. The unit is
-          // not here: the headline above decides it for both. Bordered
-          // tracks with eleven cells stood between the balance and the
-          // actions; words in a row do not.
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              chart,
-              ?priceNote,
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                children: [
-                  Expanded(
-                    child: _TextChips<_ChartRange>(
-                      selected: _range,
-                      onChanged: _selectRange,
-                      spread: true,
-                      options: [
-                        for (final r in _ChartRange.values)
-                          (r, r.shortLabel, null),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  _DeltaReadout(
-                    delta: _delta(points),
-                    rangeLabel: _range.shortLabel,
-                    showRange: false,
-                  ),
-                ],
-              ),
-              if (bothChains) ...[
-                const SizedBox(height: AppSpacing.xs),
-                _TextChips<_ChainFilter>(
-                  selected: _chain,
-                  onChanged: (v) => setState(() => _chain = v),
-                  options: [
-                    (_ChainFilter.all, 'All', null),
-                    (_ChainFilter.btc, 'BTC', s.bitcoin),
-                    (_ChainFilter.liquid, 'Liquid', s.liquid),
-                  ],
-                ),
-              ],
-            ],
+          return _phoneHero(
+            context,
+            balanceLabel: balanceLabel,
+            figure: figure,
+            quiet: quiet,
+            chart: chart,
+            priceNote: priceNote,
+            bothChains: bothChains,
+            watchOnly: watchOnly,
           );
         }
-
-        // Phone: SegmentedSwitch already makes every segment a 48-dp touch
-        // row; `expand` spreads the track across the column so six range
-        // segments share 351 dp instead of overflowing on a narrow phone.
-        final rangeSwitch = SegmentedSwitch<_ChartRange>(
-          dense: true,
-          expand: phone,
-          selected: _range,
-          onChanged: _selectRange,
-          options: [
-            for (final r in _ChartRange.values)
-              SegOption(value: r, label: r.label),
-          ],
-        );
-        final chainSwitch = bothChains
-            ? SegmentedSwitch<_ChainFilter>(
-                dense: true,
-                expand: phone,
-                selected: _chain,
-                onChanged: (v) => setState(() => _chain = v),
-                options: [
-                  const SegOption(value: _ChainFilter.all, label: 'All'),
-                  SegOption(
-                    value: _ChainFilter.btc,
-                    label: 'BTC',
-                    color: s.bitcoin,
-                  ),
-                  SegOption(
-                    value: _ChainFilter.liquid,
-                    label: 'Liquid',
-                    color: s.liquid,
-                  ),
-                ],
-              )
-            : null;
-        final unitSwitch = SegmentedSwitch<bool>(
-          dense: true,
-          // Alone on its row it fills the column like the range track above;
-          // beside the chain track it keeps its intrinsic two-segment width.
-          expand: phone && chainSwitch == null,
-          selected: fiat,
-          onChanged: (v) => setState(() => _fiatMode = v),
-          options: [
-            SegOption(value: true, label: PriceService.instance.currency),
-            SegOption(value: false, label: useSats ? 'sats' : 'BTC'),
-          ],
-        );
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _DeltaReadout(delta: _delta(points), rangeLabel: _range.label),
-            const SizedBox(height: AppSpacing.sm),
-            chart,
-            ?priceNote,
-            const SizedBox(height: AppSpacing.md),
-            // Three questions, three tracks: how far back, which chain, which
-            // unit. They used to be one run of 11 near-identical 11px chips
-            // where only a hairline said where one group ended and the next
-            // began — you had to read every label to find the one you wanted.
-            if (phone) ...[
-              // Two rows: the range track across the column, then chain and
-              // unit side by side. A Wrap here left ragged runs.
-              rangeSwitch,
-              const SizedBox(height: AppSpacing.sm),
-              if (chainSwitch != null)
-                Row(
-                  children: [
-                    Expanded(child: chainSwitch),
-                    const SizedBox(width: AppSpacing.sm),
-                    unitSwitch,
-                  ],
-                )
-              else
-                unitSwitch,
-            ] else
-              Wrap(
-                spacing: AppSpacing.xl,
-                runSpacing: AppSpacing.md,
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  rangeSwitch,
-                  Wrap(
-                    spacing: AppSpacing.md,
-                    runSpacing: AppSpacing.sm,
-                    alignment: WrapAlignment.end,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [?chainSwitch, unitSwitch],
-                  ),
-                ],
-              ),
-          ],
+        return _desktopHero(
+          context,
+          balanceLabel: balanceLabel,
+          figure: figure,
+          quiet: quiet,
+          chart: chart,
+          priceNote: priceNote,
+          bothChains: bothChains,
+          watchOnly: watchOnly,
+          hidden: hidden,
+          fiat: fiat,
+          symbol: symbol,
+          useSats: useSats,
         );
       },
     );
   }
-}
 
-/// Fiat labels on the chart follow the net-worth headline's compaction.
-String _fiatLabel(double value, String symbol) {
-  if (value >= 1000000) {
-    return '$symbol${(value / 1000000).toStringAsFixed(2)}M';
-  }
-  if (value >= 1000) return '$symbol${(value / 1000).toStringAsFixed(2)}k';
-  return '$symbol${value.toStringAsFixed(2)}';
-}
-
-class _DeltaReadout extends StatelessWidget {
-  const _DeltaReadout({
-    required this.delta,
-    required this.rangeLabel,
-    this.showRange = true,
-  });
-
-  /// Percent change over the range; null when there is not enough history.
-  final double? delta;
-  final String rangeLabel;
-
-  /// Name the range after the figure. Off where the range chips sit on the
-  /// same row and already say it.
-  final bool showRange;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _desktopHero(
+    BuildContext context, {
+    required String balanceLabel,
+    required Widget figure,
+    required Widget quiet,
+    required Widget chart,
+    required Widget? priceNote,
+    required bool bothChains,
+    required bool watchOnly,
+    required bool hidden,
+    required bool fiat,
+    required String symbol,
+    required bool useSats,
+  }) {
     final s = AppScheme.of(context);
-    final d = delta;
-    // Sub-0.05% moves read as noise, not as a gain.
-    final flat = d == null || d.abs() < 0.05;
-    final up = d != null && d > 0;
-    final color = flat ? s.inkFaint : (up ? s.success : s.danger);
+    final hover = _hover;
 
-    // The one-node reading and the shrink-wrapped row belong to the phone,
-    // where the figure shares a line with the range words. Desktop keeps the
-    // three separate nodes and the stretched row it always had.
-    final phone = AppLayout.isPhone(context);
-    return Semantics(
-      label: phone
-          ? (d == null
-                ? 'No change data'
-                : '${d.toStringAsFixed(1)} percent over $rangeLabel')
-          : null,
-      excludeSemantics: phone,
-      child: Row(
-        mainAxisSize: phone ? MainAxisSize.min : MainAxisSize.max,
-        children: [
-          Icon(
-            flat
-                ? Icons.remove_rounded
-                : (up
-                      ? Icons.arrow_drop_up_rounded
-                      : Icons.arrow_drop_down_rounded),
-            size: flat ? 13 : 20,
-            color: color,
-          ),
-          const SizedBox(width: 1),
-          Text(
-            d == null ? '—' : '${d > 0 ? '+' : ''}${d.toStringAsFixed(1)}%',
-            style: AppTypography.numericSmall.copyWith(color: color),
-          ),
-          if (showRange) ...[
-            const SizedBox(width: AppSpacing.xs),
-            Text(
-              '($rangeLabel)',
-              style: AppTypography.caption.copyWith(color: s.inkFaint),
+    final rangeSwitch = SegmentedSwitch<_ChartRange>(
+      dense: true,
+      selected: _range,
+      onChanged: _selectRange,
+      options: [
+        for (final r in _ChartRange.values) SegOption(value: r, label: r.label),
+      ],
+    );
+    final chainSwitch = bothChains
+        ? SegmentedSwitch<_ChainFilter>(
+            dense: true,
+            selected: _chain,
+            onChanged: _selectChain,
+            options: [
+              const SegOption(value: _ChainFilter.all, label: 'All'),
+              SegOption(value: _ChainFilter.btc, label: 'BTC', dot: s.bitcoin),
+              SegOption(
+                value: _ChainFilter.liquid,
+                label: 'Liquid',
+                dot: s.liquid,
+              ),
+            ],
+          )
+        : null;
+
+    // The pointer's sample, where the controls row has room for it: the
+    // date quiet, the value in ink. Neutral — it is a reading, not an action.
+    final readout = hover == null
+        ? const SizedBox.shrink()
+        : Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: '${_stamp(hover.time)}  ',
+                  style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
+                ),
+                TextSpan(
+                  text: hidden
+                      ? kMaskedAmount
+                      : fiat
+                      ? PriceService.formatFiat(hover.value, symbol)
+                      : PriceService.formatUnit(
+                          hover.value.round(),
+                          sat: useSats,
+                        ),
+                  style: AppTypography.numeric.copyWith(color: s.ink),
+                ),
+              ],
             ),
-          ],
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          );
+
+    return HeroPanel(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _BalanceLabel(label: balanceLabel),
+                    const SizedBox(height: AppSpacing.xs),
+                    figure,
+                    const SizedBox(height: AppSpacing.xs),
+                    quiet,
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.lg),
+              // The hero's lead pair: large, and one width for both.
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!watchOnly) ...[
+                    SizedBox(
+                      width: _heroActionWidth,
+                      child: PrimaryButton(
+                        label: 'Send',
+                        icon: Icons.arrow_outward_outlined,
+                        isFullWidth: true,
+                        large: true,
+                        onPressed: () => context.go(AppRoutes.send),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                  ],
+                  SizedBox(
+                    width: _heroActionWidth,
+                    child: SecondaryButton(
+                      label: 'Receive',
+                      icon: Icons.call_received_outlined,
+                      isFullWidth: true,
+                      large: true,
+                      onPressed: () => context.go(AppRoutes.receive),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          Row(
+            children: [
+              Expanded(child: readout),
+              if (chainSwitch != null) ...[
+                const SizedBox(width: AppSpacing.lg),
+                chainSwitch,
+                const SizedBox(width: AppSpacing.md),
+              ],
+              rangeSwitch,
+            ],
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          chart,
+          ?priceNote,
+        ],
+      ),
+    );
+  }
+
+  Widget _phoneHero(
+    BuildContext context, {
+    required String balanceLabel,
+    required Widget figure,
+    required Widget quiet,
+    required Widget chart,
+    required Widget? priceNote,
+    required bool bothChains,
+    required bool watchOnly,
+  }) {
+    final s = AppScheme.of(context);
+    final receive = SecondaryButton(
+      label: 'Receive',
+      icon: Icons.call_received_outlined,
+      isFullWidth: true,
+      onPressed: () => context.go(AppRoutes.receive),
+    );
+    return HeroPanel(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // The network is stated once on a phone, here, where the number
+          // is read.
+          Row(
+            children: [
+              Expanded(
+                child: _BalanceLabel(label: balanceLabel, withToggle: false),
+              ),
+              const TestnetBadge(),
+              const SizedBox(width: AppSpacing.xs),
+              const PrivacyToggle(),
+            ],
+          ),
+          figure,
+          const SizedBox(height: AppSpacing.xs),
+          quiet,
+          const SizedBox(height: AppSpacing.lg),
+          chart,
+          ?priceNote,
+          const SizedBox(height: AppSpacing.sm),
+          _TextChips<_ChartRange>(
+            selected: _range,
+            onChanged: _selectRange,
+            spread: true,
+            options: [
+              for (final r in _ChartRange.values) (r, r.shortLabel, null),
+            ],
+          ),
+          if (bothChains)
+            _TextChips<_ChainFilter>(
+              selected: _chain,
+              onChanged: _selectChain,
+              options: [
+                (_ChainFilter.all, 'All', null),
+                (_ChainFilter.btc, 'BTC', s.bitcoin),
+                (_ChainFilter.liquid, 'Liquid', s.liquid),
+              ],
+            ),
+          const SizedBox(height: AppSpacing.lg),
+          if (watchOnly)
+            receive
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: PrimaryButton(
+                    label: 'Send',
+                    icon: Icons.arrow_outward_outlined,
+                    isFullWidth: true,
+                    onPressed: () => context.go(AppRoutes.send),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(child: receive),
+              ],
+            ),
         ],
       ),
     );
   }
 }
 
+const List<String> _months = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/// The pointer's date in the desktop read-out.
+String _stamp(DateTime t) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${t.day} ${_months[t.month - 1]} ${t.year}, '
+      '${two(t.hour)}:${two(t.minute)}';
+}
+
+/// A y-axis tick, compact enough to sit at the chart's edge. Only here may a
+/// figure be shortened (`€1.25M`, `€850k`): a tick is a gridline's name, not
+/// a balance. [step] is the gap between ticks, so the label carries exactly
+/// the decimals that tell two ticks apart.
+String _axisLabel(double v, double step, {String prefix = ''}) {
+  int decimalsFor(double st) {
+    var d = 0;
+    var x = st.abs();
+    while (d < 8 && (x - x.roundToDouble()).abs() > 1e-6 * math.max(1, x)) {
+      x *= 10;
+      d++;
+    }
+    return d;
+  }
+
+  String trim(String s) =>
+      s.contains('.') ? s.replaceFirst(RegExp(r'\.?0+$'), '') : s;
+
+  String grouped(int n) {
+    final digits = n.abs().toString();
+    final b = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) b.write(',');
+      b.write(digits[i]);
+    }
+    return (n < 0 ? '-' : '') + b.toString();
+  }
+
+  final a = v.abs();
+  if (a >= 1e6 && step >= 1e4) {
+    return '$prefix${trim((v / 1e6).toStringAsFixed(decimalsFor(step / 1e6)))}M';
+  }
+  if (a >= 1e4 && step >= 100) {
+    return '$prefix${trim((v / 1e3).toStringAsFixed(decimalsFor(step / 1e3)))}k';
+  }
+  final d = decimalsFor(step);
+  if (d == 0) return '$prefix${grouped(v.round())}';
+  final fixed = v.toStringAsFixed(d);
+  final dot = fixed.indexOf('.');
+  return '$prefix${grouped(int.parse(fixed.substring(0, dot)))}'
+      '${fixed.substring(dot)}';
+}
+
+/// Width of each of the hero's two actions on desktop.
+const double _heroActionWidth = 152;
+
+/// What the figure counts — "Total balance", or one chain's when the chain
+/// switch narrows the hero — and on desktop the eye beside it.
+class _BalanceLabel extends StatelessWidget {
+  const _BalanceLabel({required this.label, this.withToggle = true});
+
+  final String label;
+  final bool withToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final text = Text(
+      label,
+      style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
+    );
+    if (!withToggle) return text;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        text,
+        const SizedBox(width: AppSpacing.xs),
+        const PrivacyToggle(),
+      ],
+    );
+  }
+}
+
+/// The figure: exact, never abbreviated. A coin figure splits into the number
+/// in ink and its unit one size down in the faint ink; a fiat figure carries
+/// its symbol in front and has nothing to split. A tap swaps the unit, and a
+/// small swap glyph beside it says the number can be tapped.
+class _Figure extends StatefulWidget {
+  const _Figure({
+    required this.value,
+    required this.splitUnit,
+    this.swapTo,
+    this.onSwap,
+  });
+
+  final String value;
+  final bool splitUnit;
+
+  /// The unit a tap switches to; null when there is nothing to switch to.
+  final String? swapTo;
+  final VoidCallback? onSwap;
+
+  @override
+  State<_Figure> createState() => _FigureState();
+}
+
+class _FigureState extends State<_Figure> {
+  bool _hover = false;
+  bool _focus = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    final bigStyle = AppTypography.balanceHeroOf(
+      context,
+    ).copyWith(color: s.ink);
+    final unitStyle =
+        (phone
+                ? AppTypography.balanceMediumOf(context)
+                : AppTypography.balanceMedium)
+            .copyWith(color: s.inkFaint);
+
+    var number = widget.value;
+    String? unit;
+    if (widget.splitUnit) {
+      final i = number.lastIndexOf(' ');
+      if (i > 0) {
+        unit = number.substring(i + 1);
+        number = number.substring(0, i);
+      }
+    }
+
+    Widget text = Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Text(number, maxLines: 1, style: bigStyle),
+        if (unit != null) ...[
+          const SizedBox(width: AppSpacing.sm),
+          Text(unit, maxLines: 1, style: unitStyle),
+        ],
+      ],
+    );
+    // A long sats figure scales down to the column instead of wrapping.
+    text = FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: text,
+    );
+
+    final onSwap = widget.onSwap;
+    final to = widget.swapTo;
+    if (onSwap == null || to == null) return text;
+
+    final glyph = Icon(
+      Icons.swap_vert_outlined,
+      size: phone ? 20 : AppSpacing.iconSmall,
+      color: _hover || _focus ? s.inkSecondary : s.inkFaint,
+    );
+    final body = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(child: text),
+        const SizedBox(width: AppSpacing.sm),
+        glyph,
+      ],
+    );
+    final tappable = Semantics(
+      button: true,
+      label: '${widget.value}. Show $to',
+      excludeSemantics: true,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowHoverHighlight: (v) => setState(() => _hover = v),
+        onShowFocusHighlight: (v) => setState(() => _focus = v),
+        actions: <Type, Action<Intent>>{
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              onSwap();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onSwap,
+          child: Container(
+            foregroundDecoration: _focus
+                ? BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                    border: Border.all(color: s.focus, width: 2),
+                  )
+                : null,
+            child: body,
+          ),
+        ),
+      ),
+    );
+    if (phone) return tappable;
+    return Tooltip(message: 'Show $to', child: tappable);
+  }
+}
+
+/// One quiet line under the figure: the other denomination, then the change
+/// over the chart's range with its period spelled out.
+class _QuietLine extends StatelessWidget {
+  const _QuietLine({
+    required this.other,
+    required this.delta,
+    required this.period,
+  });
+
+  /// "≈ 0.01734567 BTC" without the "≈"; null hides it (no price, masked).
+  final String? other;
+
+  /// Percent change over the range; null when it cannot be stated.
+  final double? delta;
+  final String period;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    final style = AppTypography.bodyOf(context);
+    final d = delta;
+    // Sub-0.05% moves read as noise, not as a gain.
+    final flat = d == null || d.abs() < 0.05;
+    final up = d != null && d > 0;
+    final ink = flat ? s.inkSecondary : (up ? s.success : s.danger);
+    final o = other;
+
+    final change = d == null
+        ? null
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!flat) ...[
+                Icon(
+                  up
+                      ? Icons.arrow_upward_outlined
+                      : Icons.arrow_downward_outlined,
+                  size: AppSpacing.iconSmall,
+                  color: ink,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+              ],
+              Text(
+                '${flat ? '' : (up ? '+' : '−')}'
+                '${(flat ? 0.0 : d.abs()).toStringAsFixed(1)}% $period',
+                style: style.copyWith(color: ink),
+              ),
+            ],
+          );
+
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      runSpacing: AppSpacing.xs,
+      children: [
+        if (o != null)
+          Text('≈ $o', style: style.copyWith(color: s.inkSecondary)),
+        if (o != null && change != null)
+          Text('  ·  ', style: style.copyWith(color: s.inkFaint)),
+        ?change,
+      ],
+    );
+  }
+}
+
 // ── Phone chart controls ──────────────────────────────────────────────────────
 
-/// A row of words, one of them lit: the phone's stand-in for a bordered
-/// segmented track. Each word is a 40-dp target; the chosen one sits on a
-/// soft pill of its own colour (the chain hue for BTC/Liquid, else the
-/// accent). [spread] shares the row out evenly — for the six ranges — where
-/// the default packs the words to the left.
+/// A row of words, one of them chosen: the phone's quiet stand-in for a
+/// segmented track. Each word is a 48 dp target; the chosen one sits on the
+/// selected surface in the primary ink, the rest are faint. [spread] shares
+/// the row out evenly — for the six ranges — where the default packs the
+/// words to the left. A chain may carry its 6 px dot.
 class _TextChips<T> extends StatelessWidget {
   const _TextChips({
     required this.options,
@@ -1467,7 +1925,7 @@ class _TextChips<T> extends StatelessWidget {
     this.spread = false,
   });
 
-  /// (value, label, colour) — colour null takes the accent.
+  /// (value, label, chain dot).
   final List<(T, String, Color?)> options;
   final T selected;
   final ValueChanged<T> onChanged;
@@ -1483,298 +1941,460 @@ class _TextChips<T> extends StatelessWidget {
           ? MainAxisAlignment.spaceBetween
           : MainAxisAlignment.start,
       children: [
-        for (final (value, label, tint) in options)
-          Builder(
-            builder: (context) {
-              final sel = value == selected;
-              final color = tint ?? s.accent;
-              return Semantics(
-                button: true,
-                selected: sel,
-                label: label,
-                excludeSemantics: true,
-                child: InkWell(
-                  onTap: () => onChanged(value),
-                  borderRadius: BorderRadius.circular(999),
-                  child: ConstrainedBox(
-                    // A word is a control: it clears the touch floor on both
-                    // axes even though the lit pill inside it is smaller.
-                    constraints: const BoxConstraints(
-                      minHeight: AppLayout.minTouchTarget,
-                      minWidth: 40,
+        for (final (value, label, dot) in options)
+          Semantics(
+            button: true,
+            selected: value == selected,
+            label: label,
+            excludeSemantics: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onChanged(value),
+              child: ConstrainedBox(
+                // A word is a control: it clears the touch floor on both axes
+                // even though the chosen surface inside it is smaller.
+                constraints: const BoxConstraints(
+                  minHeight: AppLayout.minTouchTarget,
+                  minWidth: AppLayout.minTouchTarget,
+                ),
+                child: Center(
+                  widthFactor: 1,
+                  child: AnimatedContainer(
+                    duration: motion,
+                    curve: AppMotion.settle,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm,
+                      vertical: AppSpacing.xs,
                     ),
-                    child: Center(
-                      child: AnimatedContainer(
-                        duration: motion,
-                        curve: AppMotion.settle,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.sm + 2,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: sel
-                              ? color.withValues(alpha: s.isDark ? 0.18 : 0.12)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
+                    decoration: BoxDecoration(
+                      color: value == selected
+                          ? s.selected
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (dot != null) ...[
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: dot,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                        ],
+                        Text(
                           label,
                           style: AppTypography.label.copyWith(
-                            fontSize: 12,
-                            letterSpacing: 0.4,
-                            fontWeight: sel ? FontWeight.w700 : FontWeight.w600,
-                            color: sel ? color : s.inkSecondary,
+                            color: value == selected ? s.ink : s.inkFaint,
                           ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 ),
-              );
-            },
-          ),
-      ],
-    );
-  }
-}
-
-// ── Phone hero: eyebrow, balance, actions ────────────────────────────────────
-
-/// Names the figure under it and the chain it is denominated on, and carries
-/// the one control that belongs beside a balance: the eye.
-class _HeroEyebrow extends StatelessWidget {
-  const _HeroEyebrow();
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final label = AppTypography.navSection.copyWith(letterSpacing: 1.3);
-    return Row(
-      children: [
-        Expanded(
-          child: Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(
-                  text: 'TOTAL BALANCE',
-                  style: label.copyWith(color: s.inkFaint),
-                ),
-                TextSpan(
-                  text: '  ·  ',
-                  style: label.copyWith(color: s.inkFaint),
-                ),
-                // The network answer, once, where the number is read. It is
-                // amber because it is a warning, not a label.
-                TextSpan(
-                  text: 'TESTNET',
-                  style: label.copyWith(color: s.testnet),
-                ),
-              ],
+              ),
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
-        ),
-        const PrivacyToggle(size: 18),
       ],
     );
   }
 }
 
-/// "0.01734567 BTC" → the number, and its unit. A fiat figure carries its
-/// symbol in front and has nothing to split off.
-(String, String?) _splitUnit(String text) {
-  final i = text.lastIndexOf(' ');
-  if (i <= 0) return (text, null);
-  return (text.substring(0, i), text.substring(i + 1));
-}
+// ── Rows ──────────────────────────────────────────────────────────────────────
+// The chain cards and the phone's lists share one row: a leading glyph in the
+// icon column, a title (with an optional ticker tag), one line under it, and
+// an amount column on the right. Same metrics as `ListRow` — which takes only
+// an icon — so an asset's own logo can head the row.
 
-/// "last move 12 min ago", from the newest transaction the engine handed us.
-///
-/// The age of the newest item is a fact whichever way the list was capped —
-/// a count of "transactions this week" would not be: the engine returns only
-/// the most recent few per chain, so a busy wallet would be told a number
-/// that is quietly wrong.
-String? _lastMoveNote(List<RecentActivityItem> activity) {
-  if (activity.isEmpty) return null;
-  var newest = activity.first.timestamp;
-  for (final a in activity) {
-    if (a.timestamp.isAfter(newest)) newest = a.timestamp;
-  }
-  return 'last move ${relativeTimeShort(newest)}';
-}
-
-/// The headline: a big figure, a quiet unit, and one line of context. Tapping
-/// it swaps fiat for coin — and the chart above follows, because the parent
-/// owns that choice.
-class _PhoneBalance extends StatelessWidget {
-  const _PhoneBalance({
-    required this.assets,
-    required this.coinFirst,
-    required this.onSwap,
-    this.note,
+class _DataRow extends StatefulWidget {
+  const _DataRow({
+    required this.leading,
+    required this.title,
+    this.tag,
+    this.subtitle,
+    this.trailing,
+    this.onTap,
+    this.chevron = false,
+    this.gutter = kListPad,
   });
 
-  final List<AssetBalance> assets;
-  final bool coinFirst;
-  final VoidCallback onSwap;
+  /// Sits centred in the 32 px icon column.
+  final Widget leading;
+  final String title;
 
-  /// A fact about the wallet under the figure — how long ago it last moved.
-  final String? note;
+  /// A ticker beside the title.
+  final String? tag;
+  final Widget? subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  final bool chevron;
+
+  /// The row's side inset: the list's own, or the card's when the row sits
+  /// inside a card whose header uses the card padding.
+  final double gutter;
+
+  @override
+  State<_DataRow> createState() => _DataRowState();
+}
+
+class _DataRowState extends State<_DataRow> {
+  bool _hover = false;
+  bool _down = false;
+  bool _focus = false;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final useSats = context.select<AppState, bool>((st) => st.useSats);
-    // Depend on the currency too, so the headline rebuilds when it changes.
-    context.select<AppState, String>((st) => st.fiatCurrency);
-    final hidden = balancesHidden(context);
-    final nativeSats = assets
-        .where((a) => a.ticker == 'BTC' || a.ticker == 'LBTC')
-        .fold<int>(0, (sum, a) => sum + a.amount);
-    final price = PriceService.instance;
+    final phone = AppLayout.isPhone(context);
+    final onTap = widget.onTap;
+    final sub = widget.subtitle;
 
-    return AnimatedBuilder(
-      animation: price,
-      builder: (_, _) {
-        final coinStr = PriceService.formatUnit(nativeSats, sat: useSats);
-        // With no price feed there is only one number to show, so the swap
-        // has nothing to swap to.
-        final swappable = price.hasPrice;
-        final showCoin = coinFirst || !swappable;
-        final headline = showCoin
-            ? coinStr
-            : price.totalFiatDisplay(nativeSats);
-        final (value, unit) = _splitUnit(headline);
-        final other = showCoin ? price.totalFiatDisplay(nativeSats) : coinStr;
-
-        final line = <String>[
-          if (swappable && !hidden) '≈ $other',
-          ?note,
-        ].join('  ·  ');
-
-        final number = Text(
-          hidden ? kMaskedAmount : value,
-          style: AppTypography.balanceHeroOf(context),
-          maxLines: 1,
-        );
-
-        final row = Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // A long sats figure scales down to the column instead of
-            // wrapping the headline onto two lines.
-            Flexible(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: number,
+    final content = Row(
+      children: [
+        SizedBox(
+          width: kListTile,
+          height: kListTile,
+          child: Center(child: widget.leading),
+        ),
+        const SizedBox(width: kListGap),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.bodyOf(
+                        context,
+                      ).copyWith(color: s.ink),
+                    ),
+                  ),
+                  if (widget.tag != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    AssetBadge(ticker: widget.tag!),
+                  ],
+                ],
               ),
+              ?sub,
+            ],
+          ),
+        ),
+        if (widget.trailing != null) ...[
+          const SizedBox(width: AppSpacing.md),
+          widget.trailing!,
+        ],
+        if (widget.chevron) ...[
+          const SizedBox(width: AppSpacing.xs),
+          Icon(
+            Icons.chevron_right_outlined,
+            size: AppSpacing.icon,
+            color: s.inkFaint,
+          ),
+        ],
+      ],
+    );
+
+    final body = AnimatedContainer(
+      duration: AppMotion.of(context, AppMotion.instant),
+      curve: AppMotion.settle,
+      color: onTap == null
+          ? Colors.transparent
+          : _down
+          ? s.pressed
+          : _hover
+          ? s.hover
+          : Colors.transparent,
+      foregroundDecoration: _focus && onTap != null
+          ? BoxDecoration(border: Border.all(color: s.focus, width: 2))
+          : null,
+      constraints: BoxConstraints(
+        minHeight: phone && sub != null
+            ? AppSpacing.rowHeight + AppSpacing.sm
+            : AppSpacing.rowHeight,
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: widget.gutter,
+        vertical: AppSpacing.sm,
+      ),
+      child: content,
+    );
+
+    if (onTap == null) return MergeSemantics(child: body);
+    return Semantics(
+      button: true,
+      child: MergeSemantics(
+        child: FocusableActionDetector(
+          mouseCursor: SystemMouseCursors.click,
+          onShowHoverHighlight: (v) => setState(() {
+            _hover = v;
+            if (!v) _down = false;
+          }),
+          onShowFocusHighlight: (v) => setState(() => _focus = v),
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                onTap();
+                return null;
+              },
             ),
-            if (unit != null && !hidden) ...[
-              const SizedBox(width: AppSpacing.sm),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Text(
-                  unit,
-                  style: AppTypography.balanceMediumOf(
-                    context,
-                  ).copyWith(fontSize: 17, color: s.inkSecondary),
-                ),
-              ),
-            ],
-            if (swappable) ...[
-              const SizedBox(width: AppSpacing.xs),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Icon(
-                  Icons.swap_vert_rounded,
-                  size: 18,
-                  color: s.inkFaint,
-                ),
-              ),
-            ],
-          ],
-        );
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!swappable)
-              row
-            else
-              Semantics(
-                button: true,
-                label: showCoin
-                    ? 'Show ${price.currency}'
-                    : 'Show ${useSats ? 'sats' : 'BTC'}',
-                excludeSemantics: true,
-                child: GestureDetector(
-                  onTap: onSwap,
-                  behavior: HitTestBehavior.opaque,
-                  child: row,
-                ),
-              ),
-            if (line.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(
-                line,
-                style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ],
-        );
-      },
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            onTapDown: (_) => setState(() => _down = true),
+            onTapUp: (_) => setState(() => _down = false),
+            onTapCancel: () => setState(() => _down = false),
+            child: body,
+          ),
+        ),
+      ),
     );
   }
 }
 
-/// Send and Receive, right under the balance they act on — the same two
-/// buttons the desktop hero draws, wearing the phone's filled grammar
-/// (buttons.dart). Send is the one filled action on the screen and the one
-/// thing in the app that casts a shadow (design.md).
-class _HeroActions extends StatelessWidget {
-  const _HeroActions({required this.showSend});
+/// A row's subtitle in the caption voice.
+Widget _caption(BuildContext context, String text, {Color? color}) {
+  final s = AppScheme.of(context);
+  return Text(
+    text,
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis,
+    style: AppTypography.caption.copyWith(color: color ?? s.inkSecondary),
+  );
+}
 
-  /// False on a pure watch-only wallet, which cannot sign.
-  final bool showSend;
+/// Rows of one list, hairlines between them inset past the icon column.
+List<Widget> _ruled(BuildContext context, List<Widget> rows, double gutter) {
+  final s = AppScheme.of(context);
+  return [
+    for (var i = 0; i < rows.length; i++) ...[
+      if (i > 0)
+        Divider(
+          height: 1,
+          thickness: 1,
+          color: s.edge,
+          indent: gutter + kListTile + kListGap,
+        ),
+      rows[i],
+    ],
+  ];
+}
+
+/// "1 coin" / "3 coins".
+String _coins(int n) => '$n coin${n == 1 ? '' : 's'}';
+
+/// BTC or LBTC: the chain's own coin, counted in coins.
+Widget _nativeAssetRow(
+  BuildContext context, {
+  required AssetBalance asset,
+  required String title,
+  required bool useSats,
+  required bool masked,
+  double gutter = kListPad,
+  VoidCallback? onTap,
+}) {
+  final s = AppScheme.of(context);
+  final price = PriceService.instance;
+  final coin = asset.ticker == 'LBTC' ? 'LBTC' : 'BTC';
+  final fiat = price.fiatDisplay(asset.amount);
+  // 'synced' is the quiet case; anything else is worth a word, and
+  // 'unavailable' is worth a red one.
+  final unsynced = asset.status != 'synced';
+  return _DataRow(
+    leading: AssetLogo(ticker: coin, size: 24),
+    title: title,
+    tag: coin,
+    gutter: gutter,
+    onTap: onTap,
+    subtitle: _caption(
+      context,
+      unsynced
+          ? '${_coins(asset.utxoCount)} · ${asset.status}'
+          : _coins(asset.utxoCount),
+      color: asset.status == 'unavailable' ? s.danger : null,
+    ),
+    trailing: ListAmount(
+      value: masked
+          ? kMaskedAmount
+          : PriceService.formatUnit(asset.amount, sat: useSats, coin: coin),
+      unit: masked || fiat == null ? null : fiat,
+    ),
+  );
+}
+
+/// Opens a token the way a transaction is opened: the detail dialog (a sheet
+/// on a phone), the same one the Liquid page shows. The issuance record, if
+/// this wallet issued the asset, is read first so the dialog can say so.
+Future<void> _openToken(BuildContext context, AssetGroup g) async {
+  final walletId = context.read<AppState>().activeWalletId;
+  var issued = const <String, IssuedAssetEntry>{};
+  if (walletId != null) {
+    try {
+      issued = await IssuedAssetStore.instance.getIssuedAssets(walletId);
+    } catch (_) {
+      // No record readable: the asset still opens, as one merely held.
+    }
+  }
+  if (!context.mounted) return;
+  final id = g.main.assetId;
+  await showAssetDetailDialog(
+    context,
+    asset: g.main,
+    reissuanceToken: g.reissuanceToken,
+    issued: issued[id],
+    isReissuanceToken: issued.values.any((e) => e.tokenId == id),
+  );
+}
+
+/// A Liquid token: named by the registry where it is known, and saying so.
+Widget _tokenRow(
+  BuildContext context,
+  AssetGroup g, {
+  required bool masked,
+  required bool isHidden,
+  double gutter = kListPad,
+  VoidCallback? onTap,
+}) {
+  final registry = AssetRegistryService.instance;
+  final asset = g.main;
+  final ticker = registry.displayTicker(asset);
+  final name = registry.displayName(asset);
+  final info = registry.get(asset.assetId);
+  final details = <String>[
+    if (info?.domain != null && info!.domain!.isNotEmpty) info.domain!,
+    if (g.reissuanceToken != null) 'Reissuance token',
+    if (isHidden) 'Hidden',
+  ];
+  return _DataRow(
+    leading: AssetLogo(ticker: asset.ticker, size: 24),
+    title: name == 'Unknown Asset' ? ticker : name,
+    tag: name == 'Unknown Asset' ? null : ticker,
+    gutter: gutter,
+    onTap: onTap,
+    subtitle: _caption(
+      context,
+      details.isEmpty ? 'Liquid asset' : details.join(' · '),
+    ),
+    // Room for an eight-decimal token amount and its ticker: a holding is
+    // never cut to an ellipsis.
+    trailing: ListAmount(
+      value: masked ? kMaskedAmount : asset.displayAmount,
+      maxWidth: 220,
+    ),
+  );
+}
+
+/// One transaction: which way it went, what it was, how settled it is, and
+/// how much.
+class _ActivityRow extends StatelessWidget {
+  const _ActivityRow({required this.tx, this.gutter = kListPad});
+
+  final RecentActivityItem tx;
+  final double gutter;
+
+  /// "tb1q…4x2p" as the engine gives it, or the txid cut the same way.
+  static String _short(String s) =>
+      s.length <= 14 ? s : '${s.substring(0, 6)}…${s.substring(s.length - 4)}';
+
+  /// The engine's amount with the direction's sign: "+" for incoming,
+  /// a true minus for outgoing. A self-transfer keeps its own string.
+  String get _signed {
+    final raw = tx.amount.trim();
+    if (tx.direction == 'self') return raw;
+    final bare = raw.replaceFirst(RegExp(r'^[+\-−]'), '');
+    return tx.direction == 'incoming' ? '+$bare' : '−$bare';
+  }
+
+  /// The fiat value of a BTC/LBTC amount, read off the engine's own string;
+  /// null for a token (no price) or anything that does not parse.
+  String? get _fiat {
+    final parts = tx.amount
+        .trim()
+        .replaceFirst(RegExp(r'^[+\-−~]'), '')
+        .split(' ');
+    if (parts.length != 2) return null;
+    final n = double.tryParse(parts[0].replaceAll(',', ''));
+    if (n == null) return null;
+    final int sats;
+    switch (parts[1].toUpperCase()) {
+      case 'BTC' || 'LBTC' || 'L-BTC':
+        sats = (n * 1e8).round();
+      case 'SATS' || 'SAT':
+        sats = n.round();
+      default:
+        return null;
+    }
+    return PriceService.instance.fiatDisplay(sats);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final receive = SecondaryButton(
-      label: 'Receive',
-      icon: Icons.call_received,
-      isFullWidth: true,
-      onPressed: () => context.go(AppRoutes.receive),
-    );
-    if (!showSend) return receive;
-    return Row(
-      children: [
-        // The Action takes the wider half: on a wallet's home screen the two
-        // verbs are not equals.
-        Expanded(
-          flex: 6,
-          child: AccentButton(
-            label: 'Send',
-            icon: Icons.send,
-            isFullWidth: true,
-            onPressed: () => context.go(AppRoutes.send),
-          ),
+    final s = AppScheme.of(context);
+    final masked = balancesHidden(context);
+    final isIn = tx.direction == 'incoming';
+    final isSelf = tx.direction == 'self';
+    final who = tx.counterparty;
+    final id = who != null && who.isNotEmpty ? _short(who) : _short(tx.txid);
+    final state = tx.isConfirmed
+        ? '${tx.confirmations} confirmation${tx.confirmations == 1 ? '' : 's'}'
+        : 'Pending';
+
+    return _DataRow(
+      gutter: gutter,
+      onTap: () => context.go(AppRoutes.history),
+      leading: ListIconTile(
+        icon: isSelf
+            ? Icons.swap_horiz_outlined
+            : isIn
+            ? Icons.call_received_outlined
+            : Icons.arrow_outward_outlined,
+      ),
+      title:
+          tx.note ??
+          (isSelf
+              ? 'Internal transfer'
+              : isIn
+              ? 'Received'
+              : 'Sent'),
+      subtitle: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: id,
+              style: AppTypography.monoSmall.copyWith(color: s.inkSecondary),
+            ),
+            TextSpan(
+              text: ' · $state',
+              style: AppTypography.caption.copyWith(color: s.inkFaint),
+            ),
+          ],
         ),
-        const SizedBox(width: AppSpacing.sm + 2),
-        Expanded(flex: 5, child: receive),
-      ],
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: AnimatedBuilder(
+        animation: PriceService.instance,
+        builder: (_, _) => ListAmount(
+          value: masked ? kMaskedAmount : _signed,
+          unit: masked ? null : _fiat,
+          valueColor: isIn ? s.success : s.ink,
+          maxWidth: 160,
+        ),
+      ),
     );
   }
 }
 
 // ── Phone lists: assets, then activity ───────────────────────────────────────
-//
-// Both chains in one list each. A row carries its own chain — the Bitcoin
-// glyph in orange, the Liquid drop in teal, the name that says so — which is
-// what let the two per-chain panels collapse into these two.
 
 AssetBalance? _assetWithTicker(List<AssetBalance> assets, String ticker) {
   for (final a in assets) {
@@ -1796,7 +2416,6 @@ class _PhoneAssets extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
     final useSats = context.select<AppState, bool>((st) => st.useSats);
     final hasLiquid = context.select<AppState, bool>(
       (st) => st.activeWalletLiquid,
@@ -1812,97 +2431,50 @@ class _PhoneAssets extends StatelessWidget {
       issuedAssets,
     ).where((g) => !hiddenAssets.contains(g.main.assetId)).toList();
 
-    final rows = <Widget>[
-      if (btc != null)
-        _nativeRow(
-          context,
-          asset: btc,
-          title: 'Bitcoin',
-          tint: s.bitcoin,
-          coin: 'BTC',
-          useSats: useSats,
-          masked: masked,
-        ),
-      if (lbtc != null)
-        _nativeRow(
-          context,
-          asset: lbtc,
-          title: 'Liquid Bitcoin',
-          tint: s.liquid,
-          coin: 'LBTC',
-          useSats: useSats,
-          masked: masked,
-        ),
-      for (final g in tokens) _tokenRow(context, g, masked),
-    ];
-    if (rows.isEmpty) return const SizedBox.shrink();
+    return AnimatedBuilder(
+      animation: PriceService.instance,
+      builder: (context, _) {
+        final rows = <Widget>[
+          if (btc != null)
+            _nativeAssetRow(
+              context,
+              asset: btc,
+              title: 'Bitcoin',
+              useSats: useSats,
+              masked: masked,
+            ),
+          if (lbtc != null)
+            _nativeAssetRow(
+              context,
+              asset: lbtc,
+              title: 'Liquid Bitcoin',
+              useSats: useSats,
+              masked: masked,
+              onTap: () => context.go(AppRoutes.liquid),
+            ),
+          for (final g in tokens)
+            _tokenRow(
+              context,
+              g,
+              masked: masked,
+              isHidden: false,
+              onTap: () => _openToken(context, g),
+            ),
+        ];
+        if (rows.isEmpty) return const SizedBox.shrink();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListSectionLabel(
-          label: 'Assets',
-          actionLabel: hasLiquid ? 'Liquid' : null,
-          onAction: hasLiquid ? () => context.go(AppRoutes.liquid) : null,
-        ),
-        ListCard(children: rows),
-      ],
-    );
-  }
-
-  /// BTC or LBTC: the chain's own coin, counted in coins.
-  Widget _nativeRow(
-    BuildContext context, {
-    required AssetBalance asset,
-    required String title,
-    required Color tint,
-    required String coin,
-    required bool useSats,
-    required bool masked,
-  }) {
-    final s = AppScheme.of(context);
-    final (value, unit) = _splitUnit(
-      PriceService.formatUnit(asset.amount, sat: useSats, coin: coin),
-    );
-    final coins = '${asset.utxoCount} coin${asset.utxoCount == 1 ? '' : 's'}';
-    // 'synced' is the quiet case; anything else is worth a word, and
-    // 'unavailable' is worth a red one.
-    final unsynced = asset.status != 'synced';
-    return ListRow(
-      icon: Icons.currency_bitcoin,
-      tint: tint,
-      title: title,
-      subtitle: unsynced ? '$coins · ${asset.status}' : coins,
-      subtitleColor: asset.status == 'unavailable' ? s.danger : null,
-      trailing: ListAmount(
-        value: masked ? kMaskedAmount : value,
-        unit: masked ? null : unit,
-      ),
-    );
-  }
-
-  /// A Liquid token: named by the registry where it is known, and saying so.
-  Widget _tokenRow(BuildContext context, AssetGroup g, bool masked) {
-    final s = AppScheme.of(context);
-    final registry = AssetRegistryService.instance;
-    final asset = g.main;
-    final ticker = registry.displayTicker(asset);
-    final name = registry.displayName(asset);
-    final info = registry.get(asset.assetId);
-    final (value, unit) = _splitUnit(asset.displayAmount);
-    return ListRow(
-      icon: Icons.water_drop_rounded,
-      tint: s.liquid,
-      title: name == 'Unknown Asset' ? ticker : name,
-      subtitle: <String>[
-        'Liquid asset',
-        if (info?.domain != null && info!.domain!.isNotEmpty) info.domain!,
-        if (g.reissuanceToken != null) 'reissuance token',
-      ].join(' · '),
-      trailing: ListAmount(
-        value: masked ? kMaskedAmount : value,
-        unit: masked ? null : (unit ?? ticker),
-      ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListSectionLabel(
+              label: 'Assets',
+              actionLabel: hasLiquid ? 'Liquid' : null,
+              onAction: hasLiquid ? () => context.go(AppRoutes.liquid) : null,
+            ),
+            ListCard(children: rows),
+          ],
+        );
+      },
     );
   }
 }
@@ -1917,27 +2489,9 @@ class _PhoneActivity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final masked = balancesHidden(context);
     final items = [...data.recentActivity]
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     final recent = items.take(_shown).toList();
-
-    final rows = <Widget>[];
-    if (recent.isEmpty) {
-      rows.add(
-        ListRow(
-          icon: Icons.inbox_rounded,
-          tint: s.inkFaint,
-          title: 'Nothing yet',
-          subtitle: 'Received and sent transactions land here',
-        ),
-      );
-    } else {
-      for (final tx in recent) {
-        rows.add(_activityRow(context, tx, masked));
-      }
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1947,136 +2501,29 @@ class _PhoneActivity extends StatelessWidget {
           actionLabel: recent.isEmpty ? null : 'All',
           onAction: recent.isEmpty ? null : () => context.go(AppRoutes.history),
         ),
-        ListCard(children: rows),
+        ListCard(
+          children: recent.isEmpty
+              ? const [
+                  ListRow(
+                    icon: Icons.inbox_outlined,
+                    title: 'Nothing yet',
+                    subtitle: 'Received and sent transactions land here',
+                  ),
+                ]
+              : [for (final tx in recent) _ActivityRow(tx: tx)],
+        ),
       ],
     );
   }
-
-  Widget _activityRow(
-    BuildContext context,
-    RecentActivityItem tx,
-    bool masked,
-  ) {
-    final s = AppScheme.of(context);
-    final isIn = tx.direction == 'incoming';
-    final isSelf = tx.direction == 'self';
-    final counterparty = tx.counterparty;
-    return ListRow(
-      icon: isSelf
-          ? Icons.autorenew_rounded
-          : isIn
-          ? Icons.south_west_rounded
-          : Icons.north_east_rounded,
-      tint: isIn ? s.success : s.inkSecondary,
-      title:
-          tx.note ??
-          (isSelf
-              ? 'Internal transfer'
-              : isIn
-              ? 'Received'
-              : 'Sent'),
-      // Which chain, from whom, how long ago — the three things a row of
-      // activity is asked, in the order they are asked in.
-      subtitle: <String>[
-        tx.isLiquid ? 'Liquid' : 'Bitcoin',
-        if (counterparty != null && counterparty.isNotEmpty) counterparty,
-        relativeTimeShort(tx.timestamp),
-      ].join(' · '),
-      onTap: () => context.go(AppRoutes.history),
-      trailing: ListAmount(
-        value: masked ? kMaskedAmount : tx.amount,
-        // The one thing worth saying under an amount is that it has not
-        // settled yet.
-        unit: tx.isConfirmed ? null : 'unconfirmed',
-        valueColor: isIn ? s.success : s.ink,
-        unitColor: s.warning,
-        maxWidth: 132,
-      ),
-    );
-  }
 }
 
-// ── Wallet key badge ──────────────────────────────────────────────────────────
-// `f0b68896` — the wallet's master fingerprint, small and mono. Click copies
-// the full xpub (the fingerprint alone is not enough to reconstruct it), or
-// the fingerprint itself when no single xpub exists (multisig).
-
-class _WalletKeyBadge extends StatefulWidget {
-  const _WalletKeyBadge({required this.info});
-  final WalletInfo info;
-
-  @override
-  State<_WalletKeyBadge> createState() => _WalletKeyBadgeState();
-}
-
-class _WalletKeyBadgeState extends State<_WalletKeyBadge> {
-  bool _copied = false;
-
-  bool get _hasXpub => widget.info.xpub.isNotEmpty;
-
-  Future<void> _copy() async {
-    final text = _hasXpub ? widget.info.xpub : widget.info.masterFingerprint;
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    setState(() => _copied = true);
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _copied = false);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final fp = widget.info.masterFingerprint;
-    if (fp.isEmpty) return const SizedBox.shrink();
-    final phone = AppLayout.isPhone(context);
-
-    return InkWell(
-      onTap: _copy,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-      child: Padding(
-        // 2 dp around 12-px mono text is a 22-dp target; a finger needs more.
-        padding: phone
-            ? const EdgeInsets.symmetric(vertical: AppSpacing.sm)
-            : const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(fp, style: AppTypography.monoSmall.copyWith(color: s.accent)),
-            const SizedBox(width: AppSpacing.xs),
-            Icon(
-              _copied ? Icons.check : Icons.copy_rounded,
-              size: phone ? 16 : 13,
-              color: _copied ? s.success : s.inkFaint,
-            ),
-            if (_copied) ...[
-              const SizedBox(width: 3),
-              Text(
-                _hasXpub ? 'xpub copied' : 'fingerprint copied',
-                style: AppTypography.caption.copyWith(color: s.success),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Asset card grid ───────────────────────────────────────────────────────────
-
-// ── Chain sections ────────────────────────────────────────────────────────────
+// ── Chain sections (desktop) ──────────────────────────────────────────────────
 //
-// Below the portfolio hero the wallet stops being one number and becomes two
-// chains. A single "Assets" grid and a single "Recent activity" list forced
-// the user to do that separation themselves: a row reading "+100 USDT" says
-// nothing about which chain settled it, and BTC and LBTC sat side by side as
-// if they were interchangeable.
-//
-// So: one panel per chain, in the same order the hero chart offers them
-// (Bitcoin, then Liquid). Each states its own balance and its own latest
-// transactions. Liquid additionally carries the asset cards, because tokens
-// only exist there.
+// Below the hero the wallet stops being one number and becomes two chains: a
+// row reading "+100 USDT" says nothing about which chain settled it, and BTC
+// and LBTC are not interchangeable. One card per chain, in the order the
+// chart's filter offers them (Bitcoin, then Liquid), each with its balance and
+// its lists inside it. The chain's hue lives in its logo and nowhere else.
 
 class _ChainSections extends StatelessWidget {
   const _ChainSections({
@@ -2093,46 +2540,33 @@ class _ChainSections extends StatelessWidget {
   final bool showHidden;
   final VoidCallback onToggleShowHidden;
 
-  /// Below this the two panels stack — side by side they would each be too
-  /// narrow for an amount and a counterparty on one line.
-  static const double _sideBySide = 900;
-
-  AssetBalance? _native(String ticker) {
-    for (final a in data.assets) {
-      if (a.ticker == ticker) return a;
-    }
-    return null;
-  }
+  /// Below this the two cards stack — side by side they would each be too
+  /// narrow for an amount and an address on one line.
+  static const double _sideBySide = 880;
 
   List<RecentActivityItem> _activity(String chain) =>
       data.recentActivity.where((t) => t.chain == chain).take(3).toList();
 
   @override
   Widget build(BuildContext context) {
-    final btc = _native('BTC');
-    final lbtc = _native('LBTC');
+    final btc = _assetWithTicker(data.assets, 'BTC');
+    final lbtc = _assetWithTicker(data.assets, 'LBTC');
 
-    final panels = <Widget>[
-      // The same glyph and hue the chain switch and the phone's asset rows
-      // use for each chain — one vocabulary, not two.
+    final cards = <Widget>[
       if (btc != null)
-        _ChainPanel(
+        _ChainCard(
           title: 'Bitcoin',
-          icon: Icons.currency_bitcoin,
-          rail: AppScheme.of(context).bitcoin,
           native: btc,
           activity: _activity('bitcoin'),
         ),
       if (lbtc != null)
-        _ChainPanel(
+        _ChainCard(
           title: 'Liquid',
-          icon: Icons.water_drop_outlined,
-          rail: AppScheme.of(context).liquid,
           native: lbtc,
           activity: _activity('liquid'),
           // Optional: Settings › Advanced decides whether Loans exists in the
           // wallet chrome at all, including this dashboard shortcut.
-          showProtocol: context.select<AppState, bool>(
+          showLoans: context.select<AppState, bool>(
             (state) => state.loansEnabled,
           ),
           // Everything that is not LBTC on the Liquid side: issued tokens and
@@ -2147,26 +2581,27 @@ class _ChainSections extends StatelessWidget {
         ),
     ];
 
-    if (panels.isEmpty) return const SizedBox.shrink();
-    if (panels.length == 1) return panels.single;
+    if (cards.isEmpty) return const SizedBox.shrink();
+    if (cards.length == 1) return cards.single;
 
     return LayoutBuilder(
       builder: (context, c) {
         if (c.maxWidth < _sideBySide) {
           return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              panels[0],
-              const SizedBox(height: AppSpacing.lg),
-              panels[1],
+              cards[0],
+              const SizedBox(height: AppSpacing.xl),
+              cards[1],
             ],
           );
         }
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: panels[0]),
-            const SizedBox(width: AppSpacing.lg),
-            Expanded(child: panels[1]),
+            Expanded(child: cards[0]),
+            const SizedBox(width: AppSpacing.xl),
+            Expanded(child: cards[1]),
           ],
         );
       },
@@ -2174,11 +2609,9 @@ class _ChainSections extends StatelessWidget {
   }
 }
 
-class _ChainPanel extends StatelessWidget {
-  const _ChainPanel({
+class _ChainCard extends StatelessWidget {
+  const _ChainCard({
     required this.title,
-    required this.icon,
-    required this.rail,
     required this.native,
     required this.activity,
     this.assets,
@@ -2186,17 +2619,12 @@ class _ChainPanel extends StatelessWidget {
     this.hiddenAssets = const [],
     this.showHidden = false,
     this.onToggleShowHidden,
-    this.showProtocol = false,
+    this.showLoans = false,
   });
 
   final String title;
 
-  /// The chain's glyph, drawn in [rail] on the inset tile that heads every
-  /// list row — so the panel names its chain the way a row does.
-  final IconData icon;
-  final Color rail;
-
-  /// The chain's own coin — BTC or LBTC. This is the panel's headline.
+  /// The chain's own coin — BTC or LBTC. This is the card's lead figure.
   final AssetBalance native;
 
   final List<RecentActivityItem> activity;
@@ -2209,7 +2637,9 @@ class _ChainPanel extends StatelessWidget {
   final VoidCallback? onToggleShowHidden;
 
   /// Whether this chain carries the Templar Protocol row (Liquid does).
-  final bool showProtocol;
+  final bool showLoans;
+
+  static const double _pad = AppSpacing.cardPadding;
 
   @override
   Widget build(BuildContext context) {
@@ -2217,249 +2647,133 @@ class _ChainPanel extends StatelessWidget {
     final useSats = context.select<AppState, bool>((st) => st.useSats);
     final hidden = balancesHidden(context);
     final price = PriceService.instance;
-    final phone = AppLayout.isPhone(context);
-    final gutter = phone ? AppSpacing.cardPaddingSmall : AppSpacing.lg;
+    final coin = native.ticker == 'LBTC' ? 'LBTC' : 'BTC';
+    final rule = Divider(height: 1, thickness: 1, color: s.edge);
 
-    // The same glass the Keys card and the hero above sit on — the old
-    // rail panel (raised eyebrow strip, 3 px coloured rule) was the one
-    // surface on the page drawn in another grammar. The chain's colour now
-    // lives where the rows put it: in the glyph and the name.
-    // Clipped: the zebra activity rows paint edge to edge and would square
-    // off the card's bottom corners otherwise.
-    return GlassCard(
+    return PlainCard(
       padding: EdgeInsets.zero,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         child: AnimatedBuilder(
           animation: price,
-          builder: (_, _) {
-            final coin = native.ticker == 'LBTC' ? 'LBTC' : 'BTC';
-            final unit = PriceService.formatUnit(
-              native.amount,
-              sat: useSats,
-              coin: coin,
+          builder: (context, _) {
+            final (value, unit) = _splitUnit(
+              PriceService.formatUnit(native.amount, sat: useSats, coin: coin),
             );
+            final fiat = price.fiatDisplay(native.amount);
+            final caption = [
+              if (fiat != null && !hidden) '≈ $fiat',
+              _coins(native.utxoCount),
+            ].join(' · ');
+
             return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Header: glyph tile, chain name in its hue, sync state.
                 Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    gutter,
-                    phone ? AppSpacing.md : AppSpacing.lg,
-                    gutter,
-                    0,
-                  ),
-                  child: Row(
-                    children: [
-                      ListIconTile(icon: icon, tint: rail, size: 36),
-                      const SizedBox(width: kListGap),
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: AppTypography.sectionTitleOf(
-                            context,
-                          ).copyWith(color: rail),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (native.status != 'synced')
-                        StatusBadge(
-                          label: native.status,
-                          variant: native.status == 'unavailable'
-                              ? BadgeVariant.danger
-                              : BadgeVariant.neutral,
-                        ),
-                    ],
-                  ),
-                ),
-                // Balance.
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    gutter,
-                    AppSpacing.md,
-                    gutter,
-                    AppSpacing.md,
-                  ),
+                  padding: const EdgeInsets.all(_pad),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (phone)
-                        // Scales a long sats figure down to the panel instead
-                        // of wrapping the number onto two lines.
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Amount(
-                            hidden ? kMaskedAmount : unit,
-                            maxLines: 1,
-                            style: AppTypography.balanceMediumOf(
-                              context,
-                            ).copyWith(fontSize: 22, color: s.ink),
-                          ),
-                        )
-                      else
-                        Amount(
-                          hidden ? kMaskedAmount : unit,
-                          style: AppTypography.balanceMedium.copyWith(
-                            fontSize: 24,
-                            color: s.ink,
-                          ),
-                        ),
-                      const SizedBox(height: 2),
-                      if (phone)
-                        // One wrapping line; a Row of three Texts overflows
-                        // once the fiat figure grows.
-                        Text(
-                          [
-                            if (price.hasPrice && !hidden)
-                              '≈ ${price.fiatDisplay(native.amount)}',
-                            '${native.utxoCount} '
-                                'coin${native.utxoCount == 1 ? '' : 's'}',
-                          ].join('  ·  '),
-                          style: AppTypography.bodySmall.copyWith(
-                            color: s.inkSecondary,
-                          ),
-                          softWrap: true,
-                        )
-                      else
-                        Row(
-                          children: [
-                            if (price.hasPrice && !hidden)
-                              Text(
-                                '≈ ${price.fiatDisplay(native.amount)}',
-                                style: AppTypography.bodySmall.copyWith(
-                                  color: s.inkSecondary,
-                                ),
+                      Row(
+                        children: [
+                          AssetLogo(ticker: coin, size: 24),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Text(
+                              title,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.sectionTitle.copyWith(
+                                color: s.ink,
                               ),
-                            if (price.hasPrice && !hidden)
+                            ),
+                          ),
+                          if (native.status != 'synced')
+                            StatusBadge(
+                              label: native.status,
+                              variant: native.status == 'unavailable'
+                                  ? BadgeVariant.danger
+                                  : BadgeVariant.neutral,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text(
+                              hidden ? kMaskedAmount : value,
+                              maxLines: 1,
+                              style: AppTypography.balanceLarge.copyWith(
+                                color: s.ink,
+                              ),
+                            ),
+                            if (!hidden && unit != null) ...[
+                              const SizedBox(width: AppSpacing.sm),
                               Text(
-                                '  ·  ',
-                                style: AppTypography.bodySmall.copyWith(
+                                unit,
+                                maxLines: 1,
+                                style: AppTypography.balanceMedium.copyWith(
                                   color: s.inkFaint,
                                 ),
                               ),
-                            Text(
-                              '${native.utxoCount} '
-                              'coin${native.utxoCount == 1 ? '' : 's'}',
-                              style: AppTypography.bodySmall.copyWith(
-                                color: s.inkSecondary,
-                              ),
-                            ),
+                            ],
                           ],
                         ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        caption,
+                        style: AppTypography.caption.copyWith(
+                          color: s.inkSecondary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                // Templar Protocol — Liquid only. A row, not a button: it goes
-                // somewhere, like the rows underneath it — to the Loans page,
-                // which is where the protocol's state is read; the settings
-                // are one tap further from there.
-                if (showProtocol) ...[
-                  Divider(height: 1, color: s.edge),
-                  HoverRow(
+                // Templar Protocol — Liquid only. A row that goes to the
+                // Loans page, where the protocol's state is read.
+                if (showLoans) ...[
+                  rule,
+                  _DataRow(
+                    gutter: _pad,
+                    leading: const ListIconTile(icon: Icons.handshake_outlined),
+                    title: 'Loans',
+                    subtitle: _caption(context, 'Templar Protocol'),
+                    chevron: true,
                     onTap: () => context.go(AppRoutes.loans),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: gutter,
-                        vertical: AppSpacing.sm,
-                      ),
-                      child: Row(
-                        children: [
-                          ListIconTile(
-                            icon: Icons.handshake_outlined,
-                            tint: rail,
-                            size: 28,
-                          ),
-                          const SizedBox(width: kListGap),
-                          Expanded(
-                            child: Text(
-                              'Loans · Templar Protocol',
-                              style: AppTypography.body.copyWith(color: s.ink),
-                            ),
-                          ),
-                          Icon(
-                            Icons.chevron_right,
-                            size: 18,
-                            color: s.inkFaint,
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
                 ],
-                // Assets — Liquid only.
-                if (assets != null) ...[
-                  Divider(height: 1, color: s.edge),
-                  _PanelAssets(
-                    assets: assets!,
-                    issuedAssets: issuedAssets,
-                    hiddenAssets: hiddenAssets,
-                    showHidden: showHidden,
-                    onToggleShowHidden: onToggleShowHidden,
-                  ),
-                ],
-                // Latest transactions on this chain.
-                Divider(height: 1, color: s.edge),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    gutter,
-                    phone ? AppSpacing.xs : AppSpacing.md,
-                    gutter,
-                    0,
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'LATEST',
-                          style: AppTypography.navSection.copyWith(
-                            color: s.inkFaint,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                      ),
-                      // On a phone the quiet tile keeps a resting hairline
-                      // and a 48-dp height (buttons.dart), so it reads as an
-                      // action without hover.
-                      GhostButton(
-                        label: 'All activity',
-                        onPressed: () => context.go(AppRoutes.history),
-                      ),
-                    ],
+                if (assets != null) ...[rule, ..._assetBlock(context, hidden)],
+                rule,
+                _ListHead(
+                  label: 'Latest',
+                  action: GhostButton(
+                    label: 'All activity',
+                    onPressed: () => context.go(AppRoutes.history),
                   ),
                 ),
                 if (activity.isEmpty)
                   Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      gutter,
-                      AppSpacing.md,
-                      gutter,
-                      AppSpacing.lg,
+                    padding: const EdgeInsets.fromLTRB(
+                      _pad,
+                      AppSpacing.xs,
+                      _pad,
+                      _pad,
                     ),
                     child: Text(
-                      'Nothing yet on this chain.',
+                      'Nothing yet on this chain',
                       style: AppTypography.caption.copyWith(color: s.inkFaint),
                     ),
                   )
                 else
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: Column(
-                      children: [
-                        for (var i = 0; i < activity.length; i++)
-                          HoverRow(
-                            zebra: i.isOdd,
-                            // On a phone the rows look like a list, so they
-                            // act like one and open the activity page.
-                            onTap: phone
-                                ? () => context.go(AppRoutes.history)
-                                : null,
-                            child: _ActivityRow(tx: activity[i]),
-                          ),
-                      ],
-                    ),
-                  ),
+                  ..._ruled(context, [
+                    for (final tx in activity)
+                      _ActivityRow(tx: tx, gutter: _pad),
+                  ], _pad),
               ],
             );
           },
@@ -2467,211 +2781,93 @@ class _ChainPanel extends StatelessWidget {
       ),
     );
   }
-}
 
-/// The asset cards, as a block inside the Liquid panel.
-class _PanelAssets extends StatelessWidget {
-  const _PanelAssets({
-    required this.assets,
-    required this.issuedAssets,
-    required this.hiddenAssets,
-    required this.showHidden,
-    required this.onToggleShowHidden,
-  });
-
-  final List<AssetBalance> assets;
-  final Map<String, IssuedAssetEntry> issuedAssets;
-  final List<String> hiddenAssets;
-  final bool showHidden;
-  final VoidCallback? onToggleShowHidden;
-
-  @override
-  Widget build(BuildContext context) {
+  /// The Liquid assets as rows, with the switch for hidden ones.
+  List<Widget> _assetBlock(BuildContext context, bool masked) {
     final s = AppScheme.of(context);
-    final groups = groupAssets(assets, issuedAssets);
+    final groups = groupAssets(assets!, issuedAssets);
     final visible = showHidden
         ? groups
         : groups.where((g) => !hiddenAssets.contains(g.main.assetId)).toList();
     final hiddenCount = groups
         .where((g) => hiddenAssets.contains(g.main.assetId))
         .length;
-    final phone = AppLayout.isPhone(context);
-    final gutter = phone ? AppSpacing.cardPaddingSmall : AppSpacing.lg;
+    final toggle = onToggleShowHidden;
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        gutter,
-        phone ? AppSpacing.sm : AppSpacing.md,
-        gutter,
-        AppSpacing.md,
+    return [
+      _ListHead(
+        label: 'Assets',
+        action: hiddenCount > 0 && toggle != null
+            ? GhostButton(
+                label: showHidden
+                    ? 'Hide hidden ($hiddenCount)'
+                    : 'Show hidden ($hiddenCount)',
+                onPressed: toggle,
+              )
+            : null,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'ASSETS',
-                  style: AppTypography.navSection.copyWith(
-                    color: s.inkFaint,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ),
-              if (hiddenCount > 0 && onToggleShowHidden != null)
-                InkWell(
-                  onTap: onToggleShowHidden,
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                  child: Padding(
-                    padding: phone
-                        ? const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.sm,
-                            vertical: AppSpacing.sm + 2,
-                          )
-                        : const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xs,
-                            vertical: 2,
-                          ),
-                    child: Text(
-                      showHidden
-                          ? 'Hide hidden ($hiddenCount)'
-                          : 'Show hidden ($hiddenCount)',
-                      style: AppTypography.caption.copyWith(color: s.accent),
-                    ),
-                  ),
-                ),
-            ],
+      if (visible.isEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(_pad, AppSpacing.xs, _pad, _pad),
+          child: Text(
+            'No other assets on Liquid',
+            style: AppTypography.caption.copyWith(color: s.inkFaint),
           ),
-          SizedBox(height: phone ? AppSpacing.xs : AppSpacing.sm),
-          if (visible.isEmpty)
-            Text(
-              'No other assets on Liquid.',
-              style: AppTypography.caption.copyWith(color: s.inkFaint),
-            )
-          else if (phone)
-            // One compact row per asset, full width; the grid tile at the
-            // column's width was a 120-dp card with an empty right half.
-            // Tapping opens the Liquid page, where the detail sheet lives.
-            Column(
-              children: [
-                for (final g in visible)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: GroupedAssetCard(
-                      group: g,
-                      isHidden: hiddenAssets.contains(g.main.assetId),
-                      compact: true,
-                      onTap: () => context.go(AppRoutes.liquid),
-                    ),
-                  ),
-              ],
-            )
-          else
-            LayoutBuilder(
-              builder: (context, c) {
-                final cols = (c.maxWidth / 190).floor().clamp(1, 4);
-                final w = (c.maxWidth - (cols - 1) * AppSpacing.sm) / cols;
-                return Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: [
-                    for (final g in visible)
-                      SizedBox(
-                        width: w,
-                        child: GroupedAssetCard(
-                          group: g,
-                          isHidden: hiddenAssets.contains(g.main.assetId),
-                          // No detail sheet on the dashboard yet — render the
-                          // card non-interactive rather than fake a target.
-                          onTap: null,
-                        ),
-                      ),
-                  ],
-                );
-              },
+        )
+      else
+        ..._ruled(context, [
+          for (final g in visible)
+            _tokenRow(
+              context,
+              g,
+              masked: masked,
+              isHidden: hiddenAssets.contains(g.main.assetId),
+              gutter: _pad,
+              onTap: () => _openToken(context, g),
             ),
-        ],
+        ], _pad),
+    ];
+  }
+}
+
+/// The quiet name of a list inside a card, with its one way in on the right.
+class _ListHead extends StatelessWidget {
+  const _ListHead({required this.label, this.action});
+
+  final String label;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.cardPadding,
+        AppSpacing.md,
+        AppSpacing.md,
+        AppSpacing.xs,
+      ),
+      child: SizedBox(
+        height: AppSpacing.controlHeight,
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
+              ),
+            ),
+            ?action,
+          ],
+        ),
       ),
     );
   }
 }
 
-// ── Activity row ──────────────────────────────────────────────────────────────
-
-class _ActivityRow extends StatelessWidget {
-  const _ActivityRow({required this.tx});
-  final RecentActivityItem tx;
-
-  @override
-  Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
-    final isIn = tx.direction == 'incoming';
-    final color = isIn ? s.success : s.ink;
-    final icon = isIn ? Icons.south_west : Icons.north_east;
-    final phone = AppLayout.isPhone(context);
-
-    final amountStyle = AppTypography.numericSmall.copyWith(
-      fontSize: 14,
-      color: color,
-      fontWeight: FontWeight.w600,
-    );
-    // Only the phone branch caps the amount's width, so only there does it
-    // need to ellipsise; the desktop tree stays exactly as it was.
-    final amount = phone
-        ? Amount(
-            tx.amount,
-            style: amountStyle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.end,
-          )
-        : Amount(tx.amount, style: amountStyle);
-
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: phone ? AppSpacing.cardPaddingSmall : AppSpacing.lg,
-        vertical: phone ? AppSpacing.sm + 3 : AppSpacing.sm + 1,
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 15, color: isIn ? s.success : s.inkSecondary),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  tx.note ?? tx.counterparty ?? (isIn ? 'Received' : 'Sent'),
-                  style: AppTypography.bodySmall.copyWith(
-                    fontWeight: FontWeight.w500,
-                    color: s.ink,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  tx.isConfirmed
-                      ? '${tx.confirmations} conf${tx.confirmations == 1 ? '' : 's'}.'
-                      : 'Unconfirmed',
-                  style: AppTypography.caption.copyWith(
-                    color: tx.isConfirmed ? s.success : s.warning,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (phone) ...[
-            const SizedBox(width: AppSpacing.sm),
-            // Capped so a long amount ellipsises instead of squeezing the
-            // counterparty to nothing; the title keeps >= ~150 dp.
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 160),
-              child: amount,
-            ),
-          ] else
-            amount,
-        ],
-      ),
-    );
-  }
+/// "0.01734567 BTC" → the number, and its unit.
+(String, String?) _splitUnit(String text) {
+  final i = text.lastIndexOf(' ');
+  if (i <= 0) return (text, null);
+  return (text.substring(0, i), text.substring(i + 1));
 }
