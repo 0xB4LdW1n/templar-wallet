@@ -48,12 +48,20 @@ Future<void> _until(
   WidgetTester tester,
   Finder finder, {
   int seconds = 90,
+  int atLeast = 1,
 }) async {
   for (var i = 0; i < seconds * 10; i++) {
-    if (finder.evaluate().isNotEmpty) return;
+    if (finder.evaluate().length >= atLeast) return;
     await tester.pump(const Duration(milliseconds: 100));
   }
   fail('timed out waiting for $finder');
+}
+
+/// The screen's own refresh button (tooltip "Refresh").
+Future<void> _tapRefresh(WidgetTester tester) async {
+  await _until(tester, find.byTooltip('Refresh'));
+  await tester.tap(find.byTooltip('Refresh').first);
+  await _wait(tester, 3000);
 }
 
 /// The lab's admin API (open on loopback).
@@ -106,7 +114,7 @@ Future<(int, int)> _balances(
 Future<PegOrder> _order(String walletId, String id) async =>
     (await walletBridge.pegList(walletId)).firstWhere((o) => o.orderId == id);
 
-/// Mines with [between], taps "Check the chains now" in the app, and repeats
+/// Mines with [between], taps the screen's Refresh, and repeats
 /// until the order has reached [status] (the stepper names every step, so
 /// the engine's answer is the gate; the screen is then checked for it).
 Future<void> _refreshUntil(
@@ -120,7 +128,7 @@ Future<void> _refreshUntil(
   for (var i = 0; i < tries; i++) {
     if (between != null) await between();
     await _wait(tester, 2500);
-    final refresh = find.byTooltip('Check the chains now');
+    final refresh = find.byTooltip('Refresh');
     if (refresh.evaluate().isNotEmpty) {
       await tester.tap(refresh.first);
     }
@@ -305,7 +313,12 @@ void main() {
         'completed',
         between: () => _mine('liquid', 1),
       );
-      // The badge beside the stepper's own "Completed" label.
+      // The engine's read above can be newer than the screen's last one
+      // (the screen said "Settling" while the engine already answered
+      // "completed"): check the chains once more from the screen, then
+      // its badge says it beside the stepper's own "Completed" label.
+      await _tapRefresh(tester);
+      await _until(tester, find.text('Completed'), atLeast: 2);
       expect(find.text('Completed'), findsAtLeastNWidgets(2));
       final inDone = await _order(walletId, pegIn.orderId);
       debugPrint(
@@ -320,7 +333,8 @@ void main() {
       expect(afterIn.$2, greaterThan(start.$2));
 
       // ── Peg-out ───────────────────────────────────────────────────────────
-      await _tapText(tester, 'Peg-out');
+      // The rework's segment reads "Peg out" (sentence case, no hyphen).
+      await _tapText(tester, 'Peg out');
       await _wait(tester, 1500);
       await tester.enterText(find.byType(TextField).first, '0.001');
       await _until(tester, find.text('2 Liquid confirmations'));
@@ -351,6 +365,10 @@ void main() {
           await _mine(o.status == 'settling' ? 'bitcoin' : 'liquid', 1);
         },
       );
+      // On screen: the peg-in's badge, the peg-out's badge and the peg-out
+      // stepper's own label (the peg-out is the order open).
+      await _tapRefresh(tester);
+      await _until(tester, find.text('Completed'), atLeast: 3);
       final outDone = await _order(walletId, pegOut.orderId);
       debugPrint(
         'PEG out ${outDone.status}: peg-out ${outDone.txidDeposit}, '
