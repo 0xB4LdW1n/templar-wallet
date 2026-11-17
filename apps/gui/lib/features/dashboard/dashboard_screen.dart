@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../test_coins/test_coins.dart';
+import '../test_coins/test_coins_card.dart';
 import '../../app/routes.dart';
 import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
@@ -627,6 +629,14 @@ class _DashboardContent extends StatelessWidget {
               historyFailed: historyFailed,
             ),
           ),
+          // Joined to a test server with a faucet: the coins it pays, one
+          // action each, where the balance they land in is.
+          if (context.select<AppState, bool>(
+            (st) => testCoinsFor(st).isNotEmpty,
+          )) ...[
+            const SizedBox(height: AppSpacing.xl),
+            const Reveal(delay: 2, child: TestCoinsCard()),
+          ],
           // A shared wallet's keys, on the screen people actually open.
           if ((walletInfo?.cosignerKeys.length ?? 0) > 1) ...[
             const SizedBox(height: AppSpacing.xl),
@@ -2874,5 +2884,8 @@ class _ListHead extends StatelessWidget {
 
 /// The network the dashboard states: `TESTNET`, or `REGTEST` when Bitcoin
 /// runs on a joined test server's regtest (Liquid is then on its regtest too).
-String networkBadgeLabel(BuildContext context) =>
-    (maybeAppState(context)?.isBitcoinRegtest ?? false) ? 'REGTEST' : 'TESTNET';
+String networkBadgeLabel(BuildContext context) {
+  final st = maybeAppState(context);
+  final regtest = (st?.isBitcoinRegtest ?? false) || (st?.isLiquidRegtest ?? false);
+  return regtest ? 'REGTEST' : 'TESTNET';
+}

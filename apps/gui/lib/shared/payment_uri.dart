@@ -21,16 +21,25 @@ class PaymentRequest {
 /// trip can be pinned down by tests (`test/payment_uri_test.dart`).
 abstract final class PaymentUri {
   /// Bitcoin's scheme is the same on every network — the address says which
-  /// one. Liquid has a scheme per network and this build is testnet-locked.
+  /// one. Liquid has a scheme per network: `liquidtestnet` on Liquid
+  /// testnet, and `liquidregtest` on a regtest (a test server's), where an
+  /// `el1…` address under the testnet scheme would name the wrong chain.
   static const String bitcoinScheme = 'bitcoin';
   static const String liquidScheme = 'liquidtestnet';
+  static const String liquidRegtestScheme = 'liquidregtest';
 
-  static const Set<String> _schemes = {bitcoinScheme, liquidScheme};
+  static const Set<String> _schemes = {
+    bitcoinScheme,
+    liquidScheme,
+    liquidRegtestScheme,
+  };
 
   /// The scheme a chain answers to, keyed by the asset the Receive screen
   /// names its chains with ('BTC' / 'LBTC').
-  static String schemeFor(String asset) =>
-      asset == 'BTC' ? bitcoinScheme : liquidScheme;
+  static String schemeFor(String asset, {bool liquidRegtest = false}) =>
+      asset == 'BTC'
+      ? bitcoinScheme
+      : (liquidRegtest ? liquidRegtestScheme : liquidScheme);
 
   /// The link for [address] on [asset]. An amount of null or zero and an
   /// empty label are simply left out — a link with no query is still a valid
@@ -40,6 +49,7 @@ abstract final class PaymentUri {
     required String asset,
     int? amountSats,
     String? label,
+    bool liquidRegtest = false,
   }) {
     final params = <String>[];
     if (amountSats != null && amountSats > 0) {
@@ -52,7 +62,7 @@ abstract final class PaymentUri {
       params.add('label=${Uri.encodeComponent(note)}');
     }
     final query = params.isEmpty ? '' : '?${params.join('&')}';
-    return '${schemeFor(asset)}:$address$query';
+    return '${schemeFor(asset, liquidRegtest: liquidRegtest)}:$address$query';
   }
 
   /// The amount as BIP21 spells it: decimal coin, no trailing zeros, so a

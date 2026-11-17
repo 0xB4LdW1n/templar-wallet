@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../test_coins/test_coins.dart';
+import '../test_coins/test_coins_card.dart';
 import '../../app/app_state.dart';
 import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
@@ -244,6 +246,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
       asset: _selectedAsset,
       amountSats: sats,
       label: _requestNote,
+      liquidRegtest: context.read<AppState>().isLiquidRegtest,
     );
   }
 
@@ -636,9 +639,24 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
               onVerify: _verifyOnDevice,
             ),
           ],
+          ..._testCoins(context),
         ],
       ),
     );
+  }
+
+  /// On a test server with a faucet: test coins of the chain on screen,
+  /// paid to this wallet without leaving the page.
+  List<Widget> _testCoins(BuildContext context) {
+    final bitcoin = _selectedAsset == 'BTC';
+    final st = context.watch<AppState>();
+    if (faucetCoin(st, bitcoin: bitcoin) == null) return const [];
+    return [
+      const SizedBox(height: AppSpacing.lg),
+      Divider(height: 1, thickness: 1, color: AppScheme.of(context).edge),
+      const SizedBox(height: AppSpacing.lg),
+      TestCoinAction(bitcoin: bitcoin, bridge: _bridge),
+    ];
   }
 
   /// The desktop list of previous addresses: the newest eight as table rows,
@@ -739,6 +757,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                     onVerify: _verifyOnDevice,
                   ),
                 ],
+                ..._testCoins(context),
               ],
             ),
           ),

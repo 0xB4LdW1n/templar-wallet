@@ -43,6 +43,27 @@ void main() {
       );
     });
 
+    test('a Liquid regtest link names the regtest, and reads back', () {
+      final uri = PaymentUri.build(
+        address: 'el1qexample',
+        asset: 'LBTC',
+        amountSats: 100000,
+        liquidRegtest: true,
+      );
+      expect(uri, 'liquidregtest:el1qexample?amount=0.001');
+      expect(PaymentUri.isPaymentUri(uri), isTrue);
+      expect(PaymentUri.parse(uri)!.address, 'el1qexample');
+      // Bitcoin's scheme does not change with the network.
+      expect(
+        PaymentUri.build(
+          address: 'bcrt1qexample',
+          asset: 'BTC',
+          liquidRegtest: true,
+        ),
+        'bitcoin:bcrt1qexample',
+      );
+    });
+
     test('a note is percent-encoded, never form-encoded', () {
       final uri = PaymentUri.build(
         address: 'tb1qexample',
