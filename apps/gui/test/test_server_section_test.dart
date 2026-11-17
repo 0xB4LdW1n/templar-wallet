@@ -296,7 +296,7 @@ void main() {
     await _pump(tester, bridge, AppState());
 
     expect(find.text('Templar testlab'), findsOneWidget);
-    expect(find.text('Not checked this session.'), findsOneWidget);
+    expect(find.text('Not checked this session'), findsOneWidget);
 
     await tester.tap(find.text('Check now'));
     await tester.pumpAndSettle();

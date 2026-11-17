@@ -17,12 +17,11 @@ import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
-import '../../shared/widgets/cards.dart';
-import '../../shared/widgets/code_box.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'liquid_network_switch.dart' show liquidNetworkErrorText;
+import 'settings_kit.dart';
 import 'test_server_switch.dart';
 
 class TestServerCard extends StatefulWidget {
@@ -156,115 +155,155 @@ class _TestServerCardState extends State<TestServerCard> {
     final st = context.watch<AppState>();
     final info = st.testServer;
     final profile = info?.profile;
-    return FormCard(
-      title: 'Test server',
-      subtitle:
+    final children = <Widget>[
+      if (_error != null) SettingsBlock(child: DangerBanner(message: _error!)),
+      if (info == null && !_loaded)
+        const SettingsBlock(
+          child: Center(
+            child: SizedBox(
+              width: AppSpacing.lg,
+              height: AppSpacing.lg,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        )
+      else ...[
+        if (info?.active.envLocked ?? false)
+          SettingsBlock(
+            child: InfoBanner(
+              message:
+                  'TEMPLAR_LIQUID_NETWORK fixes Liquid to '
+                  '${st.liquidNetworkName} for this session. A test server '
+                  'can still be joined, but its regtest chains apply only '
+                  'once the variable is unset.',
+            ),
+          ),
+        if (profile == null) ..._joinForm() else ..._joined(st, info!, profile),
+      ],
+    ];
+    return SettingsGroup(
+      label: 'Test server',
+      blocks: true,
+      note:
           'A Templar test server runs its own Bitcoin and Liquid regtest, a '
           'faucet and a swap order book. Join one with its URL; everything '
           'else comes from the server.',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_error != null) ...[
-            DangerBanner(message: _error!),
-            const SizedBox(height: AppSpacing.lg),
-          ],
-          if (info == null && !_loaded)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(AppSpacing.lg),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            )
-          else ...[
-            if (info?.active.envLocked ?? false) ...[
-              InfoBanner(
-                message:
-                    'TEMPLAR_LIQUID_NETWORK fixes Liquid to '
-                    '${st.liquidNetworkName} for this session. A test server '
-                    'can still be joined, but its regtest chains apply only '
-                    'once the variable is unset.',
-              ),
-              const SizedBox(height: AppSpacing.lg),
-            ],
-            if (profile == null) _joinForm() else _joined(st, info!, profile),
-          ],
-        ],
-      ),
+      children: children,
     );
   }
 
-  Widget _joinForm() {
+  /// The block that holds a group's buttons: right-aligned on desktop, full
+  /// width on a phone (as the Liquid network group's Apply).
+  Widget _actions(List<Widget> buttons) {
     final phone = AppLayout.isPhone(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          key: const Key('test-server-url'),
-          controller: _url,
-          enabled: !_busy,
-          keyboardType: TextInputType.url,
-          autocorrect: false,
-          style: AppTypography.mono,
-          onChanged: (_) {
-            if (_urlProblem != null) setState(() => _urlProblem = null);
-          },
-          onSubmitted: (_) => _join(),
-          decoration: InputDecoration(
-            labelText: 'Test server URL',
-            hintText: 'http://127.0.0.1:8096',
-            errorText: _urlProblem,
-            errorMaxLines: 2,
-            prefixIcon: phone ? null : const Icon(Icons.dns_outlined, size: 16),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        SecondaryButton(
-          label: 'Join',
-          icon: Icons.login_rounded,
-          isLoading: _busy,
-          onPressed: _busy ? null : () => _join(),
-          isFullWidth: phone,
-        ),
-      ],
+    return SettingsBlock(
+      child: phone
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < buttons.length; i++) ...[
+                  if (i > 0) const SizedBox(height: AppSpacing.sm),
+                  buttons[i],
+                ],
+              ],
+            )
+          : Wrap(
+              alignment: WrapAlignment.end,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: buttons,
+            ),
     );
   }
 
-  Widget _joined(AppState st, TestServerInfo info, TestServerProfile profile) {
+  List<Widget> _joinForm() {
+    final s = AppScheme.of(context);
+    final phone = AppLayout.isPhone(context);
+    return [
+      SettingsBlock(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Test server URL',
+              style: AppTypography.eyebrow.copyWith(color: s.inkSecondary),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextField(
+              key: const Key('test-server-url'),
+              controller: _url,
+              enabled: !_busy,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              style: AppTypography.mono.copyWith(color: s.ink),
+              onChanged: (_) {
+                if (_urlProblem != null) setState(() => _urlProblem = null);
+              },
+              onSubmitted: (_) => _join(),
+              decoration: InputDecoration(
+                hintText: 'http://127.0.0.1:8096',
+                errorText: _urlProblem,
+                errorMaxLines: 2,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Align(
+              alignment: phone ? Alignment.center : Alignment.centerRight,
+              child: SecondaryButton(
+                label: 'Join',
+                icon: Icons.login_rounded,
+                isLoading: _busy,
+                onPressed: _busy ? null : () => _join(),
+                isFullWidth: phone,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _joined(
+    AppState st,
+    TestServerInfo info,
+    TestServerProfile profile,
+  ) {
     final s = AppScheme.of(context);
     final check = info.check;
     final stale = st.testServerStale || info.isStale;
     final String status;
+    final Color dot;
     if (check == null) {
-      status = 'Not checked this session.';
+      status = 'Not checked this session';
+      dot = s.inkFaint;
     } else if (!check.reachable) {
-      status = 'Did not answer the last check.';
+      status = 'Did not answer the last check';
+      dot = s.danger;
     } else if (stale) {
-      status = 'Answered: its chain was reset.';
+      status = 'Answered: its chain was reset';
+      dot = s.warning;
     } else {
-      status = 'Answered: same chain as when you joined.';
+      status = 'Answered: same chain as when you joined';
+      dot = s.success;
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          profile.name.isNotEmpty ? profile.name : profile.baseUrl,
-          style: AppTypography.label.copyWith(color: s.ink),
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          status,
-          style: AppTypography.caption.copyWith(color: s.inkSecondary),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        CopyRow(label: 'Server', value: profile.baseUrl, singleLine: true),
-        if (stale) ...[
-          const SizedBox(height: AppSpacing.md),
-          WarningBanner(
+    return [
+      SettingsRow(
+        icon: Icons.science_outlined,
+        title: profile.name.isNotEmpty ? profile.name : profile.baseUrl,
+        subtitle: status,
+        dot: dot,
+      ),
+      SettingsRow(
+        icon: Icons.dns_outlined,
+        title: 'Server',
+        subtitle: profile.baseUrl,
+        mono: true,
+        wrap: true,
+        trailing: SettingsCopyButton(value: profile.baseUrl),
+      ),
+      if (stale)
+        SettingsBlock(
+          child: WarningBanner(
             title: 'The test chain was reset',
             message:
                 'The test server now runs a new chain, so what this wallet '
@@ -279,34 +318,29 @@ class _TestServerCardState extends State<TestServerCard> {
                   : () => _join(url: profile.baseUrl, rejoin: true),
             ),
           ),
-        ] else if (check != null && !check.reachable) ...[
-          const SizedBox(height: AppSpacing.md),
-          WarningBanner(
+        )
+      else if (check != null && !check.reachable)
+        SettingsBlock(
+          child: WarningBanner(
             title: 'Test server unreachable',
             message:
                 '${check.error ?? 'It did not answer.'} The wallet keeps using '
                 'the servers it stored when you joined; try again later.',
           ),
-        ],
-        const SizedBox(height: AppSpacing.lg),
-        Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
-          children: [
-            GhostButton(
-              label: _checking ? 'Checking…' : 'Check now',
-              icon: Icons.refresh_rounded,
-              onPressed: _checking || _busy ? null : _check,
-            ),
-            SecondaryButton(
-              label: 'Leave',
-              icon: Icons.logout_rounded,
-              isLoading: _busy,
-              onPressed: _busy ? null : _leave,
-            ),
-          ],
         ),
-      ],
-    );
+      _actions([
+        GhostButton(
+          label: _checking ? 'Checking…' : 'Check now',
+          icon: Icons.refresh_rounded,
+          onPressed: _checking || _busy ? null : _check,
+        ),
+        SecondaryButton(
+          label: 'Leave',
+          icon: Icons.logout_rounded,
+          isLoading: _busy,
+          onPressed: _busy ? null : _leave,
+        ),
+      ]),
+    ];
   }
 }
