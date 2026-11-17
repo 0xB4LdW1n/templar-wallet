@@ -41,7 +41,7 @@ design.md            the design rules
 
 `apps/tui/Cargo.toml` and `crates/wallet-ffi/Cargo.toml` depend on templarlib
 **by git tag** (`git = "https://github.com/0xB4LdW1n/templarlib"`,
-`tag = "v0.1.0"`); `Cargo.lock` pins the commit. Cargo fetches it, so no
+`tag = "v0.2.0"`); `Cargo.lock` pins the commit. Cargo fetches it, so no
 sibling checkout is needed. Bumping the engine: tag templarlib, change `tag`
 in both manifests, `cargo update -p templarlib`, commit manifests and lock
 together. To build against a local templarlib working copy, pass a Cargo

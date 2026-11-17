@@ -8,6 +8,9 @@ any release may change anything.
 
 ### Repository
 
+- **Engine templarlib v0.2.0.** Both manifests take the engine from its
+  `v0.2.0` tag (LWK 0.20, test servers, the native peg, the Liquid signing
+  guards); the wallet builds from GitHub with no local override.
 - **The engine moved out.** `templar-core` and `templarlib` now live in their
   own public repository, [templarlib](https://github.com/0xB4LdW1n/templarlib),
   with their own documentation. Until its first tag this repository reads it
