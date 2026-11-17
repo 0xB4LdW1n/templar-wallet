@@ -29,6 +29,7 @@ import 'package:templar_wallet/bridge/bridge_provider.dart';
 import 'package:templar_wallet/bridge/ffi_wallet_bridge.dart';
 import 'package:templar_wallet/features/wallet_picker/wallet_picker_screen.dart';
 import 'package:templar_wallet/main.dart';
+import 'package:templar_wallet/shared/widgets/app_dialog.dart';
 
 const String _labUrl = String.fromEnvironment('TESTLAB_URL');
 
@@ -163,7 +164,14 @@ void main() {
       await tester.tap(find.text('Join'));
       await _until(tester, find.text('Join this test server?'));
       debugPrint('TESTLAB confirmation shown');
-      await tester.tap(find.widgetWithText(ElevatedButton, 'Join').last);
+      // The rework's PrimaryButton is not a Material ElevatedButton: the
+      // dialog's "Join" is found inside the PromptDialog.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(PromptDialog),
+          matching: find.text('Join'),
+        ),
+      );
       await _until(tester, find.textContaining('Joined '));
       debugPrint('TESTLAB ${_firstText('Joined ')}');
 
