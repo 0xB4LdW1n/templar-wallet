@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
+import '../../services/peg_tx_label_store.dart';
 import '../../services/fee_bump_store.dart';
 import '../../shared/relative_time.dart';
 import '../../shared/widgets/app_password_gate.dart';
@@ -94,7 +95,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     // UTXOs while Activity shows nothing at all, which reads as a lost
     // transaction.
     final withConsolidations = await _withPendingConsolidations(walletId, txs);
-    final merged = await _withFeeBumpLinks(walletId, withConsolidations);
+    final bumped = await _withFeeBumpLinks(walletId, withConsolidations);
+    final merged = await _withPegLabels(walletId, bumped);
     if (mounted) {
       appState.cachedTransactions = merged;
       setState(() {
@@ -103,6 +105,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
         _error = null;
       });
     }
+  }
+
+  /// Names the transactions of a peg ("Peg-in deposit", "Peg-in claim", …)
+  /// from the local index the Peg screen keeps; no server is asked.
+  Future<List<Transaction>> _withPegLabels(
+    String walletId,
+    List<Transaction> txs,
+  ) async {
+    final Map<String, String> labels;
+    try {
+      labels = await PegTxLabelStore.instance.labelsFor(walletId);
+    } catch (_) {
+      return txs;
+    }
+    if (labels.isEmpty) return txs;
+    return [
+      for (final tx in txs)
+        tx.note == null && labels[tx.txid] != null
+            ? tx.withFeeBumpLink(note: labels[tx.txid])
+            : tx,
+    ];
   }
 
   Future<List<Transaction>> _withFeeBumpLinks(
