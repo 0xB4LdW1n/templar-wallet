@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../app/app_state.dart';
@@ -9,6 +8,8 @@ import '../../features/dashboard/models/dashboard_data.dart';
 import '../../features/liquid/models/issue_result.dart';
 import '../../services/asset_registry_service.dart';
 import '../../services/issued_asset_store.dart';
+import '../../shared/asset_amount.dart';
+import '../../shared/widgets/app_password_gate.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/cards.dart';
@@ -37,6 +38,10 @@ class _ReissueScreenState extends State<ReissueScreen> {
   /// elsewhere, token received by transfer) — the store is device-local, so
   /// it annotates rather than gates.
   Set<String> _tokenRecorded = {};
+
+  /// Decimals recorded at issuance on this device, per asset id: the
+  /// fallback when the engine does not report an asset's precision.
+  Map<String, int> _recordedPrecision = {};
   AssetBalance? _selectedAsset;
   bool _loadingAssets = true;
 
@@ -102,6 +107,9 @@ class _ReissueScreenState extends State<ReissueScreen> {
         setState(() {
           _reissuableAssets = reissuable;
           _tokenRecorded = recordedIds;
+          _recordedPrecision = {
+            for (final e in issued.values) e.assetId: e.precision,
+          };
           _selectedAsset =
               reissuable.where((a) => a.assetId == wanted).firstOrNull ??
               (reissuable.isNotEmpty ? reissuable.first : null);
@@ -124,13 +132,32 @@ class _ReissueScreenState extends State<ReissueScreen> {
     }
   }
 
+  /// The amount field of the selected asset: its own units when the engine
+  /// (or this device's issuance record) knows its decimals.
+  AssetAmountField get _field {
+    final a = _selectedAsset;
+    return AssetAmountField(
+      precision: a == null
+          ? null
+          : (a.precision ?? _recordedPrecision[a.assetId]),
+      unit: a == null ? '' : AssetRegistryService.instance.displayTicker(a),
+    );
+  }
+
+  int? get _amount => _field.parse(_amountController.text).baseUnits;
+
   void _onReview() {
     final asset = _selectedAsset;
     if (asset == null) {
       setState(() => _error = 'Select an asset.');
       return;
     }
-    final amount = int.tryParse(_amountController.text.trim());
+    final parsed = _field.parse(_amountController.text);
+    if (parsed.error != null) {
+      setState(() => _error = '${parsed.error}.');
+      return;
+    }
+    final amount = parsed.baseUnits;
     if (amount == null || amount <= 0) {
       setState(() => _error = 'Enter an amount greater than 0.');
       return;
@@ -166,8 +193,17 @@ class _ReissueScreenState extends State<ReissueScreen> {
   Future<void> _onConfirmReissue() async {
     final asset = _selectedAsset;
     if (asset == null) return;
-    final amount = int.tryParse(_amountController.text.trim()) ?? 0;
+    final amount = _amount ?? 0;
     if (amount <= 0) return;
+    // Reissuing signs with this wallet's key: the password first.
+    final ok = await showSpendPasswordGate(
+      context,
+      message:
+          'Templar is about to sign the reissuance of ${_field.format(amount)} '
+          'with the key stored on this '
+          '${AppLayout.isMobilePlatform ? 'device' : 'computer'}.',
+    );
+    if (!ok || !mounted) return;
 
     setState(() {
       _error = null;
@@ -303,13 +339,19 @@ class _ReissueScreenState extends State<ReissueScreen> {
           const SizedBox(height: AppSpacing.xl),
           FieldBlock(
             label: 'Amount to mint',
-            help: 'In base units',
+            help: _field.help(_amountController.text),
             child: TextField(
+              key: const Key('reissue-amount'),
               controller: _amountController,
-              keyboardType: TextInputType.number,
+              keyboardType: TextInputType.numberWithOptions(
+                decimal: (_field.precision ?? 0) > 0,
+              ),
               style: AppTypography.numeric,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(hintText: '0'),
+              decoration: InputDecoration(
+                hintText: _field.fieldText(0),
+                suffixText: _field.inBaseUnits ? null : _field.unit,
+              ),
+              onChanged: (_) => setState(() {}),
             ),
           ),
           if (_error != null) ...[
@@ -333,7 +375,7 @@ class _ReissueScreenState extends State<ReissueScreen> {
   Widget _buildReview() {
     final reg = AssetRegistryService.instance;
     final asset = _selectedAsset!;
-    final amount = _amountController.text.trim();
+    final amount = _amount ?? 0;
     final s = AppScheme.of(context);
     return ListView(
       padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
@@ -366,12 +408,17 @@ class _ReissueScreenState extends State<ReissueScreen> {
             ),
             (
               label: 'Amount to mint',
-              value: '$amount base units',
+              value: _field.format(amount),
+              isMono: false,
+            ),
+            (
+              label: 'Signed as',
+              value: AssetAmount.baseUnitsText(amount),
               isMono: false,
             ),
             (
               label: 'Result',
-              value: 'Total supply increases by $amount base units',
+              value: 'Total supply increases by ${_field.format(amount)}',
               isMono: false,
             ),
           ],

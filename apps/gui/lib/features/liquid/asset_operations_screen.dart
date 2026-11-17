@@ -108,7 +108,10 @@ class _AssetOperationsScreenState extends State<AssetOperationsScreen> {
                 const PageHeader(title: 'Asset operations'),
                 const ListSectionLabel(label: 'Manage assets'),
                 const AssetOpsRows(),
-                if (_unregistered.isNotEmpty) ...[
+                // The public registry is Liquid testnet's: a regtest asset
+                // can never be in it (its name lives in the order book's).
+                if (_unregistered.isNotEmpty &&
+                    !context.watch<AppState>().isLiquidRegtest) ...[
                   const SizedBox(height: AppSpacing.xl),
                   const ListSectionLabel(label: 'Asset registry'),
                   Padding(

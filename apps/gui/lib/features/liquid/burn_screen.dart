@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../app/app_state.dart';
@@ -7,6 +6,8 @@ import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../features/dashboard/models/dashboard_data.dart';
 import '../../services/asset_registry_service.dart';
+import '../../shared/asset_amount.dart';
+import '../../shared/widgets/app_password_gate.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/cards.dart';
@@ -89,11 +90,26 @@ class _BurnScreenState extends State<BurnScreen> {
     }
   }
 
+  /// The amount field of the selected asset: its own units when the engine
+  /// knows its decimals, base units otherwise.
+  AssetAmountField get _field {
+    final a = _selectedAsset;
+    return AssetAmountField(
+      precision: a?.precision,
+      unit: a == null ? '' : _confirmTicker,
+    );
+  }
+
   Future<void> _onBurn() async {
     final asset = _selectedAsset;
     if (asset == null) return;
     if (!_confirmed) return;
-    final amount = int.tryParse(_amountController.text.trim());
+    final parsed = _field.parse(_amountController.text);
+    if (parsed.error != null) {
+      setState(() => _error = parsed.error);
+      return;
+    }
+    final amount = parsed.baseUnits;
     if (amount == null || amount <= 0) {
       setState(() => _error = 'Enter an amount greater than 0');
       return;
@@ -101,10 +117,20 @@ class _BurnScreenState extends State<BurnScreen> {
     if (amount > asset.amount) {
       setState(
         () => _error =
-            'Amount exceeds current holdings (${asset.amount} base units)',
+            'Amount exceeds current holdings (${_field.format(asset.amount)})',
       );
       return;
     }
+    // Burning signs with this wallet's key and destroys the units: the
+    // password first, with the exact figure that is signed.
+    final ok = await showSpendPasswordGate(
+      context,
+      message:
+          'Templar is about to sign a burn of ${_field.format(amount)} '
+          '(${AssetAmount.baseUnitsText(amount)}) with the key stored on this '
+          '${AppLayout.isMobilePlatform ? 'device' : 'computer'}.',
+    );
+    if (!ok || !mounted) return;
 
     setState(() {
       _error = null;
@@ -232,21 +258,28 @@ class _BurnScreenState extends State<BurnScreen> {
           const SizedBox(height: AppSpacing.xl),
           FieldBlock(
             label: 'Amount to burn',
-            help: 'In base units',
+            help: _field.help(_amountController.text),
             trailing: asset == null
                 ? null
                 : GhostButton(
                     label: 'Burn all',
                     onPressed: () => setState(
-                      () => _amountController.text = '${asset.amount}',
+                      () => _amountController.text = _field.fieldText(
+                        asset.amount,
+                      ),
                     ),
                   ),
             child: TextField(
+              key: const Key('burn-amount'),
               controller: _amountController,
-              keyboardType: TextInputType.number,
+              keyboardType: TextInputType.numberWithOptions(
+                decimal: (_field.precision ?? 0) > 0,
+              ),
               style: AppTypography.numeric,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(hintText: '0'),
+              decoration: InputDecoration(
+                hintText: _field.fieldText(0),
+                suffixText: _field.inBaseUnits ? null : _field.unit,
+              ),
             ),
           ),
           const SizedBox(height: AppSpacing.xl),

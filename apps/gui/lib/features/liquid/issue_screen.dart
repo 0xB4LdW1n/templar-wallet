@@ -7,6 +7,8 @@ import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../features/liquid/models/issue_result.dart';
 import '../../services/issued_asset_store.dart';
+import '../../shared/asset_amount.dart';
+import '../../shared/widgets/app_password_gate.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/cards.dart';
@@ -35,7 +37,9 @@ class _IssueScreenState extends State<IssueScreen> {
 
   final _nameController = TextEditingController();
   final _tickerController = TextEditingController();
-  final _precisionController = TextEditingController(text: '8');
+  // Two decimals: a token, not a coin. `100.00` reads as an amount; eight
+  // decimals by default made every supply a column of zeros.
+  final _precisionController = TextEditingController(text: '2');
   final _domainController = TextEditingController();
   final _supplyController = TextEditingController();
   bool _createReissuanceToken = true;
@@ -43,6 +47,23 @@ class _IssueScreenState extends State<IssueScreen> {
   bool _issuing = false;
   String? _error;
   IssueResult? _result;
+  bool _reregistering = false;
+
+  /// On a regtest (a test server's, or a local one) there is no public
+  /// registry and no domain proof: the engine writes a reserved domain and
+  /// the token is announced to the order book only.
+  bool get _regtest => context.read<AppState>().isLiquidRegtest;
+
+  int get _precision => int.tryParse(_precisionController.text.trim()) ?? 0;
+
+  String get _unit {
+    final t = _tickerController.text.trim();
+    return t.isEmpty ? 'This asset' : t;
+  }
+
+  /// The supply in base units, or null with the reason in [_supplyError].
+  AssetAmountParse get _supply =>
+      AssetAmount.parse(_supplyController.text, _precision, unit: _unit);
 
   @override
   void dispose() {
@@ -84,6 +105,8 @@ class _IssueScreenState extends State<IssueScreen> {
     if (precision == null || precision < 0 || precision > 8) {
       return 'Precision must be a whole number between 0 and 8.';
     }
+    // On a regtest the engine supplies the domain itself.
+    if (_regtest) return null;
     final domain = _domainController.text
         .trim()
         .toLowerCase()
@@ -107,12 +130,10 @@ class _IssueScreenState extends State<IssueScreen> {
 
   /// Validates step 2 fields. Returns the first error, or null.
   String? _validateSupply() {
-    final supplyText = _supplyController.text.trim();
-    if (supplyText.isEmpty) return 'Initial supply is required.';
-    final supply = int.tryParse(supplyText);
-    if (supply == null || supply <= 0) {
-      return 'Initial supply must be a whole number greater than 0.';
-    }
+    final parsed = _supply;
+    if (parsed.isEmpty) return 'Initial supply is required.';
+    if (parsed.error != null) return '${parsed.error}.';
+    if (parsed.baseUnits! <= 0) return 'Initial supply must be more than 0.';
     return null;
   }
 
@@ -125,9 +146,21 @@ class _IssueScreenState extends State<IssueScreen> {
 
     final name = _nameController.text.trim();
     final ticker = _tickerController.text.trim();
-    final domain = _domainController.text.trim();
-    final supply = int.parse(_supplyController.text.trim());
+    final domain = _regtest ? '' : _domainController.text.trim();
+    final supply = _supply.baseUnits!;
     final precision = int.parse(_precisionController.text.trim());
+
+    // Issuing signs and broadcasts with this wallet's key: the password
+    // first (CLAUDE.md, rule 3).
+    final ok = await showSpendPasswordGate(
+      context,
+      message:
+          'Templar is about to sign the issuance of '
+          '${AssetAmount.format(supply, precision, group: true)} $ticker with '
+          'the key stored on this '
+          '${AppLayout.isMobilePlatform ? 'device' : 'computer'}.',
+    );
+    if (!ok || !mounted) return;
 
     setState(() {
       _error = null;
@@ -141,7 +174,7 @@ class _IssueScreenState extends State<IssueScreen> {
         name: name,
         ticker: ticker,
         precision: precision,
-        domain: domain,
+        domain: domain.isEmpty ? null : domain,
         amountSats: supply,
         reissuanceTokens: _createReissuanceToken ? 1 : 0,
       );
@@ -156,7 +189,7 @@ class _IssueScreenState extends State<IssueScreen> {
           ticker: ticker,
           tokenId: result.tokenId,
           precision: precision,
-          domain: domain,
+          domain: result.domain.isNotEmpty ? result.domain : domain,
           registered: result.registryRegistered,
         ),
       );
@@ -177,55 +210,67 @@ class _IssueScreenState extends State<IssueScreen> {
     }
   }
 
+  /// Submit the asset again: to the order book's registry (and, on Liquid
+  /// testnet, to the public registry once the domain proof is live).
   Future<void> _onReregister() async {
     final result = _result;
-    if (result == null) return;
+    if (result == null || _reregistering) return;
     final walletId = context.read<AppState>().activeWalletId ?? 'wallet-1';
+    setState(() => _reregistering = true);
     try {
-      final ok = (await _bridge.reregisterAsset(
+      final r = await _bridge.reregisterAsset(
         walletId: walletId,
         assetId: result.assetId,
         name: _nameController.text.trim(),
         ticker: _tickerController.text.trim(),
-        precision: int.tryParse(_precisionController.text.trim()) ?? 8,
-        domain: _domainController.text.trim(),
-      )).registered;
-      if (ok) {
+        precision: _precision,
+        domain: result.domain.isNotEmpty
+            ? result.domain
+            : _domainController.text.trim(),
+      );
+      if (r.registered) {
         await IssuedAssetStore.instance.markRegistered(
           walletId,
           result.assetId,
         );
       }
-      if (mounted) {
-        if (ok) {
-          // Flip the result banner from "proof required" to registered.
-          setState(() {
-            _result = IssueResult(
-              assetId: result.assetId,
-              tokenId: result.tokenId,
-              txid: result.txid,
-              registryRegistered: true,
-              proofUrl: result.proofUrl,
-              proofContent: result.proofContent,
-            );
-          });
-        }
+      if (!mounted) return;
+      setState(() {
+        _reregistering = false;
+        _result = IssueResult(
+          assetId: result.assetId,
+          tokenId: result.tokenId,
+          txid: result.txid,
+          registryRegistered: result.registryRegistered || r.registered,
+          proofUrl: result.proofUrl,
+          proofContent: result.proofContent,
+          bookRegistered: r.bookRegistered,
+          bookError: r.bookRegistered ? null : r.bookError,
+          domain: result.domain,
+        );
+      });
+      if (!_regtest) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              ok
+              r.registered
                   ? 'Asset registered'
-                  : 'Registration failed — ensure the domain proof file is live',
+                  : 'Not in the public registry yet — check that the domain '
+                        'proof file is live',
             ),
           ),
         );
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
+      if (!mounted) return;
+      setState(() => _reregistering = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: wallet-ffi: ', ''),
+          ),
+        ),
+      );
     }
   }
 
@@ -331,10 +376,15 @@ class _IssueScreenState extends State<IssueScreen> {
       ticker: _tickerController,
       precision: _precisionController,
       domain: _domainController,
+      regtest: _regtest,
+      labName: context.read<AppState>().testServerName,
       error: _error,
     ),
     2 => _Step2(
       supply: _supplyController,
+      precision: _precision,
+      unit: _tickerController.text.trim(),
+      onChanged: () => setState(() {}),
       createToken: _createReissuanceToken,
       onToggleToken: (v) => setState(() => _createReissuanceToken = v),
       error: _error,
@@ -343,13 +393,19 @@ class _IssueScreenState extends State<IssueScreen> {
       name: _nameController.text,
       ticker: _tickerController.text,
       precision: _precisionController.text,
-      domain: _domainController.text,
-      supply: _supplyController.text,
+      domain: _regtest ? null : _domainController.text,
+      bookName: context.read<AppState>().testServerName,
+      supply: _supply.baseUnits ?? 0,
+      precisionValue: _precision,
       hasReissuanceToken: _createReissuanceToken,
       error: _error,
     ),
     _ => _Step4Result(
       result: _result!,
+      ticker: _tickerController.text.trim(),
+      regtest: _regtest,
+      labName: context.read<AppState>().testServerName,
+      reregistering: _reregistering,
       onReregister: _onReregister,
       onDone: () => context.go(AppRoutes.liquid),
     ),
@@ -364,12 +420,20 @@ class _Step1 extends StatelessWidget {
     required this.ticker,
     required this.precision,
     required this.domain,
+    required this.regtest,
+    this.labName,
     this.error,
   });
   final TextEditingController name;
   final TextEditingController ticker;
   final TextEditingController precision;
   final TextEditingController domain;
+
+  /// No domain on a regtest: the engine writes its reserved default.
+  final bool regtest;
+
+  /// The joined test server, whose order book is told about the token.
+  final String? labName;
   final String? error;
 
   @override
@@ -383,7 +447,9 @@ class _Step1 extends StatelessWidget {
         const SizedBox(height: AppSpacing.lg),
         FieldBlock(
           label: 'Ticker',
-          help: '3–24 letters, digits, "." or "-"',
+          help:
+              '3–24 letters, digits, "." or "-"; the order book lists a '
+              'ticker of 3–16 characters',
           child: TextField(
             controller: ticker,
             decoration: const InputDecoration(hintText: 'MYTKN'),
@@ -392,31 +458,43 @@ class _Step1 extends StatelessWidget {
         const SizedBox(height: AppSpacing.lg),
         FieldBlock(
           label: 'Precision',
-          help: 'Decimal places, 0–8',
+          help: 'Decimal places, 0–8: with 2, 10,000 base units read 100.00',
           child: TextField(
             controller: precision,
             style: AppTypography.numeric,
-            decoration: const InputDecoration(hintText: '8'),
+            decoration: const InputDecoration(hintText: '2'),
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           ),
         ),
-        const SizedBox(height: AppSpacing.lg),
-        FieldBlock(
-          label: 'Domain',
-          help: 'Hostname only — no https://, no trailing slash, no path',
-          child: TextField(
-            controller: domain,
-            // The registry rejects uppercase domains — normalize as typed.
-            inputFormatters: [
-              TextInputFormatter.withFunction(
-                (oldValue, newValue) =>
-                    newValue.copyWith(text: newValue.text.toLowerCase()),
-              ),
-            ],
-            decoration: const InputDecoration(hintText: 'username.github.io'),
+        if (regtest) ...[
+          const SizedBox(height: AppSpacing.xl),
+          InfoBanner(
+            message: labName != null
+                ? 'On a test server no domain is needed: the token is '
+                      'announced to $labName\'s order book, so other wallets '
+                      'there see its name.'
+                : 'On regtest no domain is needed: there is no public asset '
+                      'registry to prove it to.',
           ),
-        ),
+        ] else ...[
+          const SizedBox(height: AppSpacing.lg),
+          FieldBlock(
+            label: 'Domain',
+            help: 'Hostname only — no https://, no trailing slash, no path',
+            child: TextField(
+              controller: domain,
+              // The registry rejects uppercase domains — normalize as typed.
+              inputFormatters: [
+                TextInputFormatter.withFunction(
+                  (oldValue, newValue) =>
+                      newValue.copyWith(text: newValue.text.toLowerCase()),
+                ),
+              ],
+              decoration: const InputDecoration(hintText: 'username.github.io'),
+            ),
+          ),
+        ],
         if (error != null) ...[
           const SizedBox(height: AppSpacing.lg),
           _InlineError(message: error!),
@@ -431,11 +509,19 @@ class _Step1 extends StatelessWidget {
 class _Step2 extends StatelessWidget {
   const _Step2({
     required this.supply,
+    required this.precision,
+    required this.unit,
+    required this.onChanged,
     required this.createToken,
     required this.onToggleToken,
     this.error,
   });
   final TextEditingController supply;
+
+  /// The decimals chosen on the first step: the supply is typed in them.
+  final int precision;
+  final String unit;
+  final VoidCallback onChanged;
   final bool createToken;
   final void Function(bool) onToggleToken;
   final String? error;
@@ -447,13 +533,19 @@ class _Step2 extends StatelessWidget {
       children: [
         FieldBlock(
           label: 'Initial supply',
-          help: 'In base units, delivered to this wallet',
+          help: _help(),
           child: TextField(
+            key: const Key('issue-supply'),
             controller: supply,
             style: AppTypography.numeric,
-            decoration: const InputDecoration(hintText: '0'),
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: InputDecoration(
+              hintText: AssetAmount.format(0, precision),
+              suffixText: unit.isEmpty ? null : unit,
+            ),
+            keyboardType: TextInputType.numberWithOptions(
+              decimal: precision > 0,
+            ),
+            onChanged: (_) => onChanged(),
           ),
         ),
         const SizedBox(height: AppSpacing.xl),
@@ -505,6 +597,26 @@ class _Step2 extends StatelessWidget {
   }
 }
 
+extension on _Step2 {
+  /// What is typed, echoed in base units — the figure that is signed.
+  String _help() {
+    final p = AssetAmount.parse(
+      supply.text,
+      precision,
+      unit: unit.isEmpty ? 'This asset' : unit,
+    );
+    if (p.error != null) return p.error!;
+    final base = p.baseUnits;
+    final where = 'delivered to this wallet';
+    if (base == null) {
+      return precision == 0
+          ? 'A whole number, $where'
+          : 'Up to $precision decimals, $where';
+    }
+    return '= ${AssetAmount.baseUnitsText(base)}, $where';
+  }
+}
+
 // ── Step 3 ────────────────────────────────────────────────────────────────────
 
 class _Step3Review extends StatelessWidget {
@@ -514,15 +626,25 @@ class _Step3Review extends StatelessWidget {
     required this.precision,
     required this.domain,
     required this.supply,
+    required this.precisionValue,
     required this.hasReissuanceToken,
+    this.bookName,
     this.error,
   });
 
   final String name;
   final String ticker;
   final String precision;
-  final String domain;
-  final String supply;
+
+  /// Null on a regtest: the engine writes its reserved default.
+  final String? domain;
+
+  /// The joined test server whose order book is told about the token.
+  final String? bookName;
+
+  /// Base units, the figure that is signed.
+  final int supply;
+  final int precisionValue;
   final bool hasReissuanceToken;
   final String? error;
 
@@ -550,14 +672,30 @@ class _Step3Review extends StatelessWidget {
               isMono: false,
             ),
             (label: 'Precision', value: precision, isMono: false),
+            if (domain != null)
+              (
+                label: 'Domain',
+                value: domain!.isEmpty ? '—' : domain!,
+                isMono: false,
+              )
+            else
+              (
+                label: 'Order book',
+                value: bookName != null
+                    ? 'Announced to $bookName\'s order book'
+                    : 'Announced to the active order book',
+                isMono: false,
+              ),
             (
-              label: 'Domain',
-              value: domain.isEmpty ? '—' : domain,
+              label: 'Initial supply',
+              value:
+                  '${AssetAmount.format(supply, precisionValue, group: true)} '
+                  '$ticker',
               isMono: false,
             ),
             (
-              label: 'Initial supply',
-              value: supply.isEmpty ? '—' : supply,
+              label: 'Signed as',
+              value: AssetAmount.baseUnitsText(supply),
               isMono: false,
             ),
             (
@@ -600,29 +738,71 @@ class _InlineError extends StatelessWidget {
 class _Step4Result extends StatelessWidget {
   const _Step4Result({
     required this.result,
+    required this.ticker,
+    required this.regtest,
+    required this.reregistering,
     required this.onReregister,
     required this.onDone,
+    this.labName,
   });
   final IssueResult result;
+  final String ticker;
+
+  /// No public registry and no domain proof on a regtest.
+  final bool regtest;
+  final String? labName;
+  final bool reregistering;
   final VoidCallback onReregister;
   final VoidCallback onDone;
+
+  /// Whether the order book's registry stored the name, or why not.
+  Widget _bookStatus() {
+    final book = labName != null ? '$labName\'s order book' : 'the order book';
+    if (result.bookRegistered) {
+      return InfoBanner(
+        title: 'Named on the order book',
+        message:
+            '$book stored $ticker: other wallets there see its name instead '
+            'of its id.',
+      );
+    }
+    final why = (result.bookError ?? '').trim();
+    return WarningBanner(
+      title: 'Not named on the order book',
+      message: why.isEmpty
+          ? '$book did not store $ticker. The asset is issued all the same; '
+                'other wallets see its id until it is listed.'
+          : '$book did not store $ticker: $why. The asset is issued all the '
+                'same; other wallets see its id until it is listed.',
+      action: SecondaryButton(
+        label: 'Try again',
+        icon: Icons.refresh_outlined,
+        isLoading: reregistering,
+        onPressed: reregistering ? null : onReregister,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     return ListView(
       children: [
-        if (result.registryRegistered)
-          const InfoBanner(
-            message: 'Asset registered in the Liquid testnet explorer',
-          )
-        else
-          const WarningBanner(
-            title: 'Domain proof required',
-            message:
-                'Explorer registration pending. Create the file below on your '
-                'domain to complete registration.',
-          ),
+        _bookStatus(),
+        if (!regtest) ...[
+          const SizedBox(height: AppSpacing.lg),
+          if (result.registryRegistered)
+            const InfoBanner(
+              message: 'Asset registered in the Liquid testnet asset registry',
+            )
+          else
+            const WarningBanner(
+              title: 'Domain proof required',
+              message:
+                  'Registry registration pending. Create the file below on '
+                  'your domain to complete registration.',
+            ),
+        ],
         const SizedBox(height: AppSpacing.xl),
         CodeBox(label: 'Asset ID', value: result.assetId, maxLines: 2),
         if (result.tokenId != null) ...[
@@ -635,7 +815,9 @@ class _Step4Result extends StatelessWidget {
         ],
         const SizedBox(height: AppSpacing.lg),
         CodeBox(label: 'TxID', value: result.txid, maxLines: 2),
-        if (!result.registryRegistered && result.proofUrl.isNotEmpty) ...[
+        if (!regtest &&
+            !result.registryRegistered &&
+            result.proofUrl.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.xl),
           SectionCard(
             title: 'Domain proof',
@@ -662,8 +844,9 @@ class _Step4Result extends StatelessWidget {
                 const SizedBox(height: AppSpacing.lg),
                 SecondaryButton(
                   label: 'Register again',
-                  icon: Icons.refresh,
-                  onPressed: onReregister,
+                  icon: Icons.refresh_outlined,
+                  isLoading: reregistering,
+                  onPressed: reregistering ? null : onReregister,
                 ),
               ],
             ),
