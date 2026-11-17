@@ -1,4 +1,4 @@
-/// Settings › Network & Sync › Test server: join a Templar test server
+/// Settings › Network › Nodes and explorers › Test server: join a Templar test server
 /// ("testlab") with one URL, see whether it still runs the chain the wallet
 /// joined, re-join after a reset, leave.
 ///

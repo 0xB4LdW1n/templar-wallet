@@ -10,7 +10,10 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:templar_wallet/app/app_state.dart';
 import 'package:templar_wallet/bridge/wallet_bridge.dart';
+import 'package:templar_wallet/bridge/mock_wallet_bridge.dart';
+import 'package:templar_wallet/features/dashboard/models/dashboard_data.dart';
 import 'package:templar_wallet/features/peg/models/peg_models.dart';
+import 'package:templar_wallet/features/test_coins/test_coins.dart';
 import 'package:templar_wallet/features/peg/peg_screen.dart';
 import 'package:templar_wallet/features/receive/models/address_info.dart';
 import 'package:templar_wallet/shared/widgets/app_dialog.dart';
@@ -155,6 +158,54 @@ class _PegBridge implements WalletBridge {
     asset: asset,
   );
 
+  /// BTC and L-BTC in this wallet (null = no summary at all).
+  int? btcSats;
+  int lbtcSats = 0;
+  final faucet = <String>[];
+
+  @override
+  Future<DashboardData> getWalletSummary(String walletId) async {
+    final btc = btcSats;
+    if (btc == null) throw Exception('wallet-ffi: no summary');
+    return DashboardData(
+      walletId: walletId,
+      walletName: 'Throwaway',
+      totalBalanceDisplay: '',
+      syncState: 'synced',
+      recentActivity: const [],
+      assets: [
+        AssetBalance(
+          assetId: 'BTC',
+          ticker: 'BTC',
+          name: 'Bitcoin',
+          amount: btc,
+          displayAmount: '',
+        ),
+        AssetBalance(
+          assetId: 'b0' * 32,
+          ticker: 'LBTC',
+          name: 'Liquid Bitcoin',
+          amount: lbtcSats,
+          displayAmount: '',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<FaucetPayment> testServerFaucet(String walletId, String asset) async {
+    faucet.add(asset);
+    return FaucetPayment(
+      txid: 'fa' * 32,
+      asset: asset,
+      network: asset == 'btc' ? 'bitcoin-regtest' : 'liquid-regtest',
+      amountSat: 1000000,
+      address: 'bcrt1qfaucet',
+      ticker: asset == 'btc' ? 'BTC' : 'LBTC',
+      precision: 8,
+    );
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -255,6 +306,11 @@ void main() {
     expect(find.text('No peg on this network'), findsOneWidget);
     expect(find.textContaining('has no parent chain'), findsOneWidget);
     expect(find.text('Start peg-in'), findsNothing);
+    // With no peg here, every order is another network's: folded under
+    // "Older orders", one tap away.
+    expect(find.text('Completed'), findsNothing);
+    await tester.tap(find.text('Older orders'));
+    await tester.pumpAndSettle();
     expect(find.text('Completed'), findsOneWidget);
   });
 
@@ -438,10 +494,17 @@ void main() {
       ],
     );
     await _pump(tester, bridge);
+    // Folded under "Older orders", not mixed with the network's own.
+    expect(find.text('Simulated'), findsNothing);
+    await tester.tap(find.text('Older orders'));
+    await tester.pumpAndSettle();
     expect(find.text('Simulated'), findsOneWidget);
     await _expand(tester, 'Simulated');
 
-    expect(find.textContaining('retired simulated provider'), findsOneWidget);
+    expect(
+      find.textContaining('An order of the retired simulated provider'),
+      findsOneWidget,
+    );
     expect(find.text('Fund from this wallet'), findsNothing);
     expect(find.text('Cancel order'), findsNothing);
   });
@@ -475,5 +538,99 @@ void main() {
     await _expand(tester, 'Ready to claim');
     expect(find.text('Claim'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the form shows this wallet\'s BTC and L-BTC beside You send', (
+    tester,
+  ) async {
+    final bridge = _PegBridge()
+      ..btcSats = 2000000
+      ..lbtcSats = 1000000;
+    await _pump(tester, bridge);
+    expect(
+      find.text('In this wallet: 0.02000000 BTC · 0.01000000 L-BTC'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Peg out'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('In this wallet: 0.01000000 L-BTC · 0.02000000 BTC'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('older orders fold under the network\'s own', (tester) async {
+    final bridge = _PegBridge(
+      orders: [
+        _order(id: 'pg_now00001', status: 'confirming', confirmations: 1),
+        _order(id: 'pg_side0001', status: 'completed', provider: 'sideswap'),
+        _order(
+          id: 'pg_old00001',
+          status: 'expired',
+          provider: 'simulated',
+          simulated: true,
+        ),
+      ],
+    );
+    await _pump(tester, bridge);
+    expect(find.textContaining('Confirming'), findsWidgets);
+    expect(find.text('Older orders'), findsOneWidget);
+    expect(
+      find.text('2 of another network or of the retired simulated provider'),
+      findsOneWidget,
+    );
+    expect(find.text('Simulated'), findsNothing);
+    await tester.tap(find.text('Older orders'));
+    await tester.pumpAndSettle();
+    expect(find.text('Simulated'), findsOneWidget);
+    expect(find.text('Hide'), findsOneWidget);
+  });
+
+  testWidgets('not enough BTC: the refusal in words and the faucet beside it', (
+    tester,
+  ) async {
+    final mock = MockWalletBridge();
+    await tester.runAsync(() => mock.setTestServer('http://127.0.0.1:8196'));
+    final server = (await tester.runAsync(mock.getTestServer))!;
+    TestCoins.instance.reset();
+    final bridge = _PegBridge(
+      orders: [_order()],
+      fundError:
+          'PEG_INSUFFICIENT_FUNDS: this wallet has 0 sat of BTC on Bitcoin '
+          'regtest; the deposit and its fee need 100043 sat.',
+    )..btcSats = 0;
+    final state = _state()..setTestServerInfo(server);
+    await _pump(tester, bridge, state: state);
+    await _expand(tester, 'Awaiting deposit');
+    await tester.tap(find.text('Fund from this wallet'));
+    await tester.pumpAndSettle();
+    await _tapDialog(tester, 'Continue');
+    await _passGate(tester);
+
+    expect(find.text('Not enough BTC'), findsOneWidget);
+    expect(
+      find.text(
+        'Not enough coins: This wallet has 0 sat of BTC on Bitcoin regtest; '
+        'the deposit and its fee need 100043 sat. Nothing was signed.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Transaction build failed'), findsNothing);
+    await tester.tap(find.text('Get test BTC'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(bridge.faucet, ['btc']);
+    expect(find.textContaining('0.01000000 BTC on its way'), findsOneWidget);
+    TestCoins.instance.reset();
+  });
+
+  testWidgets('no provider and no test server: where to join one', (
+    tester,
+  ) async {
+    await _pump(tester, _PegBridge(), state: _state(provider: null));
+    expect(
+      find.textContaining('Settings › Network › Nodes and explorers'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Network & Sync'), findsNothing);
   });
 }

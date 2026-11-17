@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../settings/test_server_switch.dart' show kTestServerSettingsPath;
+import '../test_coins/test_coins_card.dart';
 import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
@@ -85,6 +87,20 @@ class _PegScreenState extends State<PegScreen> {
 
   /// The last refusal of a step, per order, shown inside that order.
   final Map<String, String> _stepErrors = {};
+
+  /// Orders whose last funding was refused for want of coins: they offer
+  /// the faucet's coin beside the refusal.
+  final Set<String> _unfunded = {};
+
+  /// Older orders (another network's, or the retired simulated provider's)
+  /// are folded away under the active network's.
+  bool _olderOpen = false;
+
+  /// This wallet's balances, beside "You send": BTC and L-BTC in sats, null
+  /// until read (or when the wallet has no side on that chain).
+  int? _btcSats;
+  int? _lbtcSats;
+  int _lastSyncVersion = 0;
   Timer? _pollTimer;
   bool _polling = false;
 
@@ -123,6 +139,7 @@ class _PegScreenState extends State<PegScreen> {
     super.initState();
     _loadOrders();
     _prefillAddress();
+    _loadBalances();
     // Reading an open order asks the chain servers (seconds each); every
     // 30 s is enough to follow blocks without holding the engine busy.
     _pollTimer = Timer.periodic(
@@ -133,6 +150,7 @@ class _PegScreenState extends State<PegScreen> {
       if (!mounted) return;
       _appState = context.read<AppState>();
       _lastWalletId = _appState!.activeWalletId;
+      _lastSyncVersion = _appState!.syncVersion;
       _appState!.addListener(_onAppStateChanged);
     });
   }
@@ -148,8 +166,15 @@ class _PegScreenState extends State<PegScreen> {
   }
 
   void _onAppStateChanged() {
+    if (!mounted) return;
+    // A sync landed (the faucet's coins, a deposit): read the balances again.
+    final version = _appState?.syncVersion ?? 0;
+    if (version != _lastSyncVersion) {
+      _lastSyncVersion = version;
+      _loadBalances();
+    }
     final newWalletId = _appState?.activeWalletId;
-    if (newWalletId == _lastWalletId || !mounted) return;
+    if (newWalletId == _lastWalletId) return;
     _lastWalletId = newWalletId;
     setState(() {
       _orders = [];
@@ -160,9 +185,36 @@ class _PegScreenState extends State<PegScreen> {
       _startError = null;
       _amountCtrl.clear();
       _addressCtrl.clear();
+      _btcSats = null;
+      _lbtcSats = null;
+      _unfunded.clear();
     });
     _loadOrders();
     _prefillAddress();
+    _loadBalances();
+  }
+
+  /// BTC and L-BTC of this wallet from the engine's summary (the active
+  /// network's L-BTC is the native Liquid row). Best effort: no figure is
+  /// shown rather than a guessed one.
+  Future<void> _loadBalances() async {
+    try {
+      final data = await _bridge.getWalletSummary(_walletId);
+      if (!mounted) return;
+      int? of(String ticker) {
+        for (final a in data.assets) {
+          if (a.ticker == ticker) return a.amount;
+        }
+        return null;
+      }
+
+      setState(() {
+        _btcSats = of('BTC');
+        _lbtcSats = of('LBTC');
+      });
+    } catch (_) {
+      // No summary, no figures.
+    }
   }
 
   String _msg(Object e) => pegErrorText(e);
@@ -501,6 +553,11 @@ class _PegScreenState extends State<PegScreen> {
       setState(() {
         _signing.remove(o.orderId);
         _stepErrors[o.orderId] = _msg(e);
+        if (isPegInsufficientFunds(e)) {
+          _unfunded.add(o.orderId);
+        } else {
+          _unfunded.remove(o.orderId);
+        }
       });
     }
   }
@@ -592,7 +649,7 @@ class _PegScreenState extends State<PegScreen> {
           title: 'No peg on this network',
           message: reason == null
               ? 'Peg-in and peg-out need a test server: join one in '
-                    'Settings › Network & Sync.'
+                    '$kTestServerSettingsPath.'
               : pegErrorText(reason).replaceFirst('No peg here. ', ''),
         );
     }
@@ -638,6 +695,7 @@ class _PegScreenState extends State<PegScreen> {
           const SizedBox(height: AppSpacing.xl),
           FieldBlock(
             label: 'You send',
+            trailing: _balancesLine(s),
             // The other denomination echoes under the field while typing.
             help: fiat,
             child: TextField(
@@ -744,6 +802,24 @@ class _PegScreenState extends State<PegScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// This wallet's BTC and L-BTC, the coin being sent first, so the amount
+  /// is typed against what there is to send.
+  Widget? _balancesLine(AppScheme s) {
+    final btc = _btcSats;
+    final lbtc = _lbtcSats;
+    if (btc == null && lbtc == null) return null;
+    final parts = [
+      if (btc != null) ('BTC', btc),
+      if (lbtc != null) ('L-BTC', lbtc),
+    ];
+    if (!_isPegIn) parts.sort((a, b) => a.$1 == 'L-BTC' ? -1 : 1);
+    return Text(
+      'In this wallet: ${parts.map((p) => '${_fmtBtc(p.$2)} ${p.$1}').join(' · ')}',
+      key: const Key('peg-balances'),
+      style: AppTypography.caption.copyWith(color: s.inkSecondary),
     );
   }
 
@@ -896,11 +972,76 @@ class _PegScreenState extends State<PegScreen> {
               ],
             ),
           ),
-        ListCard(
-          children: hasOrders
-              ? [for (final o in _orders) _orderTile(s, o)]
-              : [_ordersPlaceholder(s)],
+        if (!hasOrders)
+          ListCard(children: [_ordersPlaceholder(s)])
+        else ...[
+          if (_currentOrders.isNotEmpty)
+            ListCard(
+              children: [for (final o in _currentOrders) _orderTile(s, o)],
+            )
+          else
+            ListCard(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: Center(
+                    child: Text(
+                      'No peg orders on this network yet',
+                      style: AppTypography.caption.copyWith(color: s.inkFaint),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          if (_olderOrders.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.lg),
+            _olderOrdersGroup(s),
+          ],
+        ],
+      ],
+    );
+  }
+
+  /// The order is the active provider's: it can still move. Orders of the
+  /// retired simulated provider and of another network (SideSwap's on
+  /// testnet while a lab is joined, a lab's native ones on testnet) are
+  /// read but never followed here.
+  bool _isCurrent(PegOrder o) {
+    if (o.isLegacySimulated) return false;
+    final provider = context.read<AppState>().liquidNetwork?.pegProvider;
+    return provider != null && o.provider == provider;
+  }
+
+  List<PegOrder> get _currentOrders => [
+    for (final o in _orders)
+      if (_isCurrent(o)) o,
+  ];
+
+  List<PegOrder> get _olderOrders => [
+    for (final o in _orders)
+      if (!_isCurrent(o)) o,
+  ];
+
+  /// "Older orders", folded: one row that opens the list under it.
+  Widget _olderOrdersGroup(AppScheme s) {
+    final older = _olderOrders;
+    return ListCard(
+      children: [
+        ListRow(
+          key: const Key('peg-older-orders'),
+          icon: _olderOpen ? Icons.expand_less : Icons.history_outlined,
+          title: 'Older orders',
+          subtitle:
+              '${older.length} of another network or of the retired '
+              'simulated provider',
+          trailing: Text(
+            _olderOpen ? 'Hide' : 'Show',
+            style: AppTypography.label.copyWith(color: s.inkSecondary),
+          ),
+          onTap: () => setState(() => _olderOpen = !_olderOpen),
         ),
+        if (_olderOpen)
+          for (final o in older) _orderTile(s, o),
       ],
     );
   }
@@ -1235,7 +1376,17 @@ class _PegScreenState extends State<PegScreen> {
             _txRow(s, 'Payout tx', o.txidPayout!, liquid: payoutIsLiquid),
           if (stepError != null) ...[
             const SizedBox(height: AppSpacing.sm),
-            WarningBanner(title: 'Not done', message: stepError),
+            WarningBanner(
+              title: _unfunded.contains(o.orderId)
+                  ? 'Not enough ${o.isPegIn ? 'BTC' : 'L-BTC'}'
+                  : 'Not done',
+              message: stepError,
+              // On a test server the fix is one tap away: the faucet's coin
+              // this deposit needs, paid to this wallet.
+              action: _unfunded.contains(o.orderId)
+                  ? TestCoinAction(bitcoin: o.isPegIn, bridge: _bridge)
+                  : null,
+            ),
           ],
           if (o.canOfferFund || o.canOfferClaim || o.awaitingDeposit) ...[
             const SizedBox(height: AppSpacing.md),

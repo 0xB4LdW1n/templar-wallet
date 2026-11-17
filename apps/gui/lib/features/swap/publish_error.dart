@@ -6,6 +6,7 @@
 /// may change, so only the retry delay is read from it.
 library;
 
+import '../settings/test_server_switch.dart' show kTestServerSettingsPath;
 import 'take_flow.dart' show swapError;
 
 /// The engine's refusal of a publish, as a message with what to do next.
@@ -30,7 +31,7 @@ String swapPublishErrorText(Object error) {
     'BOOK_REJECTED' =>
       detail.isEmpty ? 'The order book refused the offer.' : detail,
     'BOOK_UNREACHABLE' =>
-      '$detail Check the test server in Settings › Network & Sync, then try '
+      '$detail Check the test server in $kTestServerSettingsPath, then try '
           'again.',
     'BOOK_UNAVAILABLE' => detail,
     _ => raw,

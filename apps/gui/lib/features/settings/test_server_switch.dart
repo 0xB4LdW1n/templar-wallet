@@ -1,6 +1,6 @@
 /// Joining and leaving a Templar test server, in one place.
 ///
-/// Settings › Network & Sync joins and leaves deliberately; the swap market
+/// Settings › Network › Nodes and explorers joins and leaves deliberately; the swap market
 /// re-joins when the lab's chains were reset. Either way the engine closes
 /// the open wallet, so — as with [switchLiquidNetwork] — the confirmation,
 /// the wording and the clean-up live here and the callers only decide where
@@ -18,6 +18,10 @@ import '../../shared/widgets/app_dialog.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_typography.dart';
 import 'liquid_network_switch.dart';
+
+/// Where the Test server card lives, as the user finds it.
+const String kTestServerSettingsPath =
+    'Settings › Network › Nodes and explorers';
 
 /// A refusal from the engine, already stripped of its FFI prefix.
 class TestServerError implements Exception {
