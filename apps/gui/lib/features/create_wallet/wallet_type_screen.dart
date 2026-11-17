@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/app_state.dart';
 import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
@@ -530,73 +531,68 @@ class _NetworkSection extends StatelessWidget {
   }
 }
 
-/// The network row. Testnet is the only live option; the other two are
-/// present, disabled and labelled "Coming soon".
+/// The network row: the network the wallet will open on is the live
+/// option — Testnet, or Regtest while a test server is joined (the engine
+/// decides; the switch is in Settings) — and mainnet is shown, disabled and
+/// labelled "Coming soon".
 class _NetworkChoice extends StatelessWidget {
   const _NetworkChoice();
 
   @override
   Widget build(BuildContext context) {
+    final st = maybeAppState(context);
+    final regtest =
+        (st?.isBitcoinRegtest ?? false) || (st?.isLiquidRegtest ?? false);
+    final lab = st?.testServerName;
+    final cards = <Widget>[
+      _NetworkCard(
+        label: 'Testnet',
+        detail: regtest
+            ? 'Public test networks; switch back in Settings › Network'
+            : 'Coins have no value; mistakes cost nothing',
+        icon: Icons.science_outlined,
+        current: !regtest,
+      ),
+      const _NetworkCard(
+        label: 'Mainnet',
+        detail: 'Real bitcoin',
+        icon: Icons.public_outlined,
+        current: false,
+        soon: true,
+      ),
+      _NetworkCard(
+        label: 'Regtest',
+        detail: regtest
+            ? (lab != null
+                  ? 'The Bitcoin and Liquid regtest of test server $lab'
+                  : 'A local Liquid regtest')
+            : 'Join a test server in Settings › Network',
+        icon: Icons.dns_outlined,
+        current: regtest,
+      ),
+    ];
     if (AppLayout.isPhone(context)) {
       // Three side-by-side cards are 86 dp inside at 379 dp and wrap
       // "Testnet" mid-word; stacked, each card gets the whole column.
-      return const Column(
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _NetworkCard(
-            label: 'Testnet',
-            detail: 'Coins have no value; mistakes cost nothing',
-            icon: Icons.science_outlined,
-            available: true,
-          ),
-          SizedBox(height: AppSpacing.sm),
-          _NetworkCard(
-            label: 'Mainnet',
-            detail: 'Real bitcoin',
-            icon: Icons.public_outlined,
-            available: false,
-          ),
-          SizedBox(height: AppSpacing.sm),
-          _NetworkCard(
-            label: 'Regtest',
-            detail: 'Your own local chain',
-            icon: Icons.dns_outlined,
-            available: false,
-          ),
+          for (var i = 0; i < cards.length; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.sm),
+            cards[i],
+          ],
         ],
       );
     }
     // One height for the three cards, whichever detail wraps.
-    return const IntrinsicHeight(
+    return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: _NetworkCard(
-              label: 'Testnet',
-              detail: 'Coins have no value; mistakes cost nothing',
-              icon: Icons.science_outlined,
-              available: true,
-            ),
-          ),
-          SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: _NetworkCard(
-              label: 'Mainnet',
-              detail: 'Real bitcoin',
-              icon: Icons.public_outlined,
-              available: false,
-            ),
-          ),
-          SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: _NetworkCard(
-              label: 'Regtest',
-              detail: 'Your own local chain',
-              icon: Icons.dns_outlined,
-              available: false,
-            ),
-          ),
+          for (var i = 0; i < cards.length; i++) ...[
+            if (i > 0) const SizedBox(width: AppSpacing.md),
+            Expanded(child: cards[i]),
+          ],
         ],
       ),
     );
@@ -608,20 +604,26 @@ class _NetworkCard extends StatelessWidget {
     required this.label,
     required this.detail,
     required this.icon,
-    required this.available,
+    required this.current,
+    this.soon = false,
   });
 
   final String label;
   final String detail;
   final IconData icon;
-  final bool available;
+
+  /// The network the wallet will open on (the engine's, now).
+  final bool current;
+
+  /// Not built yet (mainnet).
+  final bool soon;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    // Testnet is the network this wallet is on: drawn as a chosen option
-    // (the selected surface, a firmer edge, its radio). The other two are
-    // facts about the future, at half ink.
+    // The network this wallet is on is drawn as a chosen option (the
+    // selected surface, a firmer edge, its radio); the other two at half ink.
+    final available = current;
     return Opacity(
       opacity: available ? 1 : 0.5,
       child: Container(
@@ -649,7 +651,7 @@ class _NetworkCard extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              available ? detail : 'Coming soon · $detail',
+              soon ? 'Coming soon · $detail' : detail,
               style: AppTypography.caption.copyWith(color: s.inkSecondary),
             ),
           ],
@@ -688,7 +690,9 @@ class _CoinsStep extends StatelessWidget {
           SelectableOptionCard(
             title: 'Bitcoin',
             description:
-                'This wallet holds bitcoin on the Bitcoin testnet chain',
+                'This wallet holds bitcoin on the Bitcoin '
+                '${maybeAppState(context)?.bitcoinNetworkName ?? 'testnet'} '
+                'chain',
             isSelected: true,
             icon: Icons.currency_bitcoin,
             onTap: null,

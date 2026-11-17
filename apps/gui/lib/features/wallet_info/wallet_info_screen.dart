@@ -242,7 +242,10 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
   String _descriptorBundle() {
     final i = _info!;
     final b = StringBuffer()
-      ..writeln('# ${i.name} — Templar Wallet descriptor export (testnet)')
+      ..writeln(
+        '# ${i.name} — Templar Wallet descriptor export '
+        '(${i.network.isEmpty ? 'testnet' : i.network.toLowerCase()})',
+      )
       ..writeln('Master fingerprint: ${i.masterFingerprint}')
       ..writeln('Derivation path: ${i.derivationPath}')
       ..writeln('Script type: ${i.scriptType}');

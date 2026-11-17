@@ -120,7 +120,11 @@ class _LiquidScreenState extends State<LiquidScreen> {
           .where((a) => a.ticker != 'LBTC')
           .map((a) => a.assetId)
           .toList();
-      if (ids.isNotEmpty) {
+      // Blockstream's registry is Liquid testnet's: never ask it about a
+      // regtest's asset ids (the engine names those from the lab's book).
+      if (ids.isNotEmpty &&
+          mounted &&
+          !context.read<AppState>().isLiquidRegtest) {
         AssetRegistryService.instance.prefetchAll(ids).then((_) {
           if (mounted) setState(() {}); // Re-render once metadata arrives
         });

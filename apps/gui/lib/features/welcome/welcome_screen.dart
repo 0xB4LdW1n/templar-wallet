@@ -289,7 +289,7 @@ class _TestnetNote extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.sm),
         Text(
-          'Testnet only — no mainnet funds',
+          'Test networks only — no mainnet funds',
           style: AppTypography.caption.copyWith(color: s.inkSecondary),
         ),
       ],
@@ -419,7 +419,11 @@ class _PolicyPreview extends StatelessWidget {
                         const SizedBox(width: AppSpacing.sm),
                         Expanded(
                           child: Text(
-                            'tb1q…7kxp',
+                            // The picture's address wears the network the
+                            // wallet will open on.
+                            (maybeAppState(context)?.isBitcoinRegtest ?? false)
+                                ? 'bcrt1q…7kxp'
+                                : 'tb1q…7kxp',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: AppTypography.mono.copyWith(

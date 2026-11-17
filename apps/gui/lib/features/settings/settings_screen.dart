@@ -506,7 +506,9 @@ class _SettingsHomeState extends State<_SettingsHome> {
               ListRow(
                 icon: Icons.info_outline,
                 title: 'Templar Wallet',
-                subtitle: 'v$kAppVersion · Testnet',
+                subtitle:
+                    'v$kAppVersion · '
+                    '${st.isBitcoinRegtest || st.isLiquidRegtest ? 'Regtest' : 'Testnet'}',
                 chevron: true,
                 onTap: () => context.go(SettingsSection.about.route),
               ),
@@ -1053,13 +1055,12 @@ class _NodesGroup extends StatelessWidget {
           'the TEMPLAR_SWAP_* variables override single ones.',
       children: active == null
           ? [
-              // No answer from the engine yet: what this build uses by
-              // default.
-              _row('Bitcoin Electrum', 'ssl://electrum.blockstream.info:60002'),
+              // No answer from the engine yet: never a testnet default that
+              // may not be the one in use.
+              _row('Bitcoin Electrum', 'Loading…'),
               _row(
                 'Liquid chain',
-                state.liquidNetwork?.backendDescription ??
-                    'electrum ssl://elements-testnet.blockstream.info:50002',
+                state.liquidNetwork?.backendDescription ?? 'Loading…',
               ),
             ]
           : [
@@ -1310,10 +1311,13 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
     return SettingsGroup(
       label: 'Liquid network',
       blocks: true,
-      note:
-          'Testnet is the public Liquid test network. Regtest is a local '
-          'elementsd (what the Templar Protocol runs locally): instant '
-          'blocks, free coins.',
+      note: context.watch<AppState>().testServerName != null
+          ? 'Testnet is the public Liquid test network. Regtest is the '
+                'joined test server\'s Liquid regtest, beside its Bitcoin '
+                'regtest: its faucet pays free coins.'
+          : 'Testnet is the public Liquid test network. Regtest is a local '
+                'elementsd (what the Templar Protocol runs locally): instant '
+                'blocks, free coins.',
       children: children,
     );
   }
@@ -2212,7 +2216,7 @@ class _AboutSectionState extends State<_AboutSection> {
         const SettingsRow(
           icon: Icons.info_outline,
           title: 'Version',
-          subtitle: 'Testnet build',
+          subtitle: 'Test networks only',
           trailing: SettingsValue('v$kAppVersion', mono: true),
         ),
         SettingsRow(

@@ -894,12 +894,16 @@ class _RegtestBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lab = context.select<AppState, String?>(
-      (s) => s.isBitcoinRegtest ? s.testServerName : null,
+      (s) => s.isBitcoinRegtest || s.liquidNetwork?.testServer != null
+          ? s.testServerName
+          : null,
     );
     if (lab != null) {
       return _BadgeStrip(
         color: AppColors.warningMuted,
-        text: 'Regtest — test server $lab, not the public testnet',
+        text:
+            'Regtest — Bitcoin and Liquid of test server $lab, not the '
+            'public testnets',
         phoneText: 'Regtest — test server, not testnet',
       );
     }

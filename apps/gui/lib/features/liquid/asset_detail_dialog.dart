@@ -188,8 +188,9 @@ class AssetDetail extends StatelessWidget {
     final watchOnly = context.select<AppState, bool>(
       (st) => st.isActiveWalletWatchOnly,
     );
-    final explorer = context.select<AppState, String>(
-      (st) => st.liquidExplorerUrl,
+    // Null on a regtest: no public explorer knows that chain.
+    final explorer = context.select<AppState, String?>(
+      (st) => st.liquidExplorerBase,
     );
     final info = AssetRegistryService.instance.get(asset.assetId);
     final isRt = isReissuanceToken;
@@ -428,11 +429,12 @@ class AssetDetail extends StatelessWidget {
       scrollable: true,
       content: content,
       actions: [
-        GhostButton(
-          label: 'View in explorer',
-          icon: Icons.open_in_new_outlined,
-          onPressed: () => _openExplorer(context, explorer),
-        ),
+        if (explorer != null)
+          GhostButton(
+            label: 'View in explorer',
+            icon: Icons.open_in_new_outlined,
+            onPressed: () => _openExplorer(context, explorer),
+          ),
         if (onToggleHidden != null)
           GhostButton(
             label: isHidden ? 'Unhide' : 'Hide',

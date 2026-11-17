@@ -218,7 +218,7 @@ class _CreateWalletScreenState extends State<CreateWalletScreen> {
         details: [
           WalletCreatedDetail('Type', 'Software · Single-sig'),
           WalletCreatedDetail('Coins', newWalletDraft.networksLabel),
-          WalletCreatedDetail('Network', newWalletDraft.networkLabel),
+          WalletCreatedDetail('Network', activeNetworkLabel(context)),
           WalletCreatedDetail('Seed', '$_seedLength words (backed up)'),
         ],
       ),
@@ -341,7 +341,8 @@ class _NameAndSeedBody extends StatelessWidget {
             TextField(controller: controller, autofocus: true),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              '${d.networksLabel} · ${d.networkLabel} · Software · Single-sig',
+              '${d.networksLabel} · ${activeNetworkLabel(context)} · Software · '
+              'Single-sig',
               style: AppTypography.caption.copyWith(color: s.inkFaint),
             ),
           ],
@@ -494,4 +495,13 @@ class _VerifyBody extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The network a new wallet opens on now, as the engine has it: `Regtest`
+/// while a test server is joined, `Testnet` otherwise.
+String activeNetworkLabel(BuildContext context) {
+  final st = maybeAppState(context);
+  final regtest =
+      (st?.isBitcoinRegtest ?? false) || (st?.isLiquidRegtest ?? false);
+  return regtest ? 'Regtest' : 'Testnet';
 }

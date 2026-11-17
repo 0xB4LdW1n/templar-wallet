@@ -126,8 +126,9 @@ class _ProtocolNetworkMismatchCardState
           const SizedBox(height: AppSpacing.lg),
           if (!m.canSwitch)
             Text(
-              'This build runs Liquid testnet and a local Liquid regtest. Open '
-              'the site for one of those, or point it at your regtest node.',
+              'This build runs Liquid testnet, a test server\'s Liquid regtest '
+              'and a local Liquid regtest. Open the site for one of those, or '
+              'join the test server it belongs to.',
               style: AppTypography.bodyOf(
                 context,
               ).copyWith(color: s.inkSecondary),

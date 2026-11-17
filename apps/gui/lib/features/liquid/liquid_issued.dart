@@ -605,7 +605,11 @@ class _IssuedEntryState extends State<_IssuedEntry> {
         ),
       ),
     );
-    if (!e.canReregister) return open;
+    // The public registry is Liquid testnet's; on a regtest the name lives
+    // in the test server's order book instead.
+    if (!e.canReregister || context.watch<AppState>().isLiquidRegtest) {
+      return open;
+    }
 
     // Issued here and not yet in the registry: other wallets show it by its
     // id until it is. The way to fix that sits with the asset it concerns.

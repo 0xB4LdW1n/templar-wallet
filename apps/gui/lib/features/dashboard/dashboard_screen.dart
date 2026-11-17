@@ -212,7 +212,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .where((a) => a.ticker != 'BTC' && a.ticker != 'LBTC')
         .map((a) => a.assetId)
         .toList();
-    if (liquidIds.isNotEmpty) {
+    // Blockstream's registry is Liquid testnet's: a regtest's asset ids
+    // are never sent there (the engine names them from the lab's book).
+    if (liquidIds.isNotEmpty && mounted && !data.isLiquidRegtest) {
       AssetRegistryService.instance.prefetchAll(liquidIds);
     }
     // A consolidation broadcast a minute ago is in no engine's history yet —
