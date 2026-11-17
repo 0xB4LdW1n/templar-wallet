@@ -27,6 +27,7 @@ import 'package:templar_wallet/app/router.dart';
 import 'package:templar_wallet/app/routes.dart';
 import 'package:templar_wallet/bridge/bridge_provider.dart';
 import 'package:templar_wallet/bridge/ffi_wallet_bridge.dart';
+import 'package:templar_wallet/features/wallet_picker/wallet_picker_screen.dart';
 import 'package:templar_wallet/main.dart';
 
 const String _labUrl = String.fromEnvironment('TESTLAB_URL');
@@ -72,6 +73,12 @@ Finder _textContaining(String part) =>
 
 String _firstText(String part) =>
     _shown(_textContaining(part).evaluate().first.widget)!;
+
+/// The wallet's row in the picker (the closing shell's header names it too).
+final _inPicker = find.descendant(
+  of: find.byType(WalletPickerScreen),
+  matching: find.text('Testlab throwaway'),
+);
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -141,8 +148,8 @@ void main() {
       // Settings lives inside a wallet: open the throwaway wallet first.
       debugPrint('TESTLAB step: open wallet');
       appRouter.go(AppRoutes.walletPicker);
-      await _until(tester, find.text('Testlab throwaway'));
-      await tester.tap(find.text('Testlab throwaway').first);
+      await _until(tester, _inPicker);
+      await tester.tap(_inPicker.first);
       await _wait(tester, 3000);
       expect(appState.activeWalletId, isNotNull);
 
@@ -174,12 +181,12 @@ void main() {
         'orderbook ${active.orderbook.origin.url} '
         '(${active.orderbook.origin.source})',
       );
-      // Joining closed the wallet and went back to the picker: reopen it
-      // once the page transition has ended, as a person would.
+      // Joining closed the wallet and went back to the picker: reopen it at
+      // once, mid-transition, as a quick tester would (the picker waits for
+      // its transition before entering the wallet shell again).
       expect(appState.activeWalletId, isNull);
-      await _until(tester, find.text('Testlab throwaway'));
-      await _wait(tester, 2000);
-      await tester.tap(find.text('Testlab throwaway').first);
+      await _until(tester, _inPicker);
+      await tester.tap(_inPicker.first);
       await _wait(tester, 3000);
       expect(appState.activeWalletId, isNotNull);
 
