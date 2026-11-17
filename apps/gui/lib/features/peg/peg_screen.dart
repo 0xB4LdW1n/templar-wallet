@@ -8,7 +8,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
+import '../../bridge/wallet_bridge.dart';
+import '../../services/peg_tx_label_store.dart';
 import '../../services/price_service.dart';
+import '../../shared/widgets/app_dialog.dart';
+import '../../shared/widgets/app_password_gate.dart';
 import '../../shared/widgets/badges.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
@@ -26,18 +30,36 @@ import '../../theme/app_typography.dart';
 import '../liquid/form_parts.dart';
 import 'models/peg_models.dart';
 
-/// Peg screen — move between Bitcoin and Liquid Bitcoin through a peg
-/// provider. The current provider is a built-in simulation (clearly labeled):
-/// the full flow works end to end but no real funds move.
+/// Peg screen — move between Bitcoin and Liquid Bitcoin through the active
+/// network's peg provider (`LiquidNetworkInfo.pegProvider`):
+///
+/// - **native**: the Elements peg of a joined test server's regtest. A
+///   peg-in is paid to a Bitcoin deposit address (from this wallet or from
+///   anywhere) and claimed by the user once deep enough; a peg-out is made by
+///   funding the order, and the lab's federation pays the Bitcoin.
+/// - **sideswap**: on Liquid testnet, a third party's custodial swap — said
+///   plainly before anything is started.
+/// - none: the screen says why and still lists the wallet's orders.
+///
+/// Only "Fund from this wallet" and "Claim" sign, each behind a confirmation
+/// and the app password gate. Reading orders contacts servers (seconds per
+/// open order), so it runs off the UI path, shows its progress, and polls
+/// sparingly while the screen is open.
 class PegScreen extends StatefulWidget {
-  const PegScreen({super.key});
+  const PegScreen({super.key, this.bridge, this.pollInterval});
+
+  /// Tests pass a stub; the app uses the live bridge.
+  final WalletBridge? bridge;
+
+  /// How often open orders are re-read; null: every 30 s.
+  final Duration? pollInterval;
 
   @override
   State<PegScreen> createState() => _PegScreenState();
 }
 
 class _PegScreenState extends State<PegScreen> {
-  final _bridge = walletBridge;
+  late final WalletBridge _bridge = widget.bridge ?? walletBridge;
 
   // ── New-peg form ──
   String _direction = 'in'; // 'in' = BTC → LBTC, 'out' = LBTC → BTC
@@ -57,19 +79,38 @@ class _PegScreenState extends State<PegScreen> {
   String? _ordersError;
   final Set<String> _expanded = {};
   final Set<String> _cancelling = {};
+
+  /// Orders with a signing step (fund or claim) in flight.
+  final Set<String> _signing = {};
+
+  /// The last refusal of a step, per order, shown inside that order.
+  final Map<String, String> _stepErrors = {};
   Timer? _pollTimer;
   bool _polling = false;
 
   AppState? _appState;
   String? _lastWalletId;
 
-  static const _statusFlow = [
+  /// The steps an order walks. A native peg-in has the user's claim between
+  /// confirming and settling; the other orders go straight on.
+  static const _pegInFlow = [
+    ('awaiting_deposit', 'Awaiting deposit'),
+    ('deposit_seen', 'Deposit seen'),
+    ('confirming', 'Confirming'),
+    ('claimable', 'Ready to claim'),
+    ('settling', 'Settling'),
+    ('completed', 'Completed'),
+  ];
+  static const _straightFlow = [
     ('awaiting_deposit', 'Awaiting deposit'),
     ('deposit_seen', 'Deposit seen'),
     ('confirming', 'Confirming'),
     ('settling', 'Settling'),
     ('completed', 'Completed'),
   ];
+
+  List<(String, String)> _flowOf(PegOrder o) =>
+      o.isPegIn && o.provider == 'native' ? _pegInFlow : _straightFlow;
 
   String get _walletId => context.read<AppState>().activeWalletId ?? 'wallet-1';
 
@@ -82,8 +123,10 @@ class _PegScreenState extends State<PegScreen> {
     super.initState();
     _loadOrders();
     _prefillAddress();
+    // Reading an open order asks the chain servers (seconds each); every
+    // 30 s is enough to follow blocks without holding the engine busy.
     _pollTimer = Timer.periodic(
-      const Duration(seconds: 5),
+      widget.pollInterval ?? const Duration(seconds: 30),
       (_) => _pollActive(),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -122,8 +165,10 @@ class _PegScreenState extends State<PegScreen> {
     _prefillAddress();
   }
 
-  String _msg(Object e) =>
-      e.toString().replaceFirst('Exception: wallet-ffi: ', '');
+  String _msg(Object e) => pegErrorText(e);
+
+  /// `native` | `sideswap`, or null when no peg serves this network.
+  String? get _provider => context.watch<AppState>().liquidNetwork?.pegProvider;
 
   String _fmtBtc(int sats) => (sats / 1e8).toStringAsFixed(8);
 
@@ -227,12 +272,15 @@ class _PegScreenState extends State<PegScreen> {
       _ordersError = null;
     });
     try {
-      final orders = await _bridge.pegList(_walletId);
+      final walletId = _walletId;
+      final orders = await _bridge.pegList(walletId);
       if (!mounted) return;
       setState(() {
         _orders = orders;
         _ordersLoading = false;
       });
+      // Activity names peg transactions from this local index.
+      unawaited(PegTxLabelStore.instance.record(walletId, orders));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -242,33 +290,38 @@ class _PegScreenState extends State<PegScreen> {
     }
   }
 
+  /// One silent re-read of the list while an order is open. Skipped while
+  /// another read or a signing step runs: they share the engine.
   Future<void> _pollActive() async {
-    if (_polling || !mounted) return;
-    final active = _orders.where((o) => !o.isTerminal).toList();
-    if (active.isEmpty) return;
-    _polling = true;
+    if (_polling || _ordersLoading || _signing.isNotEmpty || !mounted) return;
+    final open = _orders.any((o) => !o.isTerminal && !o.isLegacySimulated);
+    if (!open) return;
+    setState(() => _polling = true);
     try {
-      final updates = await Future.wait(
-        active.map((o) => _bridge.pegStatus(o.orderId)),
-      );
-      if (!mounted) return;
-      setState(() {
-        for (final u in updates) {
-          final i = _orders.indexWhere((o) => o.orderId == u.orderId);
-          if (i >= 0) _orders[i] = u;
-        }
-      });
-    } catch (_) {
-      // Transient polling failure — the next tick retries.
+      await _loadOrders(silent: true);
     } finally {
-      _polling = false;
+      if (mounted) setState(() => _polling = false);
     }
+  }
+
+  void _replace(PegOrder updated) {
+    final i = _orders.indexWhere((o) => o.orderId == updated.orderId);
+    if (i >= 0) _orders[i] = updated;
   }
 
   Future<void> _start() async {
     final sats = _amountSats;
     final address = _addressCtrl.text.trim();
     if (sats == null || address.isEmpty || _starting) return;
+    if (_quote?.provider == 'sideswap') {
+      final go = await _confirmDialog(
+        title: 'Start a SideSwap swap?',
+        icon: Icons.storefront_outlined,
+        body: _sideSwapDisclosure,
+        action: 'Start swap',
+      );
+      if (!go || !mounted) return;
+    }
     setState(() {
       _starting = true;
       _startError = null;
@@ -307,8 +360,7 @@ class _PegScreenState extends State<PegScreen> {
       if (!mounted) return;
       setState(() {
         _cancelling.remove(order.orderId);
-        final i = _orders.indexWhere((o) => o.orderId == updated.orderId);
-        if (i >= 0) _orders[i] = updated;
+        _replace(updated);
       });
     } catch (e) {
       if (!mounted) return;
@@ -319,9 +371,144 @@ class _PegScreenState extends State<PegScreen> {
     }
   }
 
+  static const _sideSwapDisclosure =
+      'On Liquid testnet this goes through SideSwap, a third party\'s '
+      'custodial swap service — not a peg. You send coins to SideSwap and it '
+      'pays you on the other chain by itself; until it does, it holds them. '
+      'Your receive address, the direction and a fee rate are sent to '
+      'SideSwap.';
+
+  Future<bool> _confirmDialog({
+    required String title,
+    required IconData icon,
+    required String body,
+    required String action,
+  }) async {
+    final ok = await showAppDialog<bool>(
+      context,
+      barrierDismissible: false,
+      builder: (ctx) => PromptDialog(
+        title: title,
+        icon: icon,
+        width: 460,
+        actions: [
+          GhostButton(
+            label: 'Cancel',
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          PrimaryButton(
+            label: action,
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+        child: Text(
+          body,
+          style: AppTypography.body.copyWith(
+            color: AppScheme.of(ctx).inkSecondary,
+          ),
+        ),
+      ),
+    );
+    return ok == true;
+  }
+
+  String get _onThisDevice =>
+      AppLayout.isMobilePlatform ? 'device' : 'computer';
+
+  /// Fund from this wallet: what will be signed, then the password gate,
+  /// then the engine builds, signs and broadcasts.
+  Future<void> _fund(PegOrder o) async {
+    if (_signing.contains(o.orderId)) return;
+    final amount = _fmtBtc(o.depositExpectedSats);
+    final body = o.isPegIn
+        ? 'This wallet sends $amount BTC to the deposit address\n'
+              '${o.depositAddress}\nat 1 sat/vB; the Bitcoin fee is paid on '
+              'top. ${o.isSideSwap ? 'SideSwap' : 'You'} then '
+              '${o.isSideSwap ? 'pays' : 'claim'} the L-BTC once the deposit '
+              'has ${o.confirmationsRequired} confirmations.'
+        : o.isSideSwap
+        ? 'This wallet sends $amount L-BTC to SideSwap\'s deposit address\n'
+              '${o.depositAddress}\nSideSwap then pays the BTC itself.'
+        : 'This wallet signs and broadcasts a Liquid peg-out of $amount '
+              'L-BTC; the Liquid fee is paid on top. After '
+              '${o.confirmationsRequired} Liquid confirmations the test '
+              'server\'s federation pays $amount BTC to\n${o.payoutAddress}';
+    final go = await _confirmDialog(
+      title: o.isPegIn ? 'Pay the peg-in deposit?' : 'Make the peg-out?',
+      icon: Icons.outbox_outlined,
+      body: body,
+      action: 'Continue',
+    );
+    if (!go || !mounted) return;
+    final ok = await showSpendPasswordGate(
+      context,
+      message:
+          'Templar is about to sign the ${o.isPegIn ? 'deposit' : 'peg-out'} '
+          'with the key stored on this $_onThisDevice.',
+    );
+    if (!ok || !mounted) return;
+    await _signStep(o, () => _bridge.pegFund(o.orderId), 'Deposit sent');
+  }
+
+  /// Claim a native peg-in that is deep enough.
+  Future<void> _claim(PegOrder o) async {
+    if (_signing.contains(o.orderId)) return;
+    final go = await _confirmDialog(
+      title: 'Claim the peg-in?',
+      icon: Icons.download_done_outlined,
+      body:
+          'This wallet checks the deposit against its own view of the Bitcoin '
+          'chain, then signs and broadcasts the claim: about '
+          '${_fmtBtc(o.payoutExpectedSats)} L-BTC to\n${o.payoutAddress}\n'
+          '(the claim\'s Liquid fee comes out of the deposit).',
+      action: 'Continue',
+    );
+    if (!go || !mounted) return;
+    final ok = await showSpendPasswordGate(
+      context,
+      message:
+          'Templar is about to sign the peg-in claim with the key stored on '
+          'this $_onThisDevice.',
+    );
+    if (!ok || !mounted) return;
+    await _signStep(o, () => _bridge.pegClaim(o.orderId), 'Claim sent');
+  }
+
+  Future<void> _signStep(
+    PegOrder o,
+    Future<PegOrder> Function() step,
+    String done,
+  ) async {
+    setState(() {
+      _signing.add(o.orderId);
+      _stepErrors.remove(o.orderId);
+    });
+    try {
+      final updated = await step();
+      if (!mounted) return;
+      setState(() {
+        _signing.remove(o.orderId);
+        _replace(updated);
+      });
+      unawaited(PegTxLabelStore.instance.record(updated.walletId, _orders));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$done. The order follows the chain from here.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _signing.remove(o.orderId);
+        _stepErrors[o.orderId] = _msg(e);
+      });
+    }
+  }
+
   Future<void> _openExplorer(String txid, {required bool liquid}) async {
     final app = context.read<AppState>();
-    final base = liquid ? app.liquidExplorerUrl : app.btcExplorerUrl;
+    final base = liquid ? app.liquidExplorerBase : app.btcExplorerBase;
+    if (base == null) return;
     final trimmed = base.endsWith('/')
         ? base.substring(0, base.length - 1)
         : base;
@@ -336,6 +523,7 @@ class _PegScreenState extends State<PegScreen> {
   @override
   Widget build(BuildContext context) {
     final phone = AppLayout.isPhone(context);
+    final provider = _provider;
     final list = ListView(
       padding: EdgeInsets.all(AppSpacing.pagePadding(context)),
       // The pull has to work even when the page is shorter than the screen.
@@ -345,15 +533,16 @@ class _PegScreenState extends State<PegScreen> {
           title: 'Peg',
           subtitle: 'Move between Bitcoin and Liquid Bitcoin',
         ),
-        // A fact about every number below, so it stays at the top.
-        const WarningBanner(
-          message:
-              'Simulated provider — no real funds move. '
-              'A real peg provider arrives in a later update.',
-        ),
+        // Who moves the coins: a fact about every number below, so it stays
+        // at the top.
+        _providerBanner(provider),
         const SizedBox(height: AppSpacing.xl),
-        _pegForm(),
-        const SizedBox(height: AppSpacing.xl),
+        // No provider here: nothing can be started, but the wallet's orders
+        // (of another network, or the retired simulated ones) still list.
+        if (provider != null) ...[
+          _pegForm(),
+          const SizedBox(height: AppSpacing.xl),
+        ],
         _ordersPanel(),
       ],
     );
@@ -377,6 +566,36 @@ class _PegScreenState extends State<PegScreen> {
         ),
       ),
     );
+  }
+
+  /// Who moves the coins, said before anything is started.
+  Widget _providerBanner(String? provider) {
+    final st = context.watch<AppState>();
+    switch (provider) {
+      case 'native':
+        return InfoBanner(
+          title: 'Native peg · ${st.testServerName ?? 'test server'}',
+          message:
+              'The Elements peg between the test server\'s Bitcoin regtest '
+              'and Liquid regtest: real regtest coins. You claim a peg-in '
+              'once its deposit is deep enough; a peg-out is paid by the test '
+              'server\'s federation after its Liquid confirmations.',
+        );
+      case 'sideswap':
+        return const WarningBanner(
+          title: 'SideSwap swap — not a peg',
+          message: _sideSwapDisclosure,
+        );
+      default:
+        final reason = st.liquidNetwork?.pegUnavailableReason;
+        return InfoBanner(
+          title: 'No peg on this network',
+          message: reason == null
+              ? 'Peg-in and peg-out need a test server: join one in '
+                    'Settings › Network & Sync.'
+              : pegErrorText(reason).replaceFirst('No peg here. ', ''),
+        );
+    }
   }
 
   // ── New-peg form ──────────────────────────────────────────────────────────
@@ -451,8 +670,11 @@ class _PegScreenState extends State<PegScreen> {
             Padding(
               padding: const EdgeInsets.only(top: AppSpacing.xs),
               child: Text(
-                'Provider limits: ${_fmtBtc(_quote!.minSats)} – '
-                '${_fmtBtc(_quote!.maxSats)} $_fromTicker',
+                // 21 million BTC is "no maximum" in words.
+                _quote!.maxSats >= 2100000000000000
+                    ? 'Minimum ${_fmtBtc(_quote!.minSats)} $_fromTicker'
+                    : 'Limits: ${_fmtBtc(_quote!.minSats)} – '
+                          '${_fmtBtc(_quote!.maxSats)} $_fromTicker',
                 style: AppTypography.caption.copyWith(color: s.inkFaint),
               ),
             ),
@@ -508,11 +730,14 @@ class _PegScreenState extends State<PegScreen> {
           ),
           if (_startError != null) ...[
             const SizedBox(height: AppSpacing.lg),
-            DangerBanner(message: _startError!),
+            // A refusal moved nothing: a warning, not the red of a loss.
+            WarningBanner(title: 'Not started', message: _startError!),
           ],
           const SizedBox(height: AppSpacing.xl),
           PrimaryButton(
-            label: _isPegIn ? 'Start peg-in' : 'Start peg-out',
+            label: _quote?.provider == 'sideswap'
+                ? 'Start SideSwap swap'
+                : (_isPegIn ? 'Start peg-in' : 'Start peg-out'),
             isFullWidth: true,
             isLoading: _starting,
             onPressed: canStart ? _start : null,
@@ -582,6 +807,14 @@ class _PegScreenState extends State<PegScreen> {
           divider: true,
         ),
         KvRow(
+          label: 'Provider',
+          value: q.provider == 'sideswap'
+              ? 'SideSwap (custodial)'
+              : 'Native peg',
+          labelWidth: 120,
+          divider: true,
+        ),
+        KvRow(
           label: 'Rate',
           value: q.rate == 1.0 ? '1:1' : q.rate.toStringAsFixed(8),
           labelWidth: 120,
@@ -595,7 +828,17 @@ class _PegScreenState extends State<PegScreen> {
         ),
         KvRow(
           label: 'Network fee',
-          value: '${q.networkFeeSats} sats',
+          value:
+              '${q.networkFeeSats} sats, '
+              '${q.networkFeeIncluded ? 'taken from the amount' : 'paid on top'}',
+          labelWidth: 120,
+          divider: true,
+        ),
+        KvRow(
+          label: 'Waits for',
+          value:
+              '${q.confirmationsRequired} '
+              '${_isPegIn ? 'Bitcoin' : 'Liquid'} confirmations',
           labelWidth: 120,
           divider: true,
         ),
@@ -614,10 +857,16 @@ class _PegScreenState extends State<PegScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (AppLayout.isPhone(context))
-          const ListSectionLabel(label: 'Your peg orders')
+          // The background re-read of open orders has no spinner of its own
+          // on a phone: the label says it.
+          ListSectionLabel(
+            label: _polling ? 'Your peg orders · checking…' : 'Your peg orders',
+          )
         else
           // The section label with the one control a desktop pointer needs
-          // in place of pull-to-refresh, centred on the label's line.
+          // in place of pull-to-refresh, centred on the label's line. While
+          // open orders are re-read in the background, a spinner holds its
+          // place.
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.xs),
             child: Row(
@@ -628,12 +877,22 @@ class _PegScreenState extends State<PegScreen> {
                     style: AppTypography.eyebrow.copyWith(color: s.inkFaint),
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Refresh',
-                  icon: const Icon(Icons.refresh, size: AppSpacing.iconSmall),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: _ordersLoading ? null : _loadOrders,
-                ),
+                if (_polling)
+                  const Padding(
+                    padding: EdgeInsets.all(AppSpacing.sm),
+                    child: SizedBox(
+                      width: AppSpacing.iconSmall,
+                      height: AppSpacing.iconSmall,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else
+                  IconButton(
+                    tooltip: 'Refresh',
+                    icon: const Icon(Icons.refresh, size: AppSpacing.iconSmall),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _ordersLoading ? null : _loadOrders,
+                  ),
               ],
             ),
           ),
@@ -649,9 +908,19 @@ class _PegScreenState extends State<PegScreen> {
   /// Loading, failed or empty.
   Widget _ordersPlaceholder(AppScheme s) {
     if (_ordersLoading) {
-      return const Padding(
-        padding: EdgeInsets.all(AppSpacing.xl),
-        child: Center(child: CircularProgressIndicator()),
+      // Open orders are read from the chains first: say why it takes a while.
+      return Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          children: [
+            const Center(child: CircularProgressIndicator()),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Reading your orders from the chains…',
+              style: AppTypography.caption.copyWith(color: s.inkFaint),
+            ),
+          ],
+        ),
       );
     }
     if (_ordersError != null) {
@@ -789,13 +1058,24 @@ class _PegScreenState extends State<PegScreen> {
   /// The badge's words on their own, so the row can also say them to a
   /// screen reader (its badge is inside an excluded subtree).
   (String, BadgeVariant) _statusParts(PegOrder o) {
+    if (o.isLegacySimulated) return ('Simulated', BadgeVariant.neutral);
+    final conf = o.confirmationsRequired > 0
+        ? ' ${o.confirmations}/${o.confirmationsRequired}'
+        : '';
     return switch (o.status) {
-      'awaiting_deposit' => ('Awaiting deposit', BadgeVariant.warning),
+      'awaiting_deposit' => (
+        o.isPegIn || o.isSideSwap ? 'Awaiting deposit' : 'Awaiting funding',
+        BadgeVariant.warning,
+      ),
       'deposit_seen' => ('Deposit seen', BadgeVariant.neutral),
-      'confirming' => ('Confirming', BadgeVariant.neutral),
+      'confirming' => ('Confirming$conf', BadgeVariant.neutral),
+      // The user's move: a status with a dot, like an unpaid deposit.
+      'claimable' => ('Ready to claim', BadgeVariant.warning),
       'settling' => ('Settling', BadgeVariant.neutral),
       'completed' => ('Completed', BadgeVariant.success),
       'cancelled' => ('Cancelled', BadgeVariant.neutral),
+      'expired' => ('Expired', BadgeVariant.neutral),
+      'failed' => ('Failed', BadgeVariant.danger),
       _ => (o.status, BadgeVariant.neutral),
     };
   }
@@ -807,7 +1087,14 @@ class _PegScreenState extends State<PegScreen> {
     final depositIsLiquid = !o.isPegIn;
     final payoutIsLiquid = o.isPegIn;
     final cancelling = _cancelling.contains(o.orderId);
+    final signing = _signing.contains(o.orderId);
+    final stepError = _stepErrors[o.orderId];
     final phone = AppLayout.isPhone(context);
+    final counting = const {
+      'deposit_seen',
+      'confirming',
+      'claimable',
+    }.contains(o.status);
     // A recess inside the list card: the page tone, lined up with the row's
     // glyph tile. The card already clips and draws the hairline between
     // orders.
@@ -818,15 +1105,58 @@ class _PegScreenState extends State<PegScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _stepper(s, o),
-          const SizedBox(height: AppSpacing.lg),
-          if (o.awaitingDeposit) ...[
-            InfoBanner(
+          if (o.isLegacySimulated)
+            const InfoBanner(
               message:
-                  'Send ${_fmtBtc(o.depositExpectedSats)} $depositTicker '
-                  'to the deposit address below to continue. This provider is '
-                  'simulated — the deposit is auto-detected, no real funds '
-                  'move.',
+                  'An order of the retired simulated provider: no coins '
+                  'moved, and nothing can be paid to it or claimed from it.',
+            )
+          else
+            _stepper(s, o),
+          const SizedBox(height: AppSpacing.lg),
+          if (o.lastError != null) ...[
+            WarningBanner(
+              title: 'Could not check this order',
+              message: _msg(o.lastError!),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
+          if (counting && o.confirmationsRequired > 0) ...[
+            KvRow(
+              label: 'Confirmed',
+              value:
+                  '${o.confirmations} of ${o.confirmationsRequired} '
+                  '${o.isPegIn ? 'Bitcoin' : 'Liquid'} confirmations',
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          if (o.status == 'expired')
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.md),
+              child: Text(
+                o.isPegIn && o.txidDeposit == null
+                    ? 'The deposit address expired: never pay it. Start a new '
+                          'peg.'
+                    : 'The order expired.',
+                style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+              ),
+            ),
+          if (o.status == 'failed')
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.md),
+              child: Text(
+                o.isSideSwap
+                    ? 'SideSwap did not pay this order out.'
+                    : 'The order failed.',
+                style: AppTypography.bodySmall.copyWith(color: s.danger),
+              ),
+            ),
+          if (o.showsDepositAddress) ...[
+            Text(
+              'Pay ${_fmtBtc(o.depositExpectedSats)} $depositTicker to this '
+              'address — from this wallet below, or from any other '
+              'wallet.${_validityOf(o)}',
+              style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
             ),
             const SizedBox(height: AppSpacing.lg),
             Flex(
@@ -856,11 +1186,27 @@ class _PegScreenState extends State<PegScreen> {
                     width: double.infinity,
                     child: CodeBox(
                       value: o.depositAddress,
-                      label: 'Deposit address (simulated)',
+                      label: o.isSideSwap
+                          ? 'SideSwap deposit address'
+                          : 'Deposit address',
                     ),
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ] else if (o.canOfferFund && !o.isPegIn) ...[
+            Text(
+              'Funding signs and broadcasts the peg-out from this wallet\'s '
+              'L-BTC; there is no address to pay by hand.',
+              style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
+          if (o.canOfferClaim) ...[
+            Text(
+              'The deposit is deep enough. Claim it to receive the L-BTC.',
+              style: AppTypography.bodySmall.copyWith(color: s.inkSecondary),
             ),
             const SizedBox(height: AppSpacing.lg),
           ],
@@ -870,32 +1216,97 @@ class _PegScreenState extends State<PegScreen> {
             value:
                 '${_fmtBtc(o.payoutExpectedSats)} $payoutTicker → ${o.payoutAddress}',
           ),
+          if (o.depositReceivedSats != null &&
+              o.depositReceivedSats != o.depositExpectedSats)
+            KvRow(
+              label: 'Received',
+              value: '${_fmtBtc(o.depositReceivedSats!)} $depositTicker',
+            ),
           if (o.txidDeposit != null)
-            _txRow(s, 'Deposit tx', o.txidDeposit!, liquid: depositIsLiquid),
-          if (o.txidPayout != null)
+            _txRow(
+              s,
+              o.isPegIn ? 'Deposit tx' : 'Peg-out tx',
+              o.txidDeposit!,
+              liquid: depositIsLiquid,
+            ),
+          if (o.txidClaim != null)
+            _txRow(s, 'Claim tx', o.txidClaim!, liquid: true),
+          if (o.txidPayout != null && o.txidPayout != o.txidClaim)
             _txRow(s, 'Payout tx', o.txidPayout!, liquid: payoutIsLiquid),
-          if (o.awaitingDeposit) ...[
+          if (stepError != null) ...[
             const SizedBox(height: AppSpacing.sm),
-            // Full width on a phone, where a right-hugging tertiary control
-            // is a thumb-hostile target.
-            if (phone)
-              GhostButton(
-                label: cancelling ? 'Cancelling…' : 'Cancel order',
-                icon: Icons.close,
-                isFullWidth: true,
-                onPressed: cancelling ? null : () => _cancel(o),
-              )
-            else
-              Align(
-                alignment: Alignment.centerRight,
-                child: GhostButton(
-                  label: cancelling ? 'Cancelling…' : 'Cancel order',
-                  icon: Icons.close,
-                  onPressed: cancelling ? null : () => _cancel(o),
-                ),
-              ),
+            WarningBanner(title: 'Not done', message: stepError),
+          ],
+          if (o.canOfferFund || o.canOfferClaim || o.awaitingDeposit) ...[
+            const SizedBox(height: AppSpacing.md),
+            _orderActions(o, signing: signing, cancelling: cancelling),
           ],
         ],
+      ),
+    );
+  }
+
+  /// "Valid through Liquid block 189." / "SideSwap takes it until …".
+  String _validityOf(PegOrder o) {
+    if (o.validUntilLiquidHeight != null) {
+      return ' The address is valid through Liquid block '
+          '${o.validUntilLiquidHeight}.';
+    }
+    if (o.expiresAt != null) {
+      return ' SideSwap takes it until ${_fmtTime(o.expiresAt!)}.';
+    }
+    return '';
+  }
+
+  /// Fund, Claim and Cancel: full width and stacked on a phone, a right-hand
+  /// row on desktop.
+  Widget _orderActions(
+    PegOrder o, {
+    required bool signing,
+    required bool cancelling,
+  }) {
+    final phone = AppLayout.isPhone(context);
+    final busy = signing || cancelling;
+    final buttons = <Widget>[
+      if (o.canOfferClaim)
+        SecondaryButton(
+          label: signing ? 'Claiming…' : 'Claim',
+          icon: Icons.download_done_outlined,
+          isFullWidth: phone,
+          onPressed: busy ? null : () => _claim(o),
+        ),
+      if (o.canOfferFund)
+        SecondaryButton(
+          label: signing ? 'Funding…' : 'Fund from this wallet',
+          icon: Icons.outbox_outlined,
+          isFullWidth: phone,
+          onPressed: busy ? null : () => _fund(o),
+        ),
+      if (o.awaitingDeposit && !o.isLegacySimulated)
+        GhostButton(
+          label: cancelling ? 'Cancelling…' : 'Cancel order',
+          icon: Icons.close,
+          isFullWidth: phone,
+          onPressed: busy ? null : () => _cancel(o),
+        ),
+    ];
+    if (phone) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < buttons.length; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.sm),
+            buttons[i],
+          ],
+        ],
+      );
+    }
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Wrap(
+        spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.sm,
+        children: buttons,
       ),
     );
   }
@@ -907,12 +1318,20 @@ class _PegScreenState extends State<PegScreen> {
     required bool liquid,
   }) {
     final phone = AppLayout.isPhone(context);
-    final explorer = IconButton(
-      tooltip: 'View in explorer',
-      icon: const Icon(Icons.open_in_new, size: AppSpacing.iconSmall),
-      visualDensity: phone ? VisualDensity.standard : VisualDensity.compact,
-      onPressed: () => _openExplorer(txid, liquid: liquid),
-    );
+    final app = context.read<AppState>();
+    final hasExplorer =
+        (liquid ? app.liquidExplorerBase : app.btcExplorerBase) != null;
+    // A regtest has no public explorer: no link rather than a dead one.
+    final Widget explorer = hasExplorer
+        ? IconButton(
+            tooltip: 'View in explorer',
+            icon: const Icon(Icons.open_in_new, size: AppSpacing.iconSmall),
+            visualDensity: phone
+                ? VisualDensity.standard
+                : VisualDensity.compact,
+            onPressed: () => _openExplorer(txid, liquid: liquid),
+          )
+        : const SizedBox(width: AppSpacing.sm);
     final key = Text(
       label,
       style: AppTypography.label.copyWith(color: s.inkSecondary),
@@ -954,23 +1373,29 @@ class _PegScreenState extends State<PegScreen> {
   // The only colour is the 6 px dot of a step that has happened.
 
   Widget _stepper(AppScheme s, PegOrder o) {
-    if (o.status == 'cancelled') {
+    const ended = {
+      'cancelled': 'Order cancelled',
+      'expired': 'Order expired',
+      'failed': 'Order failed',
+    };
+    final endedLabel = ended[o.status];
+    if (endedLabel != null) {
       final at = o.statusHistory
-          .where((e) => e.status == 'cancelled')
+          .where((e) => e.status == o.status)
           .map((e) => e.at)
-          .firstOrNull;
+          .lastOrNull;
+      // Only a failure is a loss; a cancel or an expiry before any deposit
+      // is not, so it is not drawn in red.
+      final tint = o.status == 'failed' ? s.danger : s.inkSecondary;
       return Row(
         children: [
           Icon(
-            Icons.cancel_outlined,
+            o.status == 'failed' ? Icons.error_outline : Icons.cancel_outlined,
             size: AppSpacing.iconSmall,
-            color: s.danger,
+            color: tint,
           ),
           const SizedBox(width: AppSpacing.sm),
-          Text(
-            'Order cancelled',
-            style: AppTypography.label.copyWith(color: s.danger),
-          ),
+          Text(endedLabel, style: AppTypography.label.copyWith(color: tint)),
           const Spacer(),
           if (at != null)
             Text(
@@ -981,7 +1406,8 @@ class _PegScreenState extends State<PegScreen> {
       );
     }
 
-    final idx = _statusFlow.indexWhere((step) => step.$1 == o.status);
+    final flow = _flowOf(o);
+    final idx = flow.indexWhere((step) => step.$1 == o.status);
     final current = idx < 0 ? 0 : idx;
     final completed = o.status == 'completed';
     bool done(int i) => i < current || completed;
@@ -992,7 +1418,7 @@ class _PegScreenState extends State<PegScreen> {
       // phone gets the progress as thin segments plus the name of the step
       // it is on, and the timestamp a Tooltip would hide from a finger.
       final at = o.statusHistory
-          .where((e) => e.status == _statusFlow[current].$1)
+          .where((e) => e.status == flow[current].$1)
           .map((e) => e.at)
           .firstOrNull;
       return Column(
@@ -1000,7 +1426,7 @@ class _PegScreenState extends State<PegScreen> {
         children: [
           Row(
             children: [
-              for (var i = 0; i < _statusFlow.length; i++) ...[
+              for (var i = 0; i < flow.length; i++) ...[
                 if (i > 0) const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Container(
@@ -1019,7 +1445,7 @@ class _PegScreenState extends State<PegScreen> {
             children: [
               Expanded(
                 child: Text(
-                  _statusFlow[current].$2,
+                  flow[current].$2,
                   style: AppTypography.label.copyWith(color: s.ink),
                 ),
               ),
@@ -1037,7 +1463,7 @@ class _PegScreenState extends State<PegScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (var i = 0; i < _statusFlow.length; i++)
+        for (var i = 0; i < flow.length; i++)
           Expanded(
             child: _step(s, o, i, done: done(i), active: active(i)),
           ),
@@ -1052,7 +1478,7 @@ class _PegScreenState extends State<PegScreen> {
     required bool done,
     required bool active,
   }) {
-    final key = _statusFlow[i].$1;
+    final key = _flowOf(o)[i].$1;
     final at = o.statusHistory
         .where((e) => e.status == key)
         .map((e) => e.at)
@@ -1077,7 +1503,7 @@ class _PegScreenState extends State<PegScreen> {
         Padding(
           padding: const EdgeInsets.only(right: AppSpacing.sm),
           child: Text(
-            _statusFlow[i].$2,
+            _flowOf(o)[i].$2,
             maxLines: 2,
             style: (active ? AppTypography.label : AppTypography.caption)
                 .copyWith(color: reached ? s.ink : s.inkFaint),

@@ -20,6 +20,9 @@ import '../features/peg/models/peg_models.dart';
 import '../features/protocol/models/protocol_proof.dart';
 import '../features/psbt/models/psbt_inspection.dart';
 import '../features/psbt/models/pset_inspection.dart';
+import 'test_server.dart';
+
+export 'test_server.dart';
 
 abstract class WalletBridge {
   /// Generate a fresh BIP39 mnemonic. [wordCount] must be 12 or 24.
@@ -572,14 +575,19 @@ abstract class WalletBridge {
   Future<AtomicSwap> atomicSwapClaim(String walletId, int offerId);
   Future<AtomicSwap> atomicSwapRefund(String walletId, int offerId);
 
-  // ── Peg-in / peg-out (simulated provider) ───────────────────────────────────
+  // ── Peg-in / peg-out ────────────────────────────────────────────────────────
+  //
+  // Through the active network's provider (`LiquidNetworkInfo.pegProvider`):
+  // the native Elements peg of a joined test server, or SideSwap's custodial
+  // swap on Liquid testnet. Errors carry the tags PEG_UNAVAILABLE,
+  // PEG_NOT_READY, PEG_EXPIRED and PEG_PROOF_REJECTED (`pegErrorText`).
 
   /// Quote a peg. [direction] is "in" (BTC → LBTC) or "out" (LBTC → BTC).
   /// Errors when [amountSats] is outside the provider's min/max bounds.
   Future<PegQuote> pegQuote(String direction, int amountSats);
 
-  /// Start a peg order; returned in `awaiting_deposit` state with the
-  /// (simulated) deposit address to pay.
+  /// Start a peg order; returned in `awaiting_deposit`. A peg-in carries the
+  /// Bitcoin deposit address; a native peg-out none (fund it instead).
   Future<PegOrder> pegStart(
     String walletId,
     String direction,
@@ -587,11 +595,25 @@ abstract class WalletBridge {
     String payoutAddress,
   );
 
-  /// Refresh a single peg order (the provider advances its lifecycle).
+  /// One order, read from the chains first. Reads servers and can take
+  /// seconds; it never signs. A chain that cannot be read is
+  /// `PegOrder.lastError`, not an error.
   Future<PegOrder> pegStatus(String orderId);
 
-  /// All peg orders of a wallet, newest first.
+  /// All peg orders of a wallet, newest first, open ones read from the
+  /// chains (seconds per open order; never signs).
   Future<List<PegOrder>> pegList(String walletId);
+
+  /// Pay the order's deposit from its own wallet — a SIGNING step, called
+  /// only after the user confirmed and passed the password gate. Peg-in: a
+  /// Bitcoin payment to the deposit address at [feeRate] sat/vB (default 1);
+  /// peg-out: the Liquid peg-out transaction. Software wallets only (the
+  /// engine refuses others).
+  Future<PegOrder> pegFund(String orderId, {double? feeRate});
+
+  /// Claim a native peg-in that is `claimable` — a SIGNING step, behind the
+  /// same confirmation and password gate.
+  Future<PegOrder> pegClaim(String orderId);
 
   /// Cancel a peg order; only allowed while `awaiting_deposit`.
   Future<PegOrder> pegCancel(String orderId);
@@ -608,6 +630,24 @@ abstract class WalletBridge {
     String network, {
     String? policyAsset,
   });
+
+  // ── Test server ("testlab") ─────────────────────────────────────────────────
+
+  /// The joined test server, if any, and the servers in use. With [check] the
+  /// engine also fetches the server's config now (at most 10 s) and reports
+  /// whether it answered and whether its chains were reset (`check.stale`).
+  /// An unreachable server is not an error.
+  Future<TestServerInfo> getTestServer({bool check = false});
+
+  /// Join the test server at [url]: the engine fetches and validates its
+  /// config, switches Liquid to the lab's regtest (unless an environment
+  /// variable fixes the network) and ALWAYS closes the open wallet. Calling it
+  /// again refreshes a stale profile.
+  Future<TestServerInfo> setTestServer(String url);
+
+  /// Leave the joined test server: Liquid returns to testnet and the open
+  /// wallet is closed.
+  Future<TestServerInfo> clearTestServer();
 
   // ── Templar Protocol ─────────────────────────────────────────────
 
@@ -641,6 +681,10 @@ class LiquidNetworkInfo {
     required this.backendDescription,
     this.envLocked = false,
     this.regtestDefaultPolicyAsset = '',
+    this.backendSource = 'default',
+    this.testServer,
+    this.pegProvider,
+    this.pegUnavailableReason,
   });
 
   /// `liquid-testnet` | `liquid-regtest` — the connector-protocol name.
@@ -665,6 +709,19 @@ class LiquidNetworkInfo {
   /// Stock regtest LBTC id, the form's default.
   final String regtestDefaultPolicyAsset;
 
+  /// Where the backend came from: `env` | `profile` | `default`.
+  final String backendSource;
+
+  /// Base URL of the joined test server; null when none is joined.
+  final String? testServer;
+
+  /// The peg provider of this network: `native` | `sideswap`, or null when
+  /// no peg serves it ([pegUnavailableReason] says why).
+  final String? pegProvider;
+
+  /// The engine's `PEG_UNAVAILABLE: …` text when [pegProvider] is null.
+  final String? pegUnavailableReason;
+
   bool get isRegtest => shortName == 'regtest';
 
   factory LiquidNetworkInfo.fromJson(Map<String, dynamic> j) =>
@@ -677,6 +734,10 @@ class LiquidNetworkInfo {
         envLocked: j['env_locked'] as bool? ?? false,
         regtestDefaultPolicyAsset:
             j['regtest_default_policy_asset'] as String? ?? '',
+        backendSource: j['backend_source'] as String? ?? 'default',
+        testServer: j['test_server'] as String?,
+        pegProvider: j['peg_provider'] as String?,
+        pegUnavailableReason: j['peg_unavailable_reason'] as String?,
       );
 }
 

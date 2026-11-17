@@ -135,7 +135,10 @@ Using the wallet with a Templar Protocol site:
   a guarantee: the original payment can still confirm first.
 - On Liquid, a payment that moves an asset other than LBTC cannot leave
   frozen coins out yet: it is refused until the coins it needs are unfrozen.
-- The peg-in / peg-out flow runs against a simulated provider.
+- Peg-in / peg-out needs a Templar test server: its native peg on regtest,
+  or, on Liquid testnet, SideSwap's custodial swap service (whose testnet
+  currently refuses to open orders). Fund and claim work with software
+  wallets only.
 - One instance at a time: a second copy of the app on the same data folder
   refuses to open it.
 - The desktop builds are not code-signed or notarized yet.

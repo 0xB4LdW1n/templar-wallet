@@ -40,12 +40,13 @@ Future<void> showUtxoDetails(
 }) {
   // Read the explorer bases here, on the caller's tree: the dialog route
   // sits under the root navigator and may not see the same providers.
-  String btcBase = 'https://mempool.space/testnet';
-  String liquidBase = 'https://blockstream.info/liquidtestnet';
+  String? btcBase = 'https://mempool.space/testnet';
+  String? liquidBase = 'https://blockstream.info/liquidtestnet';
   try {
     final st = context.read<AppState>();
-    btcBase = st.btcExplorerUrl;
-    liquidBase = st.liquidExplorerUrl;
+    // Null on a regtest: no public explorer knows the chain.
+    btcBase = st.btcExplorerBase;
+    liquidBase = st.liquidExplorerBase;
   } on ProviderNotFoundException {
     // A bare test host without AppState: the defaults above still make a
     // valid link.
@@ -81,10 +82,12 @@ class UtxoDetailsDialog extends StatelessWidget {
   /// Freezes or unfreezes the coin; null hides the button.
   final VoidCallback? onToggleFrozen;
 
-  /// The block explorer for this coin's chain, without a trailing slash.
-  final String explorerBase;
+  /// The block explorer for this coin's chain; null on a regtest, which no
+  /// public explorer knows (the dialog then offers no link).
+  final String? explorerBase;
 
   String get _explorerUrl {
+    final explorerBase = this.explorerBase!;
     final base = explorerBase.endsWith('/')
         ? explorerBase.substring(0, explorerBase.length - 1)
         : explorerBase;
@@ -232,10 +235,13 @@ class UtxoDetailsDialog extends StatelessWidget {
     );
 
     final copy = _CopyOutpointButton(outpoint: utxo.outpoint);
-    final explorer = GhostButton(
-      label: 'Open in explorer',
-      onPressed: () => _openExplorer(context),
-    );
+    // Null on a regtest (no public explorer knows it): no link at all.
+    final explorer = explorerBase == null
+        ? null
+        : GhostButton(
+            label: 'Open in explorer',
+            onPressed: () => _openExplorer(context),
+          );
     final Widget? freeze = switch (onToggleFrozen) {
       final toggle? => SecondaryButton(
         label: utxo.isFrozen ? 'Unfreeze' : 'Freeze',
@@ -260,8 +266,8 @@ class UtxoDetailsDialog extends StatelessWidget {
       scrollable: true,
       content: SizedBox(width: phone ? double.infinity : 480, child: content),
       actions: phone
-          ? [close, explorer, copy, ?freeze]
-          : [copy, explorer, ?freeze, close],
+          ? [close, ?explorer, copy, ?freeze]
+          : [copy, ?explorer, ?freeze, close],
     );
   }
 }

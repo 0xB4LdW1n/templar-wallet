@@ -33,6 +33,7 @@ import 'liquid_network_switch.dart';
 import 'protocol_section.dart';
 import 'seed_phrase_section.dart';
 import 'settings_kit.dart';
+import 'test_server_section.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
@@ -460,7 +461,9 @@ class _SettingsHomeState extends State<_SettingsHome> {
               ListRow(
                 icon: Icons.wifi_outlined,
                 title: 'Nodes and explorers',
-                subtitle: 'Liquid $liquidNet · Bitcoin Electrum',
+                subtitle: st.testServerName != null
+                    ? 'Test server ${st.testServerName} · Liquid $liquidNet'
+                    : 'Liquid $liquidNet · test server, nodes',
                 chevron: true,
                 onTap: () => context.go(SettingsSection.network.route),
               ),
@@ -975,43 +978,15 @@ class _NetworkSectionState extends State<_NetworkSection> {
         ],
         const _LiquidNetworkCard(),
         const SettingsGap(),
-        SettingsGroup(
-          label: 'Nodes',
-          note:
-              'Bitcoin is fixed in this build. Liquid follows the network '
-              'above; override the endpoints with TEMPLAR_LIQUID_ELECTRUM_URL '
-              'or TEMPLAR_ELEMENTS_RPC_URL.',
-          children: [
-            const SettingsRow(
-              icon: Icons.dns_outlined,
-              title: 'Bitcoin Electrum',
-              subtitle: 'ssl://electrum.blockstream.info:60002',
-              mono: true,
-              wrap: true,
-              trailing: SettingsCopyButton(
-                value: 'ssl://electrum.blockstream.info:60002',
-              ),
-            ),
-            SettingsRow(
-              icon: Icons.dns_outlined,
-              title: 'Liquid chain',
-              subtitle:
-                  state.liquidNetwork?.backendDescription ??
-                  'electrum ssl://elements-testnet.blockstream.info:50002',
-              mono: true,
-              wrap: true,
-              trailing: SettingsCopyButton(
-                value:
-                    state.liquidNetwork?.backendDescription ??
-                    'electrum ssl://elements-testnet.blockstream.info:50002',
-              ),
-            ),
-          ],
-        ),
+        const TestServerCard(),
+        const SettingsGap(),
+        _NodesGroup(state: state),
         const SettingsGap(),
         SettingsGroup(
           label: 'Block explorers',
-          note: 'Used for "View on Explorer" links in transaction history',
+          note:
+              'Used for "View on Explorer" links in transaction history. A '
+              'regtest chain has no public explorer, so its links are hidden.',
           blocks: _editing != _ExplorerEdit.none,
           children: [
             _explorerRow(
@@ -1045,6 +1020,64 @@ class _NetworkSectionState extends State<_NetworkSection> {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// The servers the engine talks to, each with where it came from (a test
+/// server, an environment variable, an app setting or the built-in default),
+/// as the engine reports them in `active`. Read-only.
+class _NodesGroup extends StatelessWidget {
+  const _NodesGroup({required this.state});
+  final AppState state;
+
+  static String _from(String source) => 'from ${endpointSourceLabel(source)}';
+
+  static Widget _row(String title, String value) => SettingsRow(
+    icon: Icons.dns_outlined,
+    title: title,
+    subtitle: value,
+    mono: true,
+    wrap: true,
+    trailing: SettingsCopyButton(value: value),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final active = state.testServer?.active;
+    return SettingsGroup(
+      label: 'Nodes',
+      note:
+          'The servers in use and where each comes from. A test server sets '
+          'them all; TEMPLAR_LIQUID_ELECTRUM_URL, TEMPLAR_ELEMENTS_RPC_URL and '
+          'the TEMPLAR_SWAP_* variables override single ones.',
+      children: active == null
+          ? [
+              // No answer from the engine yet: what this build uses by
+              // default.
+              _row('Bitcoin Electrum', 'ssl://electrum.blockstream.info:60002'),
+              _row(
+                'Liquid chain',
+                state.liquidNetwork?.backendDescription ??
+                    'electrum ssl://elements-testnet.blockstream.info:50002',
+              ),
+            ]
+          : [
+              _row(
+                'Bitcoin ${active.bitcoin.shortName} · '
+                '${_from(active.bitcoin.source)}',
+                active.bitcoin.electrumUrl,
+              ),
+              _row(
+                'Liquid ${active.liquid.network.replaceFirst('liquid-', '')}'
+                ' · ${_from(active.liquid.backendSource)}',
+                active.liquid.backendDescription,
+              ),
+              _row(
+                'Order book · ${_from(active.orderbook.origin.source)}',
+                active.orderbook.origin.url,
+              ),
+            ],
     );
   }
 }
@@ -1084,17 +1117,25 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
       if (!mounted) return;
       context.read<AppState>().setLiquidNetworkInfo(info);
       setState(() {
-        _info = info;
+        _adopt(info);
         _error = null;
-        _choice = info.shortName;
-        _policyAsset.text = info.isRegtest
-            ? info.policyAsset
-            : info.regtestDefaultPolicyAsset;
       });
     } catch (e) {
       if (mounted) setState(() => _error = liquidNetworkErrorText(e));
     }
   }
+
+  void _adopt(LiquidNetworkInfo info) {
+    _info = info;
+    _choice = info.shortName;
+    _policyAsset.text = info.isRegtest
+        ? info.policyAsset
+        : info.regtestDefaultPolicyAsset;
+  }
+
+  /// A test server is joined: its regtest is the only regtest, and the
+  /// engine takes its policy asset from the server.
+  bool get _onLab => _info?.testServer != null;
 
   /// Whether the form differs from what the engine is on.
   bool get _dirty {
@@ -1102,6 +1143,7 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
     if (info == null) return false;
     if (_choice != info.shortName) return true;
     return _choice == 'regtest' &&
+        !_onLab &&
         _policyAsset.text.trim().toLowerCase() !=
             info.policyAsset.toLowerCase();
   }
@@ -1119,7 +1161,7 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
       final done = await switchLiquidNetwork(
         context,
         target: _choice,
-        policyAsset: _policyAsset.text,
+        policyAsset: _onLab ? null : _policyAsset.text,
       );
       if (!mounted) return;
       if (done == null) {
@@ -1146,6 +1188,16 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
+    // Joining or leaving a test server (the card below) moves Liquid too:
+    // follow the shared state once the engine has answered.
+    final shared = context.select<AppState, LiquidNetworkInfo?>(
+      (a) => a.liquidNetwork,
+    );
+    if (shared != null && _info != null && !identical(shared, _info)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_busy) setState(() => _adopt(shared));
+      });
+    }
     final info = _info;
     final locked = info?.envLocked ?? false;
     final track = SegmentedSwitch<String>(
@@ -1191,7 +1243,14 @@ class _LiquidNetworkCardState extends State<_LiquidNetworkCard> {
           )
         else ...[
           if (phone) SettingsBlock(child: track),
-          if (_choice == 'regtest')
+          if (_choice == 'regtest' && _onLab)
+            SettingsBlock(
+              child: Text(
+                'Regtest is the joined test server\'s chain.',
+                style: AppTypography.caption.copyWith(color: s.inkSecondary),
+              ),
+            ),
+          if (_choice == 'regtest' && !_onLab)
             SettingsBlock(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

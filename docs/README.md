@@ -10,6 +10,7 @@ ships inside the release bundles is the root [`INSTALL.md`](../INSTALL.md).
 | [`../INSTALL.md`](../INSTALL.md) · [`../INSTALL.it.md`](../INSTALL.it.md) | Install a release and get started (English · Italian) |
 | [`guides/TEMPLAR_PROTOCOL.md`](guides/TEMPLAR_PROTOCOL.md) | Use the wallet with a Templar Protocol site: connect, sign, Loans |
 | [`guides/TUI.md`](guides/TUI.md) | Install and operate the `templar` terminal client |
+| [`guides/TEST_SERVER.md`](guides/TEST_SERVER.md) | Join a Templar test server (its regtest chains, faucet and order book), re-join after a reset, leave |
 | [`guides/LOCAL_ORDERBOOK.md`](guides/LOCAL_ORDERBOOK.md) | Point the wallet at a LiquiDEX order book (the service lives in Templar Protocol) |
 
 ## Building and releasing

@@ -3129,6 +3129,7 @@ dependencies = [
 [[package]]
 name = "templar-core"
 version = "0.1.0"
+source = "git+https://github.com/0xB4LdW1n/templarlib?tag=v0.1.0#db638507895e23c3297046be9e5fb0436fb41a32"
 dependencies = [
  "argon2",
  "base64 0.22.1",
@@ -3175,6 +3176,7 @@ dependencies = [
 [[package]]
 name = "templarlib"
 version = "0.1.0"
+source = "git+https://github.com/0xB4LdW1n/templarlib?tag=v0.1.0#db638507895e23c3297046be9e5fb0436fb41a32"
 dependencies = [
  "bdk",
  "dirs-next",

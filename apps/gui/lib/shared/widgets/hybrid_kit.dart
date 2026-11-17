@@ -365,13 +365,17 @@ class QuietTag extends StatelessWidget {
 /// The network the wallet is on: a 6 px dot in the testnet hue and the word.
 /// Stated once, on the Dashboard.
 class TestnetBadge extends StatelessWidget {
-  const TestnetBadge({super.key});
+  const TestnetBadge({super.key, this.label = 'TESTNET'});
+
+  /// The network's name: `TESTNET`, or `REGTEST` beside a test server.
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     return Semantics(
-      label: 'Testnet network — no mainnet funds',
+      label:
+          '${label[0]}${label.substring(1).toLowerCase()} network — no mainnet funds',
       excludeSemantics: true,
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -379,7 +383,7 @@ class TestnetBadge extends StatelessWidget {
           _Dot(s.testnet),
           const SizedBox(width: AppSpacing.sm),
           Text(
-            'Testnet',
+            '${label[0]}${label.substring(1).toLowerCase()}',
             maxLines: 1,
             softWrap: false,
             overflow: TextOverflow.ellipsis,

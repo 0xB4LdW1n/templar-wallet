@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/app_state.dart';
@@ -60,9 +59,7 @@ class _TxSuccessDialog extends StatelessWidget {
 
   bool get _isLiquid => preview.chain == 'liquid';
 
-  Future<void> _openExplorer(BuildContext context) async {
-    final app = context.read<AppState>();
-    final base = _isLiquid ? app.liquidExplorerUrl : app.btcExplorerUrl;
+  Future<void> _openExplorer(BuildContext context, String base) async {
     final trimmed = base.endsWith('/')
         ? base.substring(0, base.length - 1)
         : base;
@@ -76,6 +73,13 @@ class _TxSuccessDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
+    final app = maybeAppState(context);
+    // Null on a regtest (no public explorer knows it): no link at all.
+    final explorerBase =
+        _isLiquid ? app?.liquidExplorerBase : app?.btcExplorerBase;
+    final network = _isLiquid
+        ? 'Liquid ${app?.liquidNetworkName ?? 'testnet'}'
+        : 'Bitcoin ${app?.bitcoinNetworkName ?? 'testnet'}';
 
     final body = Column(
       mainAxisSize: MainAxisSize.min,
@@ -97,7 +101,7 @@ class _TxSuccessDialog extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          'Broadcast to the ${_isLiquid ? 'Liquid' : 'Bitcoin'} testnet',
+          'Broadcast to the $network',
           textAlign: TextAlign.center,
           style: AppTypography.bodyOf(context).copyWith(color: s.inkSecondary),
         ),
@@ -108,12 +112,14 @@ class _TxSuccessDialog extends StatelessWidget {
       ],
     );
 
-    final explorer = GhostButton(
-      label: 'View in explorer',
-      icon: Icons.open_in_new_outlined,
-      isFullWidth: phone,
-      onPressed: () => _openExplorer(context),
-    );
+    final explorer = explorerBase == null
+        ? null
+        : GhostButton(
+            label: 'View in explorer',
+            icon: Icons.open_in_new_outlined,
+            isFullWidth: phone,
+            onPressed: () => _openExplorer(context, explorerBase),
+          );
     final done = PrimaryButton(
       label: 'Done',
       isFullWidth: phone,
@@ -145,12 +151,14 @@ class _TxSuccessDialog extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   activity,
                 ],
-                const SizedBox(height: AppSpacing.sm),
-                explorer,
+                if (explorer != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  explorer,
+                ],
               ],
             ),
           ]
-        : <Widget>[explorer, ?activity, done];
+        : <Widget>[?explorer, ?activity, done];
 
     return AppDialog(
       // It landed: the dialog's edge draws itself closed in the success

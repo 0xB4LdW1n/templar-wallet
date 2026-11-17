@@ -884,7 +884,8 @@ class _BadgeStrip extends StatelessWidget {
   }
 }
 
-/// Strip shown while Liquid runs against a local regtest node. Regtest coins
+/// Strip shown while Liquid runs against a regtest: a local node, or a joined
+/// test server's chains (Bitcoin is then on its regtest too). Regtest coins
 /// are free and the chain is private, so nothing on screen is the public
 /// testnet — the strip says so once, on every screen.
 class _RegtestBadge extends StatelessWidget {
@@ -892,6 +893,16 @@ class _RegtestBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lab = context.select<AppState, String?>(
+      (s) => s.isBitcoinRegtest ? s.testServerName : null,
+    );
+    if (lab != null) {
+      return _BadgeStrip(
+        color: AppColors.warningMuted,
+        text: 'Regtest — test server $lab, not the public testnet',
+        phoneText: 'Regtest — test server, not testnet',
+      );
+    }
     return const _BadgeStrip(
       color: AppColors.warningMuted,
       text: 'Liquid regtest — local elementsd, not the public testnet',

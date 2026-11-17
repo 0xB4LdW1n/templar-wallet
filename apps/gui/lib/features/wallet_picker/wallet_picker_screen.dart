@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -409,7 +411,32 @@ class _WalletPickerScreenState extends State<WalletPickerScreen> {
       liquid: wallet.liquidEnabled,
       bitcoin: wallet.bitcoinEnabled,
     );
+    // The wallet shell this picker replaced leaves the tree only when the
+    // picker's own page transition ends. Re-entering the shell before then
+    // (a quick tap right after a wallet was closed — by a network switch,
+    // a test-server join or leave, a lock) puts two shells in the tree at
+    // once, and go_router keys each shell's navigator with the same
+    // GlobalObjectKey: "Multiple widgets used the same GlobalKey". So a tap
+    // that lands mid-transition waits for it to end.
+    await _untilRouteSettled();
     if (mounted) context.go(AppRoutes.dashboard);
+  }
+
+  Future<void> _untilRouteSettled() async {
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation == null || animation.isCompleted) return;
+    final settled = Completer<void>();
+    void onStatus(AnimationStatus status) {
+      if (status == AnimationStatus.completed && !settled.isCompleted) {
+        settled.complete();
+      }
+    }
+
+    animation.addStatusListener(onStatus);
+    // A transition lasts a few hundred ms; never hang the tap on one that
+    // does not report its end.
+    await settled.future.timeout(const Duration(seconds: 2), onTimeout: () {});
+    animation.removeStatusListener(onStatus);
   }
 
   Future<bool> _showPasswordPrompt(String storedHash) async {

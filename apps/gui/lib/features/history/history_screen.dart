@@ -7,6 +7,7 @@ import '../../app/app_state.dart';
 import '../../app/routes.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../bridge/wallet_bridge.dart';
+import '../../services/peg_tx_label_store.dart';
 import '../../services/fee_bump_store.dart';
 import '../../services/price_service.dart';
 import '../../shared/amount_units.dart';
@@ -211,7 +212,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     // UTXOs while Activity shows nothing at all, which reads as a lost
     // transaction.
     final withConsolidations = await _withPendingConsolidations(walletId, txs);
-    final merged = await _withFeeBumps(walletId, withConsolidations);
+    final bumped = await _withFeeBumps(walletId, withConsolidations);
+    final merged = await _withPegLabels(walletId, bumped);
     if (mounted) {
       appState.cachedTransactions = merged;
       setState(() {
@@ -224,6 +226,54 @@ class _HistoryScreenState extends State<HistoryScreen> {
     await extras;
     if (mounted) _scheduleOpen();
   }
+
+  /// Names the transactions of a peg ("Peg-in deposit", "Peg-in claim", …)
+  /// from the local index the Peg screen keeps; no server is asked. A note
+  /// the engine already has wins.
+  Future<List<Transaction>> _withPegLabels(
+    String walletId,
+    List<Transaction> txs,
+  ) async {
+    final Map<String, String> labels;
+    try {
+      labels = await PegTxLabelStore.instance.labelsFor(walletId);
+    } catch (_) {
+      return txs;
+    }
+    if (labels.isEmpty) return txs;
+    return [
+      for (final tx in txs)
+        switch (labels[tx.txid]) {
+          final label? when tx.note == null => _withNote(tx, label),
+          _ => tx,
+        },
+    ];
+  }
+
+  /// [tx] with [note] as its note, every other field (its folded bump too)
+  /// kept.
+  static Transaction _withNote(Transaction tx, String note) => Transaction(
+    txid: tx.txid,
+    direction: tx.direction,
+    chain: tx.chain,
+    amount: tx.amount,
+    ticker: tx.ticker,
+    timestamp: tx.timestamp,
+    confirmations: tx.confirmations,
+    fee: tx.fee,
+    feeSats: tx.feeSats,
+    feeRate: tx.feeRate,
+    vsize: tx.vsize,
+    isReplaceable: tx.isReplaceable,
+    canRbf: tx.canRbf,
+    canCpfp: tx.canCpfp,
+    canCancel: tx.canCancel,
+    feeBumpUnavailableReason: tx.feeBumpUnavailableReason,
+    bump: tx.bump,
+    note: note,
+    counterparty: tx.counterparty,
+    fiatEstimate: tx.fiatEstimate,
+  );
 
   /// Folds every fee bump this app made into the transaction it was done
   /// to (fee_bump_fold.dart): a sped-up payment is one row, not a payment
@@ -809,8 +859,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       builder: (ctx) => ActivityEntryDetail(
         entry: entry,
         useSats: appState.useSats,
-        btcExplorerUrl: appState.btcExplorerUrl,
-        liquidExplorerUrl: appState.liquidExplorerUrl,
+        btcExplorerUrl: appState.btcExplorerBase,
+        liquidExplorerUrl: appState.liquidExplorerBase,
         linked: linked,
         onManage: () {
           Navigator.of(ctx).pop();
@@ -837,8 +887,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       builder: (ctx) => _TxDetail(
         tx: tx,
         useSats: appState.useSats,
-        btcExplorerUrl: appState.btcExplorerUrl,
-        liquidExplorerUrl: appState.liquidExplorerUrl,
+        btcExplorerUrl: appState.btcExplorerBase,
+        liquidExplorerUrl: appState.liquidExplorerBase,
         onSpeedUp: canBump && _feeBumpBusyTxid != tx.txid
             ? () {
                 Navigator.of(ctx).pop();
@@ -1577,16 +1627,19 @@ class _TxDetail extends StatelessWidget {
 
   final Transaction tx;
   final bool useSats;
-  final String btcExplorerUrl;
-  final String liquidExplorerUrl;
+
+  /// Null on a regtest: no public explorer knows the chain, so no link.
+  final String? btcExplorerUrl;
+  final String? liquidExplorerUrl;
 
   /// Opens the fee-bump flow; null when this transaction cannot take one.
   final VoidCallback? onSpeedUp;
 
+  String? get _explorerBase =>
+      tx.chain == TxChain.liquid ? liquidExplorerUrl : btcExplorerUrl;
+
   String _explorerUrl(String txid) {
-    final base = tx.chain == TxChain.liquid
-        ? liquidExplorerUrl
-        : btcExplorerUrl;
+    final base = _explorerBase!;
     final baseTrimmed = base.endsWith('/')
         ? base.substring(0, base.length - 1)
         : base;
@@ -1713,7 +1766,9 @@ class _TxDetail extends StatelessWidget {
             _BumpSection(
               bump: bump,
               incoming: isIn,
-              onExplorer: () => _openExplorer(context, txid: bump.otherTxid),
+              onExplorer: _explorerBase == null
+                  ? null
+                  : () => _openExplorer(context, txid: bump.otherTxid),
             ),
           ],
         ],
@@ -1725,11 +1780,12 @@ class _TxDetail extends StatelessWidget {
       scrollable: true,
       content: content,
       actions: [
-        GhostButton(
-          label: 'View in explorer',
-          icon: Icons.open_in_new_outlined,
-          onPressed: () => _openExplorer(context),
-        ),
+        if (_explorerBase != null)
+          GhostButton(
+            label: 'View in explorer',
+            icon: Icons.open_in_new_outlined,
+            onPressed: () => _openExplorer(context),
+          ),
         if (onSpeedUp != null)
           SpeedUpButton(
             // A replacement can be replaced again; say so.
@@ -1781,8 +1837,9 @@ class _BumpSection extends StatelessWidget {
   /// The bumped transaction is a payment that came in.
   final bool incoming;
 
-  /// Opens the bump's other transaction in the explorer.
-  final VoidCallback onExplorer;
+  /// Opens the bump's other transaction in the explorer; null on a regtest,
+  /// where no public explorer knows the chain.
+  final VoidCallback? onExplorer;
 
   String get _headline => switch (bump.method) {
     'cpfp' => 'Fee raised with CPFP',
@@ -1871,14 +1928,15 @@ class _BumpSection extends StatelessWidget {
           ),
         const SizedBox(height: AppSpacing.md),
         CodeBox(value: bump.otherTxid, label: _otherLabel),
-        Align(
-          alignment: Alignment.centerRight,
-          child: GhostButton(
-            label: 'View in explorer',
-            icon: Icons.open_in_new_outlined,
-            onPressed: onExplorer,
+        if (onExplorer != null)
+          Align(
+            alignment: Alignment.centerRight,
+            child: GhostButton(
+              label: 'View in explorer',
+              icon: Icons.open_in_new_outlined,
+              onPressed: onExplorer,
+            ),
           ),
-        ),
       ],
     );
   }

@@ -312,6 +312,7 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   /// a messenger instead of through the clipboard.
   Future<void> _shareAddress() async {
     if (_current == null) return;
+    final app = context.read<AppState>();
     // iPad's share popover needs an anchor; Android ignores it.
     final box = context.findRenderObject() as RenderBox?;
     await SharePlus.instance.share(
@@ -320,8 +321,8 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
         subject: _paymentUri != null
             ? 'Payment request'
             : (_selectedAsset == 'BTC'
-                  ? 'Bitcoin testnet address'
-                  : 'Liquid testnet address'),
+                  ? 'Bitcoin ${app.bitcoinNetworkName} address'
+                  : 'Liquid ${app.liquidNetworkName} address'),
         sharePositionOrigin: box == null
             ? null
             : box.localToGlobal(Offset.zero) & box.size,

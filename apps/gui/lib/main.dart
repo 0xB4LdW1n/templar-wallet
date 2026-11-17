@@ -105,6 +105,15 @@ void main() {
       } catch (e) {
         debugPrint('liquid network: $e');
       }
+      // The joined test server and the servers in use — the stored profile
+      // only, no network: whether its chains were reset is asked on first use
+      // of the swap market (or from Settings), never at startup, so a lab that
+      // is down cannot hold the engine while the app opens.
+      try {
+        appState.setTestServerInfo(await walletBridge.getTestServer());
+      } catch (e) {
+        debugPrint('test server: $e');
+      }
       // Warm up BTC price in background
       PriceService.instance.fetch();
       runApp(

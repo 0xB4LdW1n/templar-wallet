@@ -97,8 +97,10 @@ class ActivityEntryDetail extends StatelessWidget {
 
   final ActivityEntry entry;
   final bool useSats;
-  final String btcExplorerUrl;
-  final String liquidExplorerUrl;
+
+  /// Null on a regtest (no public explorer knows it): no link at all.
+  final String? btcExplorerUrl;
+  final String? liquidExplorerUrl;
 
   /// On-chain transactions folded into this entry, by txid.
   final Map<String, Transaction> linked;
@@ -166,13 +168,15 @@ class ActivityEntryDetail extends StatelessWidget {
         CodeBox(value: ref.txid, label: ref.label),
         _TxFoot(
           tx: linked[ref.txid],
-          onExplorer: () => openActivityExplorer(
-            context,
-            activityExplorerUrl(
-              ref.chain == TxChain.liquid ? liquidExplorerUrl : btcExplorerUrl,
-              ref.txid,
+          onExplorer: switch (ref.chain == TxChain.liquid
+              ? liquidExplorerUrl
+              : btcExplorerUrl) {
+            final base? => () => openActivityExplorer(
+              context,
+              activityExplorerUrl(base, ref.txid),
             ),
-          ),
+            null => null,
+          },
         ),
       ],
     ];
@@ -241,12 +245,13 @@ class ActivityEntryDetail extends StatelessWidget {
 class _TxFoot extends StatelessWidget {
   const _TxFoot({required this.tx, required this.onExplorer});
   final Transaction? tx;
-  final VoidCallback onExplorer;
+  final VoidCallback? onExplorer;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final t = tx;
+    final explore = onExplorer;
     final facts = t == null
         ? null
         : [
@@ -270,11 +275,12 @@ class _TxFoot extends StatelessWidget {
                     style: AppTypography.caption.copyWith(color: s.inkFaint),
                   ),
           ),
-          GhostButton(
-            label: 'View in explorer',
-            icon: Icons.open_in_new_outlined,
-            onPressed: onExplorer,
-          ),
+          if (explore != null)
+            GhostButton(
+              label: 'View in explorer',
+              icon: Icons.open_in_new_outlined,
+              onPressed: explore,
+            ),
         ],
       ),
     );

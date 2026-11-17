@@ -708,7 +708,7 @@ class _WalletHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppSpacing.lg),
-              const TestnetBadge(),
+              TestnetBadge(label: networkBadgeLabel(context)),
             ],
           ),
           if (hasMeta)
@@ -1585,7 +1585,7 @@ class _HeroState extends State<_Hero> {
               Expanded(
                 child: _BalanceLabel(label: balanceLabel, withToggle: false),
               ),
-              const TestnetBadge(),
+              TestnetBadge(label: networkBadgeLabel(context)),
               const SizedBox(width: AppSpacing.xs),
               const PrivacyToggle(),
             ],
@@ -2871,3 +2871,8 @@ class _ListHead extends StatelessWidget {
   if (i <= 0) return (text, null);
   return (text.substring(0, i), text.substring(i + 1));
 }
+
+/// The network the dashboard states: `TESTNET`, or `REGTEST` when Bitcoin
+/// runs on a joined test server's regtest (Liquid is then on its regtest too).
+String networkBadgeLabel(BuildContext context) =>
+    (maybeAppState(context)?.isBitcoinRegtest ?? false) ? 'REGTEST' : 'TESTNET';
