@@ -28,6 +28,7 @@ import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
 import 'models/swap_offer.dart';
+import 'swap_gate.dart';
 import 'order_book_admin.dart';
 import 'publish_error.dart';
 import 'take_flow.dart' show swapError;
@@ -221,6 +222,10 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
       return;
     }
     final sats = isLbtc ? (v * 1e8).round() : v.round();
+    if (!await confirmSwapSignature(context, 'the payment to yourself') ||
+        !mounted) {
+      return;
+    }
 
     setState(() {
       _preparing = true;
@@ -263,6 +268,7 @@ class _MakeOfferFlowScreenState extends State<MakeOfferFlowScreen> {
     final wantAssetId = _wantAssetIdResolved;
     final wantSats = _wantAmountSats;
     if (walletId == null || utxo == null || wantSats == null) return;
+    if (!await confirmSwapSignature(context, 'the offer') || !mounted) return;
 
     setState(() {
       _publishing = true;

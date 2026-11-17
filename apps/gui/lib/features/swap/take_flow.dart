@@ -31,6 +31,7 @@ import '../../theme/app_spacing.dart';
 import '../../services/file_export.dart';
 import '../../theme/app_typography.dart';
 import 'models/swap_offer.dart';
+import 'swap_gate.dart';
 import '../../shared/widgets/app_dialog.dart';
 
 /// Strip the FFI error prefix for display.
@@ -312,6 +313,7 @@ class _TakeFlowScreenState extends State<TakeFlowScreen> {
         ) ??
         false;
     if (!confirmed || !mounted) return;
+    if (!await confirmSwapSignature(context, 'the swap') || !mounted) return;
 
     setState(() {
       _taking = true;

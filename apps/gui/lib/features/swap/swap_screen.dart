@@ -25,6 +25,7 @@ import 'order_book_admin.dart';
 import 'publish_error.dart';
 import 'atomic_offer_flow.dart';
 import 'models/swap_offer.dart';
+import 'swap_gate.dart';
 import 'take_flow.dart';
 
 enum _MarketFilter { all, crossChain, liquid }
@@ -305,6 +306,9 @@ class _SwapScreenState extends State<SwapScreen> {
         ) ??
         false;
     if (!confirmed || !mounted) return;
+    if (!await confirmSwapSignature(context, 'the cancellation') || !mounted) {
+      return;
+    }
 
     setState(() => _cancelling = true);
     try {
