@@ -33,6 +33,7 @@ import '../protocol/protocol_paste_card.dart';
 import '../wallet_picker/models/wallet_summary.dart';
 import 'liquid_network_switch.dart';
 import 'settings_kit.dart';
+import '../loans/lending_site.dart';
 
 /// The protocol's network status, worded once (CLAUDE.md rule 5).
 const String kProtocolNetworkStatus =
@@ -252,6 +253,7 @@ class _ProtocolSectionState extends State<ProtocolSection> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (loansEnabled) ...[_loansShortcut(), const SettingsGap()],
+        ..._labLendingSite(),
         _status(),
         const SettingsGap(),
         ProtocolPasteCard(
@@ -296,6 +298,29 @@ class _ProtocolSectionState extends State<ProtocolSection> {
         ),
       ],
     );
+  }
+
+  /// On a test server's regtest: its lending site, one tap away. Connecting
+  /// still happens from the site, through its templar:// link.
+  List<Widget> _labLendingSite() {
+    final st = context.watch<AppState>();
+    final uri = labLendingSite(st);
+    if (uri == null) return const [];
+    return [
+      SettingsGroup(
+        label: 'Test server',
+        children: [
+          ListRow(
+            key: const Key('protocol-lab-lending-site'),
+            icon: Icons.open_in_new_outlined,
+            title: kOpenLendingSite,
+            subtitle: '${st.testServerName ?? 'Test server'} · $uri',
+            onTap: () => openLabLendingSite(context, uri),
+          ),
+        ],
+      ),
+      const SettingsGap(),
+    ];
   }
 
   Widget _status() {

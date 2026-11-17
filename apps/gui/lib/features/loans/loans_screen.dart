@@ -33,6 +33,7 @@ import '../protocol/models/protocol_link.dart';
 import '../protocol/models/protocol_portfolio.dart';
 import '../protocol/models/protocol_records.dart';
 import 'loan_overview_card.dart';
+import 'lending_site.dart';
 
 class LoansScreen extends StatefulWidget {
   const LoansScreen({super.key, this.service, this.store});
@@ -341,6 +342,13 @@ class _LoansScreenState extends State<LoansScreen> {
   }) {
     if (!_sitesLoaded) return const [_Spinner()];
     if (site == null) {
+      final st = context.watch<AppState>();
+      final lending = labLendingSite(st);
+      final settings = SecondaryButton(
+        label: 'Templar Protocol settings',
+        onPressed: () => context.go(AppRoutes.settingsProtocol),
+        isFullWidth: phone,
+      );
       return [
         _Empty(
           key: const Key('loans-no-site'),
@@ -348,14 +356,39 @@ class _LoansScreenState extends State<LoansScreen> {
           title: 'No site connected to this wallet',
           body: _walletId == null
               ? 'Open a wallet first.'
+              : lending != null
+              ? '${st.testServerName ?? 'The test server'} runs a Templar '
+                    'Protocol lending site on its regtest. Open it and click '
+                    '"Connect Templar Wallet" there: once connected, its loans '
+                    'show up here.'
               : 'A Templar Protocol site learns about this wallet when you click '
                     '"Connect Templar Wallet" there. Once connected, its loans show '
                     'up here.',
-          action: SecondaryButton(
-            label: 'Templar Protocol settings',
-            onPressed: () => context.go(AppRoutes.settingsProtocol),
-            isFullWidth: phone,
-          ),
+          action: lending == null || _walletId == null
+              ? settings
+              : Column(
+                  crossAxisAlignment: phone
+                      ? CrossAxisAlignment.stretch
+                      : CrossAxisAlignment.center,
+                  children: [
+                    PrimaryButton(
+                      key: const Key('loans-open-lending-site'),
+                      label: kOpenLendingSite,
+                      icon: Icons.open_in_new_outlined,
+                      isFullWidth: phone,
+                      onPressed: () => openLabLendingSite(context, lending),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      lending.toString(),
+                      style: AppTypography.monoSmall.copyWith(
+                        color: AppScheme.of(context).inkFaint,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    settings,
+                  ],
+                ),
         ),
       ];
     }

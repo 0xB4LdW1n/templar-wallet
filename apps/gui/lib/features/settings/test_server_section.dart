@@ -192,6 +192,66 @@ class _TestServerCardState extends State<TestServerCard> {
     );
   }
 
+  /// What the lab provides, at a glance: the faucet and the coins it pays,
+  /// its order book, its lending site and its peg — each a plain fact.
+  List<Widget> _provides(TestServerInfo info, TestServerProfile profile) {
+    final faucet = info.faucet;
+    final coins = [
+      for (final a in faucet?.assets ?? const <FaucetAsset>[])
+        a.isBitcoin
+            ? 'BTC'
+            : (a.isNativeCoin ? 'L-BTC' : (a.ticker.isEmpty ? a.asset : a.ticker)),
+    ];
+    String list(List<String> xs) => xs.length <= 1
+        ? xs.join()
+        : '${xs.sublist(0, xs.length - 1).join(', ')} and ${xs.last}';
+    final book = profile.orderbookUrl.isNotEmpty
+        ? profile.orderbookUrl
+        : info.active.orderbook.origin.url;
+    final lending = profile.protocolUrl;
+    final peg = profile.regtest.peg.provider == 'native';
+    return [
+      SettingsRow(
+        key: const Key('test-server-faucet'),
+        icon: Icons.water_drop_outlined,
+        title: 'Faucet',
+        subtitle: faucet == null || coins.isEmpty
+            ? 'None listed'
+            : faucet.available
+            ? 'Pays ${list(coins)} to this wallet, from Test coins on the '
+                  'Dashboard and Receive'
+            : 'Pays ${list(coins)}, on its regtest only',
+        wrap: true,
+      ),
+      SettingsRow(
+        key: const Key('test-server-orderbook'),
+        icon: Icons.swap_horiz_outlined,
+        title: 'Order book',
+        subtitle: book.isEmpty
+            ? 'None'
+            : 'LiquiDEX offers and token names on its Liquid regtest · $book',
+        wrap: true,
+      ),
+      SettingsRow(
+        key: const Key('test-server-lending'),
+        icon: Icons.handshake_outlined,
+        title: 'Lending site',
+        subtitle: lending == null || lending.isEmpty
+            ? 'None'
+            : 'Templar Protocol loans on its regtest · $lending',
+        wrap: true,
+      ),
+      SettingsRow(
+        icon: Icons.swap_vert,
+        title: 'Peg',
+        subtitle: peg
+            ? 'Peg-in and peg-out between its Bitcoin and Liquid regtest'
+            : 'None',
+        wrap: true,
+      ),
+    ];
+  }
+
   /// The block that holds a group's buttons: right-aligned on desktop, full
   /// width on a phone (as the Liquid network group's Apply).
   Widget _actions(List<Widget> buttons) {
@@ -301,6 +361,7 @@ class _TestServerCardState extends State<TestServerCard> {
         wrap: true,
         trailing: SettingsCopyButton(value: profile.baseUrl),
       ),
+      ..._provides(info, profile),
       if (stale)
         SettingsBlock(
           child: WarningBanner(
