@@ -11,8 +11,7 @@ operator can reset the chains at any time.
 
 ## Join
 
-1. **Settings › Network & Sync › Test server.** On a phone: Settings, then
-   **Nodes & explorers**.
+1. **Settings › Network › Nodes and explorers › Test server.**
 2. Enter the URL the operator gave you, for example `http://127.0.0.1:8096`
    for a lab running on your own computer, and choose **Join**.
 3. The wallet asks first. Joining **closes the open wallet**: confirm, then
@@ -22,8 +21,10 @@ From then on:
 
 - Liquid runs on the test server's regtest (`el1…` confidential addresses)
   and Bitcoin on its Bitcoin regtest (`bcrt1…` addresses). A strip at the top
-  of every screen reads `REGTEST — test server <name>`, and the Dashboard
-  says `REGTEST`.
+  of every screen reads `Regtest — Bitcoin and Liquid of test server
+  <name>`, and the Dashboard says `Regtest`.
+- The Test server card lists what the lab provides: its faucet and the
+  coins it pays, its order book, its lending site and its peg.
 - The swap market uses the test server's order book; its header names the
   test server and the network.
 - Transactions on a regtest have no public block explorer, so the wallet
@@ -37,9 +38,23 @@ coins while joined, and its public-testnet coins after you leave.
 
 ## Get coins
 
-Use the test server's own faucet: open the server's URL in a browser (the
-tester page) and paste a receive address from the wallet (Receive, Bitcoin
-or Liquid). Then sync the wallet.
+From the wallet itself: the Dashboard shows a **Test coins** card with
+every coin the test server's faucet pays (BTC, L-BTC and the lab's tokens,
+such as USDt), one button each; Receive shows the same button for the
+coin on screen. The faucet pays a fresh address of this wallet; the coins
+show after the lab's next block (about 30 seconds), when the wallet syncs
+by itself. A refusal is explained — a limit says when to try again.
+
+## Tokens and the order book
+
+Issue a token from Liquid assets › Issue. On a test server there is no
+domain to prove: the token is announced to the lab's order book, so other
+wallets see its name; the result says whether the book took it (a ticker
+already used there is refused, with a retry). Amounts are typed in the
+token's own units (`100.00` of a two-decimal token). A token named by the
+order book rather than by your wallet shows its short asset id beside the
+name. The BTC ↔ Liquid cross-chain routes exist only on Liquid testnet and
+are not shown on a test server.
 
 ## Peg between the lab's chains
 
@@ -74,9 +89,19 @@ it pays you on the other chain, and your receive address is sent to it.
 SideSwap's testnet currently refuses to open orders; the app shows its
 answer.
 
-An order that says **Expired** must never be paid. Orders made with older
-versions of the app, against the retired simulated provider, stay in the
-list labelled **Simulated**; no coins moved for them.
+An order that says **Expired** must never be paid. Orders of another network
+and those made with older versions of the app against the retired simulated
+provider (labelled **Simulated**; no coins moved for them) are folded under
+**Older orders**, below the active network's.
+
+If funding is refused for lack of coins, the order says how much is missing
+and offers **Get test BTC** (or **Get test L-BTC**) right there.
+
+## Loans
+
+While joined, Loans (with no site connected yet) and Settings › Templar
+Protocol offer **Open the test server's lending site**. Connect from the
+site's own **Connect Templar Wallet**; the loans then show in the wallet.
 
 ## When the test chain is reset
 

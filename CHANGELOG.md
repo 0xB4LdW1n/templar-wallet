@@ -51,8 +51,8 @@ any release may change anything.
 
 ### Test servers
 
-- **Join a test server with one setting.** Settings › Network & Sync › Test
-  server takes a Templar test server's URL; the engine reads the rest from
+- **Join a test server with one setting.** Settings › Network › Nodes and explorers ›
+  Test server takes a Templar test server's URL; the engine reads the rest from
   the server and moves Liquid and Bitcoin onto the lab's regtest chains
   (`el1…`, `bcrt1…`) and the swap market onto its order book. Joining and
   leaving close the open wallet, so the app asks first and returns to the
@@ -76,6 +76,29 @@ any release may change anything.
   confirmation, the send result, the receive share text, the dashboard and
   the regtest strip follow the active Bitcoin network; a regtest has no
   explorer links.
+
+- **A lab wallet, coherently.** Joined to a test server the app is a
+  regtest wallet for Bitcoin and Liquid: **Test coins** on the Dashboard
+  (and on Receive for the coin on screen) asks the lab's faucet for BTC,
+  L-BTC or its tokens and syncs once after the lab's next block; Peg shows
+  the wallet's BTC and L-BTC beside the amount, explains an unfunded deposit
+  and offers the faucet's coin beside it, and folds orders of another
+  network or of the retired simulated provider under **Older orders**;
+  LiquiDEX drops the testnet-only BTC ↔ Liquid routes, reads My swaps' two
+  lists apart and never shows a raw order-book error; assets are named by
+  the engine (the order book's registry for a token the wallet does not
+  know) with the short asset id beside a name the wallet did not give;
+  Issue needs no domain on a regtest and says whether the lab's order book
+  named the token (with a retry); Loans and Settings › Templar Protocol
+  open the lab's lending site; the Test server card lists what the lab
+  provides. Every word, badge and link about the chain follows the active
+  networks (new-wallet network cards, About, explorers, the payment link's
+  `liquidregtest:` scheme).
+- **Token amounts in their own units.** New offer, Create exact coin, Issue,
+  Reissue and Burn take `100.00` of a precision-2 token instead of base
+  units, refuse extra decimals, and show the base-unit figure that is
+  signed; Issue, Reissue and Burn now ask for the app password before
+  signing.
 
 ### Peg
 
