@@ -1380,7 +1380,10 @@ class _PegScreenState extends State<PegScreen> {
               title: _unfunded.contains(o.orderId)
                   ? 'Not enough ${o.isPegIn ? 'BTC' : 'L-BTC'}'
                   : 'Not done',
-              message: stepError,
+              // The title already says it: the engine's figures follow.
+              message: _unfunded.contains(o.orderId)
+                  ? stepError.replaceFirst('Not enough coins: ', '')
+                  : stepError,
               // On a test server the fix is one tap away: the faucet's coin
               // this deposit needs, paid to this wallet.
               action: _unfunded.contains(o.orderId)

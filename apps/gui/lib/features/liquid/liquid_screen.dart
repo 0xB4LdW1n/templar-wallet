@@ -24,6 +24,7 @@ import '../../theme/app_typography.dart';
 import 'asset_detail_dialog.dart';
 import 'liquid_issued.dart';
 import 'liquid_overview.dart';
+import '../../shared/asset_naming.dart';
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 //
@@ -415,13 +416,23 @@ class _AssetRowState extends State<_AssetRow> {
     // line under "Issued assets". Here the row only says where it came from.
     final meta = <String>[
       ticker,
+      // Named by the order book's registry or a listing, not by this
+      // wallet: its short id says which asset the name is given to.
+      if (showsAssetIdBeside(
+        asset.metadataSource,
+        shownName: ticker,
+        assetId: asset.assetId,
+      ))
+        shortAssetId(asset.assetId),
       if (domain != null && domain.isNotEmpty) domain,
       // A phone row has half the width: the shorter words read whole.
       if (widget.issued != null)
         phone ? 'issued here' : 'issued by this wallet',
       if (widget.hidden) 'hidden',
     ].join(' · ');
-    final (figure, unit) = splitAmountUnit(asset.displayAmount);
+    final (figure, split) = splitAmountUnit(asset.displayAmount);
+    // L-BTC is L-BTC, whatever unit word the engine's figure carries.
+    final unit = asset.ticker == 'LBTC' ? 'LBTC' : split;
     // Only L-BTC has a price. An issued token shows nothing rather than a
     // made-up €0.00.
     final fiat = asset.ticker == 'LBTC' && !widget.masked

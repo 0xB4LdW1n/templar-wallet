@@ -610,7 +610,7 @@ void main() {
     expect(find.text('Not enough BTC'), findsOneWidget);
     expect(
       find.text(
-        'Not enough coins: This wallet has 0 sat of BTC on Bitcoin regtest; '
+        'This wallet has 0 sat of BTC on Bitcoin regtest; '
         'the deposit and its fee need 100043 sat. Nothing was signed.',
       ),
       findsOneWidget,
