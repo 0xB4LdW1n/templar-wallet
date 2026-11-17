@@ -55,7 +55,11 @@ const _maker = 'Token issuer';
 const _taker = 'Token buyer';
 
 final _run = DateTime.now().millisecondsSinceEpoch % 9000 + 1000;
-final _ticker = 'TMPL$_run';
+
+/// On a lab whose order book has no `TMPL` yet (a fresh chain), pass
+/// `--dart-define=TESTLAB_TICKER=TMPL` to issue the plain ticker.
+const _tickerOverride = String.fromEnvironment('TESTLAB_TICKER');
+final _ticker = _tickerOverride.isNotEmpty ? _tickerOverride : 'TMPL$_run';
 
 /// L-BTC asked for the lab's USDt: unique to this run, so the market row is
 /// this run's.
