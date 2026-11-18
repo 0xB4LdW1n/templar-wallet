@@ -2261,7 +2261,8 @@ class MockWalletBridge implements WalletBridge {
   @override
   Future<String> verifyHwAddress(String walletId) async {
     await Future.delayed(const Duration(seconds: 2));
-    return 'tb1qmock_hw_verified_address_0000000000000';
+    // What a device answers: the wallet's current receive address.
+    return (await generateReceiveAddress(walletId, 'BTC')).address;
   }
 
   @override

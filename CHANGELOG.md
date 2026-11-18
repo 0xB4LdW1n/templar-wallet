@@ -128,6 +128,15 @@ any release may change anything.
   the next device until the quorum is met. The label switch now only marks a
   key with the USB glyph.
 
+### Hardware wallets
+
+- **The address check before signing is one step.** The dialog shows the
+  wallet's address for as long as the device displays it, so the two can be
+  compared; confirming on the device goes straight on to signing. Before, the
+  address only appeared in the app after the device had already been
+  confirmed. A device that reports another address than the wallet's stops
+  the flow: nothing is signed.
+
 ### Templar Protocol
 
 - **Loans**, a destination beside the Dashboard (a carousel tab on a phone):

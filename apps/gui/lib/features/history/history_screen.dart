@@ -442,6 +442,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final txid = await showLedgerSigningDialog(
       context,
       verifyTask: () => _bridge.verifyHwAddress(walletId),
+      // The address `verify_hw_address` puts on the device: the wallet's
+      // current receive address (the engine reads the same one).
+      verifyAddress: () async =>
+          (await _bridge.generateReceiveAddress(walletId, 'BTC')).address,
       task: () async {
         final signed = await _bridge.signPsbtHw(
           device.fingerprint,

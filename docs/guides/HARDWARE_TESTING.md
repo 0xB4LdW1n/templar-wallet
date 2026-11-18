@@ -182,7 +182,8 @@ deep scan (gap limit 200) and is slow.
 ### A4 · Send + on-device signing
 Send → Bitcoin → **Review** → **Sign on device**.
 1. **Connect gate** polls until a device matching *this wallet's fingerprint* appears.
-2. **Pre-sign address verification**: the device displays an address and you confirm it — proof the connected device controls this wallet before anything is built.
+2. **Pre-sign address verification**: one step, **Check the address on the device**. The dialog shows the wallet's current receive address for as long as the device displays it; compare the two and confirm on the device — proof the connected device controls this wallet before anything is built. Signing follows on its own; there is no second question in the app.
+   - **Expect:** the two addresses match character for character. If the device reports another address the dialog stops with "Nothing was signed".
 3. `sign_transaction_hw` builds and signs; `broadcast_signed_psbt` publishes.
    - **Expect:** outputs + fee on the device, you approve, the app returns a txid.
    - Reject on the device → `SIGNING_FAILED` with "the device did not sign", **not** an opaque finalize error. The backend checks HWI's `signed` flag *and* compares signature counts, so an unsigned PSBT never reaches the network layer.

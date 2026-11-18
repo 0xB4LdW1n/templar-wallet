@@ -8,17 +8,22 @@ import '../../theme/app_typography.dart';
 
 /// Phases of a hardware signing round-trip.
 ///
-/// When a [verifyTask] is supplied the flow starts at [verifying] (device shows
-/// the wallet address) → [verifyConfirm] (user confirms it matches) → [signing].
+/// When a [verifyTask] is supplied the flow starts at [verifying] — the
+/// device shows a wallet address while this dialog shows the same one, and
+/// the user confirms on the device that they match — then [signing].
 /// Without it, the flow starts directly at [signing].
-enum _SignPhase { verifying, verifyConfirm, signing, broadcasting, done, error }
+enum _SignPhase { verifying, signing, broadcasting, done, error }
 
 /// Run [task] (build + sign on device + broadcast) behind a dialog that lists
 /// the device's steps. Resolves with the txid on success, or null if the user cancelled.
 ///
-/// If [verifyTask] is given, the dialog first asks the device to display a wallet
-/// address and waits for the user to confirm it matches the device screen before
-/// signing — a guard that the connected device really controls this wallet.
+/// If [verifyTask] is given, the dialog first asks the device to display a
+/// wallet address and waits for the user to confirm it there before signing —
+/// a guard that the connected device really controls this wallet.
+/// [verifyAddress] answers with the address the device is about to show, from
+/// the wallet's own descriptor: it is on screen here for as long as it is on
+/// the device, which is the only moment the two can be compared. What the
+/// device then reports must be that address, or nothing is signed.
 ///
 /// [formatError] turns a raw error string into user-facing guidance.
 ///
@@ -29,6 +34,7 @@ Future<String?> showLedgerSigningDialog(
   BuildContext context, {
   required Future<String> Function() task,
   Future<String> Function()? verifyTask,
+  Future<String> Function()? verifyAddress,
   String Function(String raw)? formatError,
   bool signOnly = false,
 }) {
@@ -38,6 +44,7 @@ Future<String?> showLedgerSigningDialog(
     builder: (_) => LedgerSigningDialog(
       task: task,
       verifyTask: verifyTask,
+      verifyAddress: verifyAddress,
       formatError: formatError,
       signOnly: signOnly,
     ),
@@ -49,12 +56,17 @@ class LedgerSigningDialog extends StatefulWidget {
     super.key,
     required this.task,
     this.verifyTask,
+    this.verifyAddress,
     this.formatError,
     this.signOnly = false,
   });
 
   final Future<String> Function() task;
   final Future<String> Function()? verifyTask;
+
+  /// The address [verifyTask] will put on the device screen, as this wallet
+  /// derives it.
+  final Future<String> Function()? verifyAddress;
   final String Function(String raw)? formatError;
 
   /// The task signs and returns the transaction; there is no broadcast leg.
@@ -84,20 +96,22 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog> {
     }
   }
 
-  /// Ask the device to display a wallet address, then pause for the user to
-  /// confirm it matches the device screen before signing.
+  /// Show the wallet's address here, ask the device to display the same
+  /// one, and go on to signing once the user has confirmed it on the device.
   Future<void> _startVerify() async {
     setState(() {
       _phase = _SignPhase.verifying;
+      _verifyAddress = null;
       _error = null;
     });
+    final String? expected;
+    final String shown;
     try {
-      final addr = await widget.verifyTask!();
+      expected = await widget.verifyAddress?.call();
       if (!mounted) return;
-      setState(() {
-        _phase = _SignPhase.verifyConfirm;
-        _verifyAddress = addr;
-      });
+      setState(() => _verifyAddress = expected);
+      shown = await widget.verifyTask!();
+      if (!mounted) return;
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -105,7 +119,22 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog> {
         _phase = _SignPhase.error;
         _error = widget.formatError?.call(e.toString()) ?? e.toString();
       });
+      return;
     }
+    // The device derives the address itself. A different one means its keys
+    // are not this wallet's, whatever was pressed on it.
+    if (expected != null &&
+        shown.trim().toLowerCase() != expected.trim().toLowerCase()) {
+      setState(() {
+        _failedAt = _SignPhase.verifying;
+        _phase = _SignPhase.error;
+        _error =
+            'The device showed $shown, which is not this wallet\'s address '
+            '($expected). Nothing was signed.';
+      });
+      return;
+    }
+    await _run();
   }
 
   Future<void> _run() async {
@@ -148,10 +177,7 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog> {
   /// dialog is really in.
   List<(String, _StepState)> get _steps {
     final order = <_SignPhase>[
-      if (widget.verifyTask != null) ...[
-        _SignPhase.verifying,
-        _SignPhase.verifyConfirm,
-      ],
+      if (widget.verifyTask != null) _SignPhase.verifying,
       _SignPhase.signing,
       if (!widget.signOnly) _SignPhase.broadcasting,
     ];
@@ -161,8 +187,7 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog> {
       final p => order.indexOf(p),
     };
     String label(_SignPhase p) => switch (p) {
-      _SignPhase.verifying => 'Show a wallet address on the device',
-      _SignPhase.verifyConfirm => 'Check it matches the device screen',
+      _SignPhase.verifying => 'Check the address on the device',
       _SignPhase.signing => 'Approve on the device',
       _SignPhase.broadcasting => 'Broadcast the transaction',
       _ => '',
@@ -177,9 +202,6 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog> {
               ? _StepState.pending
               : _phase == _SignPhase.error
               ? _StepState.failed
-              // Waiting on the user's eyes, not on the device: no spinner.
-              : order[i] == _SignPhase.verifyConfirm
-              ? _StepState.waiting
               : _StepState.current,
         ),
     ];
@@ -229,16 +251,9 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog> {
               _message,
               style: AppTypography.body.copyWith(color: s.inkSecondary),
             ),
-            if (_phase == _SignPhase.signing ||
-                _phase == _SignPhase.verifying) ...[
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Do not disconnect the device',
-                style: AppTypography.caption.copyWith(color: s.warning),
-              ),
-            ],
-            if (_phase == _SignPhase.verifyConfirm &&
-                _verifyAddress != null) ...[
+            // The address stays up for as long as the device shows it: the
+            // comparison is made with both in view.
+            if (_phase == _SignPhase.verifying && _verifyAddress != null) ...[
               const SizedBox(height: AppSpacing.md),
               DataWell(
                 child: SelectableText(
@@ -246,6 +261,14 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog> {
                   textAlign: TextAlign.center,
                   style: AppTypography.mono.copyWith(color: s.ink),
                 ),
+              ),
+            ],
+            if (_phase == _SignPhase.signing ||
+                _phase == _SignPhase.verifying) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Do not disconnect the device',
+                style: AppTypography.caption.copyWith(color: s.warning),
               ),
             ],
             if (_phase == _SignPhase.error && _error != null) ...[
@@ -263,8 +286,7 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog> {
   }
 
   String get _title => switch (_phase) {
-    _SignPhase.verifying => 'Check your Ledger',
-    _SignPhase.verifyConfirm => 'Verify the address',
+    _SignPhase.verifying => 'Check the address',
     _SignPhase.signing =>
       widget.signOnly ? 'Confirm on your device' : 'Confirm on your Ledger',
     _SignPhase.broadcasting => 'Broadcasting…',
@@ -274,9 +296,12 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog> {
 
   String get _message => switch (_phase) {
     _SignPhase.verifying =>
-      'Your device is displaying a wallet address. Confirm it on screen.',
-    _SignPhase.verifyConfirm =>
-      'Does this address exactly match the one shown on your Ledger?',
+      _verifyAddress == null
+          ? 'Your device is showing a wallet address. Confirm it on the '
+                'device.'
+          : 'Your device is showing a wallet address. Check that it matches '
+                'this one, character by character, then confirm on the '
+                'device.',
     _SignPhase.signing =>
       widget.signOnly
           ? 'Check the amounts and addresses on the device screen, then '
@@ -298,13 +323,6 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog> {
     _SignPhase.signing ||
     _SignPhase.broadcasting ||
     _SignPhase.done => null,
-    _SignPhase.verifyConfirm => [
-      GhostButton(
-        label: 'Cancel',
-        onPressed: () => Navigator.of(context).pop(null),
-      ),
-      PrimaryButton(label: 'It matches — sign', onPressed: _run),
-    ],
     _SignPhase.error => [
       GhostButton(
         label: 'Cancel',
@@ -318,11 +336,11 @@ class _LedgerSigningDialogState extends State<LedgerSigningDialog> {
   };
 }
 
-enum _StepState { done, current, waiting, pending, failed }
+enum _StepState { done, current, pending, failed }
 
 /// A device's steps, one per line: done ones with a neutral check, the live
-/// one with a small spinner, one waiting on the user with a ring, a failed one
-/// with a cross, the rest in the faint ink.
+/// one with a small spinner, a failed one with a cross, the rest in the faint
+/// ink.
 class _DeviceSteps extends StatelessWidget {
   const _DeviceSteps({required this.steps});
 
@@ -354,14 +372,6 @@ class _DeviceSteps extends StatelessWidget {
                         width: AppSpacing.md,
                         height: AppSpacing.md,
                         child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      _StepState.waiting => Container(
-                        width: AppSpacing.sm,
-                        height: AppSpacing.sm,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: s.ink, width: 1.5),
-                        ),
                       ),
                       _StepState.failed => Icon(
                         Icons.close_outlined,

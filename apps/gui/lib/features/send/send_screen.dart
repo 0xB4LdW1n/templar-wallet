@@ -851,11 +851,18 @@ class _SendScreenState extends State<SendScreen> {
     final walletId = _walletId;
     final txid = await showLedgerSigningDialog(
       context,
-      // Pre-sign guard: device displays a wallet address and the user confirms
-      // it matches the on-device screen, proving the connected Ledger controls
-      // this wallet before we build and sign. Skipped on a broadcast-only
-      // retry: nothing is being signed, and the device may be unplugged again.
+      // Pre-sign guard: the device displays a wallet address, the dialog
+      // shows the same one beside it, and the user confirms on the device
+      // that they match — proving the connected device controls this wallet
+      // before we build and sign. Skipped on a broadcast-only retry: nothing
+      // is being signed, and the device may be unplugged again.
       verifyTask: retry ? null : () => _bridge.verifyHwAddress(walletId),
+      // The address `verify_hw_address` puts on the device: the wallet's
+      // current receive address (the engine reads the same one).
+      verifyAddress: retry
+          ? null
+          : () async =>
+                (await _bridge.generateReceiveAddress(walletId, 'BTC')).address,
       task: () async {
         if (_pendingSignedPsbt == null) {
           _pendingSignedPsbt = await _bridge.signTransactionHw(

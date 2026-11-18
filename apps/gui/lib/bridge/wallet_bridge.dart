@@ -413,8 +413,10 @@ abstract class WalletBridge {
     String? domain,
   });
 
-  /// Show the next receive address on the connected hardware wallet screen.
-  /// Returns the address string confirmed by the device.
+  /// Show the wallet's current receive address — the one
+  /// [generateReceiveAddress] answers for `BTC` without `fresh` — on the
+  /// connected hardware wallet screen. Returns the address string confirmed
+  /// by the device.
   Future<String> verifyHwAddress(String walletId);
 
   /// Rename a wallet in the registry.
