@@ -320,11 +320,12 @@ Fund the multisig, start a send, and take the partial PSBT to the co-sign view
 **Co-signatures needed** sheet.
 - Co-sign view: press **Sign with device** → connect gate → approve on the
   device.
-- Co-signatures sheet (alpha.13): the wallet's hardware key must be flagged —
-  the wizard flags keys read over USB; otherwise dashboard Keys → the key →
-  Rename → **USB hardware wallet**. While that key's signature is missing the
-  sheet shows **Sign with USB hardware wallet** → the gate accepts only the
-  wallet's hardware keys → **Sign on device** → approve on the device.
+- Co-signatures sheet: while the quorum is not met and a key this app does not
+  hold is still to sign, the sheet shows **Sign with USB hardware wallet** →
+  the gate accepts only the wallet's keys still to sign → **Sign on device** →
+  approve on the device. Press it again for the next device. No label is
+  needed: the **USB hardware wallet** switch in a key's Rename dialog only
+  marks the key with the USB glyph.
 - **Expect:** the signature count rises, that key's wedge fills in its own
   colour, its row flips to *Signed*, and the note names it.
 - Previously the device could contribute an xpub at setup and then never be

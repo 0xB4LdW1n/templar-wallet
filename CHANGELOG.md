@@ -116,6 +116,18 @@ any release may change anything.
   orders of the retired simulated provider stay listed, labelled as such.
   Activity names peg transactions. Guide: `docs/guides/TEST_SERVER.md`.
 
+### Multisig
+
+- **Signing with a device no longer depends on a key's label.** The
+  **Co-signatures needed** sheet offers **Sign with USB hardware wallet**
+  whenever the quorum is not met and a key this app does not hold is still to
+  sign. It used to appear only for keys flagged **USB hardware wallet** in
+  their label, so a wallet whose keys were named by hand, or imported, had no
+  way to connect a Ledger or a Jade from the sheet. The connect gate still
+  accepts only this wallet's keys, by fingerprint, and the button stays for
+  the next device until the quorum is met. The label switch now only marks a
+  key with the USB glyph.
+
 ### Templar Protocol
 
 - **Loans**, a destination beside the Dashboard (a carousel tab on a phone):

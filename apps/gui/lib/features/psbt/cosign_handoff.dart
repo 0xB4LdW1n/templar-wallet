@@ -3,9 +3,9 @@
 //
 // One shape, two chains. The quorum sits at the top — the state in words, a
 // seal per required signature, and a row per co-signer whose seal is stamped
-// once the engine sees that key's signature — and, when one of the missing
-// keys lives on a USB device, the button that plugs it in and signs right
-// here. Below it, the copy going out: a QR
+// once the engine sees that key's signature — and, while a key this app does
+// not hold is still to sign, the button that plugs a device in and signs
+// right here. Below it, the copy going out: a QR
 // where the chain has one, the artifact itself, and Copy · Save · Paste in
 // one row. Paste is the way a signed copy comes back: it opens a box (filled
 // from the clipboard when a transaction is on it), the copy is read, and its
@@ -244,13 +244,20 @@ mixin _HandoffCommon<T extends StatefulWidget> on State<T> {
     };
   }
 
-  /// The wallet's hardware keys whose signature is still missing — what the
-  /// USB button connects to. Empty hides the button.
-  Set<String> hardwarePending(Iterable<String> signed) {
+  /// The keys a connected device could still sign for: every key of the
+  /// wallet this app does not hold and whose signature is missing. Empty
+  /// hides the USB button.
+  ///
+  /// Deliberately not narrowed to keys labelled as hardware. A label is
+  /// presentation — typed by hand, absent on an imported wallet, gone on
+  /// another computer — and the only way to sign with a device must not
+  /// vanish with it. A device that holds none of these keys is turned away
+  /// at the connect gate, by fingerprint.
+  Set<String> usbPending(Iterable<String> signed) {
     final done = signed.map((f) => f.toLowerCase()).toSet();
     return {
       for (final e in cosigners)
-        if (e.label.isHardware &&
+        if (!e.isLocal &&
             e.fingerprint.isNotEmpty &&
             !done.contains(e.fingerprint))
           e.fingerprint,
@@ -766,7 +773,7 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
     final slots = i == null
         ? null
         : slotsFor(i.signers.map((s) => s.fingerprint), signedFps);
-    final hwPending = hardwarePending(signedFps);
+    final hwPending = usbPending(signedFps);
 
     final body = _HandoffBody(
       artifactName: 'PSBT',
@@ -789,7 +796,7 @@ class _PsbtHandoffSheetState extends State<PsbtHandoffSheet>
       collected: collected,
       pasteOpen: pasteOpen,
       pasteCtrl: pasteCtrl,
-      usbOffered: usbOffered && hwPending.isNotEmpty,
+      usbOffered: usbOffered && !met && hwPending.isNotEmpty,
       hwBusy: hwBusy,
       onCopy: copyArtifact,
       onSave: _saveFile,
@@ -1228,7 +1235,7 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
     final slots = i == null
         ? null
         : slotsFor([...i.signersPresent, ...i.signersMissing], signedFps);
-    final hwPending = hardwarePending(signedFps);
+    final hwPending = usbPending(signedFps);
 
     final body = _HandoffBody(
       artifactName: 'PSET',
@@ -1259,7 +1266,7 @@ class _PsetHandoffSheetState extends State<PsetHandoffSheet>
       collected: collected,
       pasteOpen: pasteOpen,
       pasteCtrl: pasteCtrl,
-      usbOffered: usbOffered && hwPending.isNotEmpty,
+      usbOffered: usbOffered && !met && hwPending.isNotEmpty,
       hwBusy: hwBusy,
       onCopy: copyArtifact,
       onSave: _saveFile,
@@ -1424,8 +1431,9 @@ class _HandoffBody extends StatelessWidget {
           ),
           if (usbOffered) ...[
             const SizedBox(height: AppSpacing.md),
-            // One of the keys still to sign lives on a USB device: connect
-            // it and sign right here, and its seal stamps like any other.
+            // A key still to sign may live on a USB device: connect it and
+            // sign right here, and its seal stamps like any other. Again for
+            // the next device, until the quorum is met.
             SecondaryButton(
               label: 'Sign with USB hardware wallet',
               icon: Icons.usb_outlined,

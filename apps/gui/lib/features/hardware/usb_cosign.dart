@@ -20,8 +20,8 @@ import 'ledger_signing_dialog.dart';
 /// a device failure is shown in the signing dialog with Retry, and comes back
 /// as null only once the user gives up on it.
 ///
-/// [expectedFingerprints] restricts the gate to the wallet's own hardware
-/// keys — any of them; null accepts whatever device answers. [sign] is given
+/// [expectedFingerprints] restricts the gate to the wallet's keys still to
+/// sign — any of them; null accepts whatever device answers. [sign] is given
 /// the connected device and does the chain-specific call.
 Future<String?> runUsbCosign(
   BuildContext context, {

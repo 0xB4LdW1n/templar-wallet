@@ -153,6 +153,29 @@ class _QuorumBridge implements WalletBridge {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// The same wallet with every key held by this app: no device has anything
+/// to add.
+class _AllLocalBridge extends _QuorumBridge {
+  @override
+  Future<WalletInfo> getWalletInfo(String walletId) async {
+    final info = await super.getWalletInfo(walletId);
+    return WalletInfo(
+      id: info.id,
+      name: info.name,
+      network: info.network,
+      masterFingerprint: info.masterFingerprint,
+      derivationPath: info.derivationPath,
+      scriptType: info.scriptType,
+      xpub: info.xpub,
+      receiveDescriptor: info.receiveDescriptor,
+      changeDescriptor: info.changeDescriptor,
+      cosignerKeys: info.cosignerKeys,
+      requiredSigs: info.requiredSigs,
+      localFingerprints: _fps,
+    );
+  }
+}
+
 /// A rejects everything it is asked to read except the copy going out — the
 /// returning copy that is a truncated paste, or the wrong file entirely.
 class _RejectingBridge extends _QuorumBridge {
@@ -397,22 +420,26 @@ void main() {
       expect(after.onPressed, isNotNull);
     });
 
-    testWidgets('a hardware key still to sign offers the USB route', (t) async {
+    testWidgets('a key still to sign offers the USB route, labelled or not', (
+      t,
+    ) async {
+      // No label says "hardware" — a wallet whose keys were named by hand,
+      // or imported. The device route must be there all the same.
       await CosignerLabelStore.instance.saveOne(
         'w1',
-        const CosignerLabel(id: 'cc000003', name: 'Ledger', hardware: true),
+        const CosignerLabel(id: 'cc000003', name: 'Ledger', iconId: 'safe'),
       );
       await _pump(t, sheet(_QuorumBridge()));
       expect(find.text('Sign with USB hardware wallet'), findsOneWidget);
       expect(find.byIcon(Icons.usb_outlined), findsWidgets);
 
-      // Once that key has signed, the button has nothing left to do.
+      // Once the quorum is met, the button has nothing left to do.
       await _paste(t, '$_psbt~sigC');
       expect(find.text('Sign with USB hardware wallet'), findsNothing);
     });
 
-    testWidgets('no hardware key, no USB button', (t) async {
-      await _pump(t, sheet(_QuorumBridge()));
+    testWidgets('no key left outside this app, no USB button', (t) async {
+      await _pump(t, sheet(_AllLocalBridge()));
       expect(find.text('Sign with USB hardware wallet'), findsNothing);
     });
   });

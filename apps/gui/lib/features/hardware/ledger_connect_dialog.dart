@@ -65,10 +65,10 @@ Future<LedgerConnectResult> showLedgerConnectDialog(
 /// instance, needs the fingerprint to pass to HWI.
 ///
 /// [expectedFingerprints] accepts any of several devices — a multisig with
-/// two hardware keys takes whichever one is plugged in. With [confirmLabel]
-/// the gate does not close itself on a match: it names the device and waits
-/// for the user to press the button, so the next step (approving on the
-/// device) is taken deliberately rather than sprung.
+/// several keys still to sign takes whichever one is plugged in. With
+/// [confirmLabel] the gate does not close itself on a match: it names the
+/// device and waits for the user to press the button, so the next step
+/// (approving on the device) is taken deliberately rather than sprung.
 Future<HwDevice?> showHwDevicePickerDialog(
   BuildContext context, {
   String? expectedFingerprint,
@@ -314,7 +314,7 @@ class _LedgerConnectDialogState extends State<LedgerConnectDialog> {
             ? null
             : wanted.length > 1
             ? 'Connected device ${devices.first.fingerprint} is not one of '
-                  'this wallet\'s hardware keys (${wanted.join(', ')}). '
+                  'this wallet\'s keys still to sign (${wanted.join(', ')}). '
                   'Connect one of those and press Retry.'
             : 'Connected device ${devices.first.fingerprint} is not the one '
                   'this wallet was created from (${wanted.join()}). '

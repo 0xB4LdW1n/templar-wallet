@@ -131,9 +131,9 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
             ),
             const SizedBox(height: AppSpacing.xl),
             const ListSectionLabel(label: 'Signs on'),
-            // The one label field that changes what the app offers: a key
-            // flagged as hardware makes the co-signing sheet show "Sign with
-            // USB hardware wallet" while its signature is missing.
+            // Where the key lives, for whoever reads a signer list: a
+            // flagged key wears the USB glyph. Presentation like the rest of
+            // the label — the co-signing sheet offers USB either way.
             Container(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.md,
@@ -163,9 +163,8 @@ class _CosignerLabelDialogState extends State<_CosignerLabelDialog> {
                           ),
                         ),
                         Text(
-                          'A Ledger or Jade connected over USB. Co-signing '
-                          'then offers “Sign with USB hardware wallet” for '
-                          'this key.',
+                          'A Ledger or Jade connected over USB. Signer '
+                          'lists mark this key with the USB glyph.',
                           style: AppTypography.caption.copyWith(
                             color: s.inkSecondary,
                           ),

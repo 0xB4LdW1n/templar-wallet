@@ -33,8 +33,10 @@ class CosignerLabel {
   /// ARGB value from [cosignerColors]. Null takes the wallet's accent.
   final int? colorValue;
 
-  /// This key signs on a USB hardware wallet — a Ledger, a Jade. Decides
-  /// whether a hand-off sheet offers "Sign with USB hardware wallet".
+  /// This key signs on a USB hardware wallet — a Ledger, a Jade. Marks the
+  /// key with the USB glyph in a signer list; it never decides whether a
+  /// device can sign — the hand-off sheet offers USB for any key this app
+  /// does not hold.
   ///
   /// Null means nobody said: see [isHardware] for what is assumed then. The
   /// wizard sets it for a key read over USB; the label editor lets the user
