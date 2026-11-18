@@ -10,7 +10,6 @@ import '../../bridge/wallet_bridge.dart';
 import '../../services/peg_tx_label_store.dart';
 import '../../services/fee_bump_store.dart';
 import '../../services/price_service.dart';
-import '../../shared/amount_units.dart';
 import '../../shared/relative_time.dart';
 import '../../shared/widgets/app_password_gate.dart';
 import '../../shared/widgets/asset_logo.dart';
@@ -39,6 +38,7 @@ import 'activity_rows.dart';
 import 'activity_sources.dart';
 import 'fee_bump_dialog.dart';
 import 'fee_bump_fold.dart';
+import 'liquid_leg_fold.dart';
 import 'models/activity_entry.dart';
 import 'models/fee_bump_preview.dart';
 import 'models/transaction.dart';
@@ -197,7 +197,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     // keep showing, otherwise the error card takes over.
     final List<Transaction> txs;
     try {
-      txs = await _bridge.listActivity(walletId);
+      // One row per Liquid transaction, not one per asset it moved.
+      txs = foldLiquidLegs(await _bridge.listActivity(walletId));
     } catch (e) {
       if (mounted && appState.cachedTransactions == null) {
         setState(() {
@@ -244,36 +245,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return [
       for (final tx in txs)
         switch (labels[tx.txid]) {
-          final label? when tx.note == null => _withNote(tx, label),
+          final label? when tx.note == null => tx.withNote(label),
           _ => tx,
         },
     ];
   }
-
-  /// [tx] with [note] as its note, every other field (its folded bump too)
-  /// kept.
-  static Transaction _withNote(Transaction tx, String note) => Transaction(
-    txid: tx.txid,
-    direction: tx.direction,
-    chain: tx.chain,
-    amount: tx.amount,
-    ticker: tx.ticker,
-    timestamp: tx.timestamp,
-    confirmations: tx.confirmations,
-    fee: tx.fee,
-    feeSats: tx.feeSats,
-    feeRate: tx.feeRate,
-    vsize: tx.vsize,
-    isReplaceable: tx.isReplaceable,
-    canRbf: tx.canRbf,
-    canCpfp: tx.canCpfp,
-    canCancel: tx.canCancel,
-    feeBumpUnavailableReason: tx.feeBumpUnavailableReason,
-    bump: tx.bump,
-    note: note,
-    counterparty: tx.counterparty,
-    fiatEstimate: tx.fiatEstimate,
-  );
 
   /// Folds every fee bump this app made into the transaction it was done
   /// to (fee_bump_fold.dart): a sped-up payment is one row, not a payment
@@ -914,8 +890,35 @@ const String _minus = '−';
 /// is re-written in the user's unit — eight decimals or grouped sats; an
 /// issued asset keeps the figure and ticker the engine gave, since only the
 /// engine knows its precision. Incoming carries `+`, outgoing `−`.
-String formatTxAmount(Transaction tx, {required bool useSats}) {
-  var raw = tx.amount.trim();
+String formatTxAmount(Transaction tx, {required bool useSats}) =>
+    _formatAmount(tx.amount, tx.ticker, tx.direction, tx.chain, useSats);
+
+/// The same format for another asset the transaction moved.
+String formatLegAmount(
+  TxLeg leg, {
+  required TxChain chain,
+  required bool useSats,
+}) => _formatAmount(leg.amount, leg.ticker, leg.direction, chain, useSats);
+
+/// A fee in the user's unit: `33 sats`, `0.00000033 LBTC`.
+String formatTxFee(Transaction tx, {required bool useSats}) {
+  final sats = tx.feeSats;
+  if (sats == null) return tx.fee ?? '—';
+  return PriceService.formatUnit(
+    sats,
+    sat: useSats,
+    coin: tx.chain == TxChain.liquid ? 'LBTC' : 'BTC',
+  );
+}
+
+String _formatAmount(
+  String amount,
+  String ticker,
+  TxDirection direction,
+  TxChain chain,
+  bool useSats,
+) {
+  var raw = amount.trim();
   if (raw.isEmpty) return '—';
   var approx = '';
   if (raw.startsWith('~')) {
@@ -932,21 +935,16 @@ String formatTxAmount(Transaction tx, {required bool useSats}) {
   }
   // A figure with no digits ('—' on a placeholder) has nothing to sign.
   if (!raw.contains(RegExp(r'\d'))) return '$approx$raw';
-  sign = switch (tx.direction) {
+  sign = switch (direction) {
     TxDirection.incoming => '+',
     TxDirection.outgoing => _minus,
     TxDirection.self => sign,
   };
   final space = raw.lastIndexOf(' ');
   final number = (space < 0 ? raw : raw.substring(0, space)).trim();
-  final unit = space < 0 ? tx.ticker : raw.substring(space + 1).trim();
-  final plain = number.replaceAll(',', '');
-  final coin = tx.chain == TxChain.liquid ? 'LBTC' : 'BTC';
-  final int? sats = switch (unit.toUpperCase()) {
-    'SAT' || 'SATS' => int.tryParse(plain),
-    'BTC' || 'TBTC' || 'LBTC' || 'L-BTC' => AmountUnits.satsFromCoin(plain),
-    _ => null,
-  };
+  final unit = space < 0 ? ticker : raw.substring(space + 1).trim();
+  final coin = chain == TxChain.liquid ? 'LBTC' : 'BTC';
+  final sats = bitcoinAmountSats('$number $unit');
   final body = sats == null
       ? '$number $unit'
       : PriceService.formatUnit(
@@ -1238,7 +1236,12 @@ class _TxGlyph extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          ListIconTile(icon: _directionIcon(tx.direction)),
+          ListIconTile(
+            // Assets went both ways: neither arrow is the truth.
+            icon: tx.isExchange
+                ? Icons.swap_horiz_outlined
+                : _directionIcon(tx.direction),
+          ),
           Positioned(
             right: -AppSpacing.xs,
             bottom: -AppSpacing.xs,
@@ -1383,6 +1386,29 @@ class _TxRowState extends State<_TxRow> {
           if (fiat != null)
             Amount(
               fiat,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: AppTypography.numericSmall.copyWith(color: s.inkFaint),
+            ),
+          // The same transaction's other figures: every other asset it
+          // moved, and the fee when that was paid in another asset than the
+          // one above.
+          for (final leg in tx.legs)
+            Amount(
+              formatLegAmount(leg, chain: tx.chain, useSats: widget.useSats),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.end,
+              style: AppTypography.numericSmall.copyWith(
+                color: tx.isConfirmed && leg.direction == TxDirection.incoming
+                    ? s.success
+                    : s.inkSecondary,
+              ),
+            ),
+          if (tx.feeLegFolded)
+            Amount(
+              'Fee ${formatTxFee(tx, useSats: widget.useSats)}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.end,
@@ -1744,8 +1770,27 @@ class _TxDetail extends StatelessWidget {
             divider: true,
           ),
           KvRow(label: 'Ticker', value: tx.ticker, divider: true),
+          // The other assets the same transaction moved.
+          for (final leg in tx.legs)
+            KvRow(
+              label: leg.direction == TxDirection.incoming
+                  ? 'Also received'
+                  : 'Also sent',
+              value: maskAmount(
+                context,
+                formatLegAmount(leg, chain: tx.chain, useSats: useSats),
+              ),
+              divider: true,
+            ),
           if (tx.fee != null)
-            KvRow(label: 'Fee', value: tx.fee!, divider: true),
+            KvRow(
+              // Paid in L-BTC, whatever asset the transaction moved.
+              label: tx.feeLegFolded ? 'Network fee' : 'Fee',
+              value: tx.feeLegFolded
+                  ? formatTxFee(tx, useSats: useSats)
+                  : tx.fee!,
+              divider: true,
+            ),
           if (tx.feeRate != null)
             KvRow(
               label: 'Fee rate',

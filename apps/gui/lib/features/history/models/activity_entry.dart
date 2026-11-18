@@ -238,6 +238,8 @@ class PaymentEntry extends ActivityEntry {
     tx.note ?? '',
     tx.amount,
     tx.ticker,
+    // The other assets of the same transaction find it too.
+    for (final leg in tx.legs) ...[leg.amount, leg.ticker],
     tx.directionLabel,
   ].join(' ').toLowerCase();
 }

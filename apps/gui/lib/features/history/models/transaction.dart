@@ -52,6 +52,26 @@ class FeeBump {
   };
 }
 
+/// Another asset a Liquid transaction moved, beside the one its row leads
+/// with.
+///
+/// The engine lists a Liquid transaction once per asset it changed the
+/// balance of. To the user it is one transaction, so Activity folds those
+/// rows into one (`foldLiquidLegs`) and the others ride along as legs.
+class TxLeg {
+  const TxLeg({
+    required this.direction,
+    required this.amount,
+    required this.ticker,
+  });
+
+  final TxDirection direction;
+
+  /// As the engine gave it: `+12.50 TMPL`.
+  final String amount;
+  final String ticker;
+}
+
 class Transaction {
   const Transaction({
     required this.txid,
@@ -71,6 +91,8 @@ class Transaction {
     this.canCancel = false,
     this.feeBumpUnavailableReason,
     this.bump,
+    this.legs = const [],
+    this.feeLegFolded = false,
     this.note,
     this.counterparty,
     this.fiatEstimate,
@@ -95,6 +117,15 @@ class Transaction {
 
   /// The fee bump folded into this transaction, when it had one.
   final FeeBump? bump;
+
+  /// Liquid: the other assets this transaction moved, when it moved several.
+  final List<TxLeg> legs;
+
+  /// Liquid: this wallet paid the network fee and that was all the L-BTC the
+  /// transaction took from it — a token sent, an asset issued. The L-BTC row
+  /// the engine listed for it was folded into this one, and [fee] says what
+  /// it was: money that left, in another asset than [amount].
+  final bool feeLegFolded;
   final String? note;
   final String? counterparty;
   final String? fiatEstimate;
@@ -111,12 +142,18 @@ class Transaction {
       ? txid
       : '${txid.substring(0, 6)}…${txid.substring(txid.length - 6)}';
 
-  /// 'Received' / 'Sent' / 'Self-transfer'.
-  String get directionLabel => switch (direction) {
-    TxDirection.incoming => 'Received',
-    TxDirection.outgoing => 'Sent',
-    TxDirection.self => 'Self-transfer',
-  };
+  /// Assets went both ways in one transaction: it gave one and took another.
+  bool get isExchange => legs.any((l) => l.direction != direction);
+
+  /// 'Received' / 'Sent' / 'Self-transfer' — or 'Swap', for a transaction
+  /// that took one asset and gave another.
+  String get directionLabel => isExchange
+      ? 'Swap'
+      : switch (direction) {
+          TxDirection.incoming => 'Received',
+          TxDirection.outgoing => 'Sent',
+          TxDirection.self => 'Self-transfer',
+        };
 
   /// What the row and the detail call this transaction: the user's note,
   /// else its direction — and a cancellation says it is one, because what
@@ -130,7 +167,12 @@ class Transaction {
   }
 
   /// This transaction with [bump] folded into it.
-  Transaction withBump(FeeBump bump) => Transaction(
+  Transaction withBump(FeeBump bump) => _with(bump: bump);
+
+  /// This transaction named [note].
+  Transaction withNote(String note) => _with(note: note);
+
+  Transaction _with({FeeBump? bump, String? note}) => Transaction(
     txid: txid,
     direction: direction,
     chain: chain,
@@ -147,8 +189,10 @@ class Transaction {
     canCpfp: canCpfp,
     canCancel: canCancel,
     feeBumpUnavailableReason: feeBumpUnavailableReason,
-    bump: bump,
-    note: note,
+    bump: bump ?? this.bump,
+    legs: legs,
+    feeLegFolded: feeLegFolded,
+    note: note ?? this.note,
     counterparty: counterparty,
     fiatEstimate: fiatEstimate,
   );

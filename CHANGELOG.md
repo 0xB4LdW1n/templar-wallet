@@ -137,6 +137,16 @@ any release may change anything.
   confirmed. A device that reports another address than the wallet's stops
   the flow: nothing is signed.
 
+### Activity
+
+- **A Liquid transaction is one row.** Sending a token listed two rows with
+  one txid — the token, and "Sent 33 sats" of L-BTC that was the network fee.
+  Activity now folds the rows of one transaction into one: it leads with what
+  was moved, shows the fee under the amount when it was paid in another asset,
+  and lists any other asset the transaction moved beside it. A transaction
+  that gave one asset and took another reads **Swap**. The detail has the
+  same figures (**Network fee**, **Also received** / **Also sent**).
+
 ### Templar Protocol
 
 - **Loans**, a destination beside the Dashboard (a carousel tab on a phone):

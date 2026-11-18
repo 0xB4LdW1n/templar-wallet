@@ -350,6 +350,31 @@ class MockWalletBridge implements WalletBridge {
         confirmations: 500,
         fee: '100 sats',
       ),
+      // A token sent, as the engine lists it: one row per asset the
+      // transaction moved — the L-BTC that paid the fee (the fee rides on
+      // the first row), then the token. Activity folds the two into one.
+      Transaction(
+        txid:
+            '775407c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d70a4a7d',
+        direction: TxDirection.outgoing,
+        chain: TxChain.liquid,
+        amount: '-0.00000033 LBTC',
+        ticker: 'LBTC',
+        timestamp: DateTime.now().subtract(const Duration(days: 4)),
+        confirmations: 620,
+        fee: '33 sats',
+        feeSats: 33,
+      ),
+      Transaction(
+        txid:
+            '775407c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d70a4a7d',
+        direction: TxDirection.outgoing,
+        chain: TxChain.liquid,
+        amount: '-25.00 USDT',
+        ticker: 'USDT',
+        timestamp: DateTime.now().subtract(const Duration(days: 4)),
+        confirmations: 620,
+      ),
     ];
   }
 
