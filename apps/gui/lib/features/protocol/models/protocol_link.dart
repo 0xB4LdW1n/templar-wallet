@@ -90,11 +90,26 @@ String _origin(Uri u) => '${u.scheme}://${u.host.toLowerCase()}:${u.port}';
 /// A Liquid asset id: 32 bytes, hex.
 final RegExp _assetId = RegExp(r'^[0-9a-f]{64}$');
 
-/// One line of the site's human summary (`{"label","amount"}`).
+/// One line of the site's human summary (`{"label","amount"}`, plus the
+/// optional `asset` id and `sats` the amount was written from).
 class ProtocolSummaryLine {
-  const ProtocolSummaryLine({required this.label, required this.amount});
+  const ProtocolSummaryLine({
+    required this.label,
+    required this.amount,
+    this.assetId = '',
+    this.sats,
+  });
   final String label;
   final String amount;
+
+  /// The asset id behind [amount]; empty when the site did not say.
+  final String assetId;
+
+  /// [amount] in base units; null when the site did not say.
+  final int? sats;
+
+  /// The site named the asset and base units: compare those, not the text.
+  bool get isExact => assetId.isNotEmpty && sats != null;
 }
 
 /// The site's own description of what a signing request does. Shown next
@@ -207,6 +222,10 @@ class ProtocolRequest {
             (l) => ProtocolSummaryLine(
               label: (l['label'] ?? '').toString(),
               amount: (l['amount'] ?? '').toString(),
+              assetId: l['asset'] is String ? l['asset'] as String : '',
+              sats: l['sats'] is int && (l['sats'] as int) >= 0
+                  ? l['sats'] as int
+                  : null,
             ),
           )
           .toList();
