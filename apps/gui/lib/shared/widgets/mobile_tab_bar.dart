@@ -28,7 +28,7 @@ class MobileTabItem {
 /// It sits on [AppScheme.chrome], the deepest surface, because chrome
 /// recedes. The current tab is [AppScheme.thumb] behind its icon and the
 /// primary ink — selection is a surface step here as everywhere else — with
-/// the [CurrentMark] over it, the sidebar's bar turned on its side.
+/// the [CurrentMark] round that pill, the sidebar row's border.
 class MobileTabBar extends StatelessWidget {
   const MobileTabBar({
     super.key,
@@ -104,17 +104,7 @@ class _Tab extends StatelessWidget {
       selected: selected,
       label: item.label,
       excludeSemantics: true,
-      child: InkWell(
-        onTap: onTap,
-        child: Stack(
-          alignment: Alignment.topCenter,
-          children: [
-            // "You are here", on the bar's top hairline over the tab.
-            CurrentMark(active: selected, axis: Axis.horizontal),
-            Positioned.fill(child: _body(context, s, ink)),
-          ],
-        ),
-      ),
+      child: InkWell(onTap: onTap, child: _body(context, s, ink)),
     );
   }
 
@@ -122,20 +112,25 @@ class _Tab extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        AnimatedContainer(
-          duration: AppMotion.of(context, AppMotion.quick),
-          curve: AppMotion.settle,
-          width: 48,
-          height: 28,
-          decoration: BoxDecoration(
-            color: selected ? s.thumb : s.thumb.withValues(alpha: 0),
-            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-          ),
-          // The current tab's glyph wears the accent, under its bar.
-          child: Icon(
-            item.icon,
-            size: 22,
-            color: selected ? s.accentGlyph : ink,
+        // "You are here": the current tab's pill wears the accent's border
+        // and its glyph the accent.
+        CurrentMark(
+          active: selected,
+          radius: AppSpacing.radiusMd,
+          child: AnimatedContainer(
+            duration: AppMotion.of(context, AppMotion.quick),
+            curve: AppMotion.settle,
+            width: 48,
+            height: 28,
+            decoration: BoxDecoration(
+              color: selected ? s.thumb : s.thumb.withValues(alpha: 0),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            ),
+            child: Icon(
+              item.icon,
+              size: 22,
+              color: selected ? s.accentGlyph : ink,
+            ),
           ),
         ),
         const SizedBox(height: AppSpacing.xs),

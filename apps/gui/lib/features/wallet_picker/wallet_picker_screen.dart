@@ -9,6 +9,7 @@ import '../../app/app_state.dart';
 import '../../bridge/bridge_provider.dart';
 import '../../services/wallet_customization_store.dart';
 import '../../shared/relative_time.dart';
+import '../../shared/widgets/asset_logo.dart';
 import '../../shared/widgets/app_logo.dart';
 import '../../shared/widgets/buttons.dart';
 import '../../shared/widgets/app_dialog.dart';
@@ -451,8 +452,9 @@ class _WalletPickerScreenState extends State<WalletPickerScreen> {
 
 // ── Top bar and header ────────────────────────────────────────────────────────
 
-/// The product mark and its name, and the two controls that exist before a
-/// wallet is open: the storage lock (when storage is open) and the theme.
+/// The product mark and its name, and the controls that exist before a
+/// wallet is open: Tor, the theme and — past a hairline, apart from the
+/// switches — the storage lock (when storage is open).
 class _TopBar extends StatelessWidget {
   const _TopBar({required this.onLock});
 
@@ -476,15 +478,24 @@ class _TopBar extends StatelessWidget {
                 .copyWith(color: s.ink),
           ),
         ),
+        const TorButton(),
+        const SizedBox(width: AppSpacing.sm),
+        const ThemeToggleButton(),
         if (lock != null) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            child: SizedBox(
+              width: 1,
+              height: AppSpacing.xl,
+              child: ColoredBox(color: s.edgeStrong),
+            ),
+          ),
           EntryIconButton(
             icon: Icons.lock_outline,
             tooltip: 'Lock wallet storage',
             onPressed: lock,
           ),
-          const SizedBox(width: AppSpacing.sm),
         ],
-        const ThemeToggleButton(),
       ],
     );
   }
@@ -567,9 +578,10 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// The foot of the entry screen: the one fact that is true of every wallet
-/// here — the dot is the testnet marker the Dashboard carries — and, where
-/// there is a keyboard, the keys the register answers to.
+/// The foot of the entry screen: the test network every wallet here opens
+/// on, as a switch ([NetworkButton]) — its dot is the testnet marker the
+/// Dashboard carries — and, where there is a keyboard, the keys the register
+/// answers to.
 class _Footer extends StatelessWidget {
   const _Footer({required this.keys, required this.digits});
 
@@ -593,16 +605,8 @@ class _Footer extends StatelessWidget {
     );
     return Row(
       children: [
-        Container(
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(
-            color: s.testnet,
-            borderRadius: BorderRadius.circular(999),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(child: Text('Test networks only', style: quiet)),
+        const NetworkButton(),
+        const Spacer(),
         if (keys) ...[
           hint(const [
             _Keycap.icon(Icons.arrow_upward_outlined),
@@ -792,33 +796,106 @@ class _NoMatches extends StatelessWidget {
   }
 }
 
-/// A chain the wallet carries: its hue as a 6 px dot, then its name.
-class _ChainMark extends StatelessWidget {
-  const _ChainMark({required this.color, required this.label});
+/// The chains a wallet carries, as their logos alone; the names are in the
+/// tooltips and the row's semantics.
+class _ChainLogos extends StatelessWidget {
+  const _ChainLogos({required this.wallet});
 
-  final Color color;
-  final String label;
+  final WalletSummary wallet;
+
+  static const double _size = 24;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (wallet.bitcoinEnabled)
+          const Tooltip(
+            message: 'Bitcoin',
+            child: AssetLogo(ticker: 'BTC', size: _size),
+          ),
+        if (wallet.bitcoinEnabled && wallet.liquidEnabled)
+          const SizedBox(width: AppSpacing.sm),
+        if (wallet.liquidEnabled)
+          const Tooltip(
+            message: 'Liquid',
+            child: AssetLogo(ticker: 'LIQUID', size: _size),
+          ),
+      ],
+    );
+  }
+}
+
+/// A glyph and a short mono figure in the faint ink: the fingerprint, a
+/// multisig's threshold.
+class _GlyphFact extends StatelessWidget {
+  const _GlyphFact({
+    required this.icon,
+    required this.text,
+    required this.tooltip,
+  });
+
+  final IconData icon;
+  final String text;
+  final String tooltip;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(999),
+    return Tooltip(
+      message: tooltip,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: AppSpacing.icon, color: s.inkFaint),
+          const SizedBox(width: AppSpacing.xs),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.mono.copyWith(color: s.inkSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The digit that opens a row, in a 32 px circle: firmer on the row under
+/// the cursor.
+class _ShortcutBadge extends StatelessWidget {
+  const _ShortcutBadge({required this.digit, required this.current});
+
+  final int digit;
+  final bool current;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Tooltip(
+      message: 'Press $digit to open',
+      child: AnimatedContainer(
+        duration: AppMotion.of(context, AppMotion.instant),
+        curve: AppMotion.settle,
+        width: AppSpacing.xxl,
+        height: AppSpacing.xxl,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: current ? s.panel : null,
+          border: Border.all(color: current ? s.edgeStrong : s.edge),
+        ),
+        child: Text(
+          '$digit',
+          style: AppTypography.label.copyWith(
+            fontSize: 15,
+            color: current ? s.ink : s.inkSecondary,
           ),
         ),
-        const SizedBox(width: AppSpacing.sm),
-        Text(
-          label,
-          style: AppTypography.caption.copyWith(color: s.inkSecondary),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -827,26 +904,22 @@ class _ChainMark extends StatelessWidget {
 /// holding the key's legend or — for Enter and the arrows, which no text
 /// face is sure to carry — its glyph.
 class _Keycap extends StatelessWidget {
-  const _Keycap(String this.label) : icon = null, strong = false;
-  const _Keycap.icon(IconData this.icon, {this.strong = false}) : label = null;
+  const _Keycap(String this.label) : icon = null;
+  const _Keycap.icon(IconData this.icon) : label = null;
 
   final String? label;
   final IconData? icon;
 
-  /// The key that acts on the row under the cursor.
-  final bool strong;
-
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final ink = strong ? s.ink : s.inkSecondary;
+    final ink = s.inkSecondary;
     return Container(
       constraints: const BoxConstraints(minWidth: AppSpacing.xl),
       height: AppSpacing.xl,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: strong ? s.panel : null,
         borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
         border: Border.all(color: s.edgeStrong),
       ),
@@ -861,9 +934,9 @@ class _Keycap extends StatelessWidget {
 /// the glyph of its kind, its name over how its keys are held, the chains
 /// it carries, its fingerprint, and the key that opens it.
 ///
-/// The row under the cursor is the raised surface and shows the Enter key;
-/// the pointer moves the cursor, so there is one such row at a time and
-/// Enter always opens what is lit.
+/// The row under the cursor is the raised surface and its digit's circle is
+/// firmer; the pointer moves the cursor, so there is one such row at a time
+/// and Enter always opens what is lit.
 class _WalletRow extends StatefulWidget {
   const _WalletRow({
     super.key,
@@ -885,7 +958,7 @@ class _WalletRow extends StatefulWidget {
   /// The wallet opened most recently on this device.
   final bool lastOpened;
 
-  /// The digit that opens this row from the keyboard, printed as a keycap.
+  /// The digit that opens this row from the keyboard, printed in a circle.
   final int? shortcut;
 
   final VoidCallback onHover;
@@ -952,19 +1025,21 @@ class _WalletRowState extends State<_WalletRow> {
       overflow: TextOverflow.ellipsis,
       style: AppTypography.caption.copyWith(color: s.inkSecondary),
     );
-    final chains = Wrap(
-      spacing: AppSpacing.md,
-      runSpacing: AppSpacing.xs,
-      children: [
-        if (w.bitcoinEnabled) _ChainMark(color: s.bitcoin, label: 'Bitcoin'),
-        if (w.liquidEnabled) _ChainMark(color: s.liquid, label: 'Liquid'),
-      ],
-    );
-    final fingerprint = Text(
-      hasFp ? fp : '',
-      maxLines: 1,
-      style: AppTypography.monoSmall.copyWith(color: s.inkFaint),
-    );
+    final chains = _ChainLogos(wallet: w);
+    final threshold = w.requiredSigs != null && w.totalSigners != null
+        ? _GlyphFact(
+            icon: Icons.key_outlined,
+            text: '${w.requiredSigs}-of-${w.totalSigners}',
+            tooltip: '${w.requiredSigs} of ${w.totalSigners} keys sign a spend',
+          )
+        : null;
+    final fingerprint = hasFp
+        ? _GlyphFact(
+            icon: Icons.fingerprint,
+            text: fp,
+            tooltip: 'Master key fingerprint',
+          )
+        : null;
     final arrow = Icon(
       Icons.arrow_forward_outlined,
       size: AppSpacing.navIcon,
@@ -988,8 +1063,13 @@ class _WalletRowState extends State<_WalletRow> {
                 const SizedBox(height: AppSpacing.sm),
                 Row(
                   children: [
-                    Expanded(child: chains),
-                    if (hasFp) fingerprint,
+                    chains,
+                    if (threshold != null) ...[
+                      const SizedBox(width: AppSpacing.md),
+                      threshold,
+                    ],
+                    const Spacer(),
+                    ?fingerprint,
                   ],
                 ),
               ],
@@ -1017,32 +1097,24 @@ class _WalletRowState extends State<_WalletRow> {
             ),
           ),
           const SizedBox(width: AppSpacing.xl),
-          // Fixed columns: the chains and the fingerprints of every row
-          // line up, so two wallets are compared down a column.
-          SizedBox(width: 168, child: chains),
+          // Fixed columns: the chains, a multisig's threshold and the
+          // fingerprints of every row line up, so two wallets are compared
+          // down a column.
+          SizedBox(width: 64, child: chains),
           SizedBox(
-            width: 88,
+            width: 96,
+            child: Align(alignment: Alignment.centerRight, child: threshold),
+          ),
+          SizedBox(
+            width: 124,
             child: Align(alignment: Alignment.centerRight, child: fingerprint),
           ),
           const SizedBox(width: AppSpacing.xl),
           SizedBox(
             width: AppSpacing.xxl,
-            child: Center(
-              child: widget.current
-                  ? const Tooltip(
-                      message: 'Press Enter to open',
-                      child: _Keycap.icon(
-                        Icons.keyboard_return_outlined,
-                        strong: true,
-                      ),
-                    )
-                  : shortcut == null
-                  ? null
-                  : Tooltip(
-                      message: 'Press $shortcut to open',
-                      child: _Keycap('$shortcut'),
-                    ),
-            ),
+            child: shortcut == null
+                ? null
+                : _ShortcutBadge(digit: shortcut, current: widget.current),
           ),
           const SizedBox(width: AppSpacing.md),
           arrow,

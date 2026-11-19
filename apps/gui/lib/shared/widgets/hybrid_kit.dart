@@ -397,44 +397,44 @@ class TestnetBadge extends StatelessWidget {
 
 // ── The mark of "you are here" ────────────────────────────────────────────────
 
-/// The current destination's mark (design.md, "The accent"): a short bar in
-/// the accent — and so in the wallet's own colour — on the leading edge of
-/// the row the user is on, or above the tab they are on.
+/// The current choice's mark (design.md, "The accent"): a 1 px border in the
+/// accent — and so in the wallet's own colour — round the raised surface of
+/// the sidebar row, Settings section, phone tab or segment the user is on.
 ///
-/// The row is already told apart by its surface step and its ink; the bar
-/// is the one touch of the wax on the chrome. It fades with the selection
-/// and never moves.
+/// The child is already told apart by its surface step and its ink; the
+/// border is the one touch of the wax on the chrome. It is painted over the
+/// child, so it never shifts the layout, and fades with the selection.
 class CurrentMark extends StatelessWidget {
   const CurrentMark({
     super.key,
     required this.active,
-    this.axis = Axis.vertical,
+    required this.radius,
+    required this.child,
   });
 
   final bool active;
 
-  /// Vertical on the edge of a row, horizontal over a tab.
-  final Axis axis;
+  /// The child's corner radius, so the border follows its edge.
+  final double radius;
 
-  static const double thickness = 3;
-  static const double length = AppSpacing.lg;
+  final Widget child;
+
+  static const double width = 1;
 
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
-    final vertical = axis == Axis.vertical;
-    return AnimatedOpacity(
-      opacity: active ? 1 : 0,
+    return AnimatedContainer(
       duration: AppMotion.of(context, AppMotion.quick),
       curve: AppMotion.settle,
-      child: Container(
-        width: vertical ? thickness : length,
-        height: vertical ? length : thickness,
-        decoration: BoxDecoration(
-          color: s.accent,
-          borderRadius: BorderRadius.circular(2),
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: active ? s.accent : s.accent.withValues(alpha: 0),
+          width: width,
         ),
       ),
+      child: child,
     );
   }
 }

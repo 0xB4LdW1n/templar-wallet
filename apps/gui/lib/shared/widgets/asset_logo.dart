@@ -1,16 +1,20 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 
-/// An asset's glyph: a flat circle in its chain's hue with a white mark — one
-/// of the two places a chain hue is allowed (design.md, "The accent").
+/// An asset's glyph — one of the two places a chain hue is allowed
+/// (design.md, "The accent").
 ///
-///   BTC                  → Bitcoin orange, ₿
-///   LBTC / legacy L-BTC  → Liquid teal, ₿ (pegged to BTC, lives on Liquid)
-///   any other token      → Liquid teal, the water drop
+///   BTC                  → the Bitcoin logo, as published (bitcoin.svg)
+///   LIQUID (the chain)   → the Liquid Network emblem, as published
+///                          (liquid.svg)
+///   LBTC / legacy L-BTC  → Liquid teal disc, ₿ tilted 14° as in Bitcoin's
+///                          mark (pegged to BTC, lives on Liquid)
+///   any other token      → Liquid teal disc, the water drop
 ///
 /// A reissuance token reuses its parent's glyph inside a dashed hairline ring:
 /// the ring states a fact (this is a derived token), so it stays, drawn as
@@ -50,10 +54,22 @@ class AssetLogo extends StatelessWidget {
 
   Widget _logo(AppScheme s, double side) {
     final t = ticker.toUpperCase();
-    final (hue, glyph) = switch (t) {
-      'BTC' => (s.bitcoin, Icons.currency_bitcoin_outlined),
-      'LBTC' || 'L-BTC' => (s.liquid, Icons.currency_bitcoin_outlined),
-      _ => (s.liquid, Icons.water_drop_outlined),
+    final mark = switch (t) {
+      'BTC' => bitcoinSvg,
+      'LIQUID' => liquidSvg,
+      _ => null,
+    };
+    if (mark != null) {
+      return SvgPicture.asset(
+        mark,
+        width: side,
+        height: side,
+        excludeFromSemantics: true,
+      );
+    }
+    final (hue, glyph, tilt) = switch (t) {
+      'LBTC' || 'L-BTC' => (s.liquid, Icons.currency_bitcoin, _bitcoinTilt),
+      _ => (s.liquid, Icons.water_drop, 0.0),
     };
     return Container(
       width: side,
@@ -62,9 +78,19 @@ class AssetLogo extends StatelessWidget {
       decoration: BoxDecoration(color: hue, shape: BoxShape.circle),
       // White on the hue in both themes: the glyph is the asset's mark, not
       // text on a surface.
-      child: Icon(glyph, size: side * 0.56, color: Colors.white),
+      child: Transform.rotate(
+        angle: tilt,
+        child: Icon(glyph, size: side * 0.64, color: Colors.white),
+      ),
     );
   }
+
+  /// The chains' own marks, drawn as their owners publish them.
+  static const String bitcoinSvg = 'assets/images/bitcoin.svg';
+  static const String liquidSvg = 'assets/images/liquid.svg';
+
+  /// Bitcoin's mark leans its ₿ 14° clockwise.
+  static const double _bitcoinTilt = 14 * math.pi / 180;
 }
 
 /// A dashed hairline ring (marks a reissuance token's glyph).

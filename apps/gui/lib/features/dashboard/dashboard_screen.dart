@@ -21,6 +21,7 @@ import '../../shared/widgets/asset_card.dart';
 import '../../shared/widgets/asset_logo.dart';
 import '../../shared/widgets/badges.dart';
 import '../../shared/widgets/buttons.dart';
+import '../../shared/widgets/chain_switch.dart';
 import '../../shared/widgets/cosigner_label_editor.dart';
 import '../../shared/widgets/cosigner_ring.dart';
 import '../../shared/widgets/plain_card.dart';
@@ -1452,19 +1453,12 @@ class _HeroState extends State<_Hero> {
       ],
     );
     final chainSwitch = bothChains
-        ? SegmentedSwitch<_ChainFilter>(
-            dense: true,
+        ? ChainSwitch<_ChainFilter>(
             selected: _chain,
             onChanged: _selectChain,
-            options: [
-              const SegOption(value: _ChainFilter.all, label: 'All'),
-              SegOption(value: _ChainFilter.btc, label: 'BTC', dot: s.bitcoin),
-              SegOption(
-                value: _ChainFilter.liquid,
-                label: 'Liquid',
-                dot: s.liquid,
-              ),
-            ],
+            all: _ChainFilter.all,
+            bitcoin: _ChainFilter.btc,
+            liquid: _ChainFilter.liquid,
           )
         : null;
 

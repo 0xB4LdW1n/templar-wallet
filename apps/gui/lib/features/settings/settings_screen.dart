@@ -245,58 +245,58 @@ class _RailRowState extends State<_RailRow> {
           child: GestureDetector(
             onTap: widget.onTap,
             behavior: HitTestBehavior.opaque,
-            child: AnimatedContainer(
-              duration: AppMotion.of(context, AppMotion.instant),
-              curve: AppMotion.settle,
-              height: AppSpacing.navRowHeight,
-              decoration: BoxDecoration(
-                color: active
-                    ? s.thumb
-                    : _hover
-                    ? s.hover
-                    : s.hover.withValues(alpha: 0),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              ),
-              foregroundDecoration: _focus
-                  ? BoxDecoration(
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                      border: Border.all(color: s.focus, width: 2),
-                    )
-                  : null,
-              child: Stack(
-                alignment: AlignmentDirectional.centerStart,
-                children: [
-                  CurrentMark(active: active),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.md,
-                    ),
-                    child: Row(
-                      children: [
-                        // The section on show wears the accent on its glyph,
-                        // as the sidebar's current row does.
-                        widget.section.glyph(
-                          AppSpacing.navIcon,
-                          active ? s.accentGlyph : ink,
+            child: CurrentMark(
+              active: active,
+              radius: AppSpacing.radiusMd,
+              child: AnimatedContainer(
+                duration: AppMotion.of(context, AppMotion.instant),
+                curve: AppMotion.settle,
+                height: AppSpacing.navRowHeight,
+                decoration: BoxDecoration(
+                  color: active
+                      ? s.thumb
+                      : _hover
+                      ? s.hover
+                      : s.hover.withValues(alpha: 0),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                ),
+                foregroundDecoration: _focus
+                    ? BoxDecoration(
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.radiusMd,
                         ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Text(
-                            widget.section.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.navItem.copyWith(
-                              color: ink,
-                              fontWeight: active
-                                  ? FontWeight.w500
-                                  : FontWeight.w400,
-                            ),
+                        border: Border.all(color: s.focus, width: 2),
+                      )
+                    : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                  ),
+                  child: Row(
+                    children: [
+                      // The section on show wears the accent on its glyph,
+                      // as the sidebar's current row does.
+                      widget.section.glyph(
+                        AppSpacing.navIcon,
+                        active ? s.accentGlyph : ink,
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Text(
+                          widget.section.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.navItem.copyWith(
+                            color: ink,
+                            fontWeight: active
+                                ? FontWeight.w500
+                                : FontWeight.w400,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),

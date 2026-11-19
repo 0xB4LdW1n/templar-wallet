@@ -77,9 +77,9 @@ read it as `AppScheme.accent`, with `onAccent` for ink on top of it).
   for (`PrimaryButton`). Everything beside it is neutral.
 - Beyond that button the accent is a **mark**, never an area: the wax on
   the page. It is small, it is the user's, and it says one of four things.
-  - *You are here.* A 3 px bar (`CurrentMark`) on the leading edge of the
-    current destination — the sidebar row, the Settings section — and over
-    the current tab on a phone; the current segment of a wizard's steps.
+  - *You are here.* A 1 px border (`CurrentMark`) round the raised surface
+    of the current destination — the sidebar row, the Settings section, the
+    current tab's pill on a phone; the current segment of a wizard's steps.
   - *You chose this.* The dot of the chosen radio, the tick of a checkbox,
     the check on a picked coin.
   - *You are typing here.* The caret and the text selection.
@@ -95,16 +95,17 @@ read it as `AppScheme.accent`, with `onAccent` for ink on top of it).
   where it stands 3:1 clear of the raised surface and is otherwise lifted
   (dark) or deepened (light) just far enough to — still the wallet's own
   colour, still short of the danger red.
-- Two more places say *you chose this* with it: the 6 px dot of a chosen
-  chip (the radio's dot again) and the short bar at the foot of the chosen
-  segment of a segmented control.
+- Two more places say *you chose this* with it, the same 1 px border: the
+  outline of a chosen chip and the chosen segment of a segmented control.
 - Every mark reads `AppScheme.accent` or `accentGlyph`, so the colour a
   wallet is given in Settings › Appearance moves all of them at once.
 - **A mark is never the only sign.** The current row is also a surface step
   and the primary ink; a ticked box is also a tick; a chosen chip is also a
   surface step. Take the colour away and the screen still reads.
-- **Never accent text, and never an accent ring.** Links and text actions
-  are ink; a red outline around a chip or a field reads as an error.
+- **Never accent text, and never an accent ring on a field.** Links and
+  text actions are ink; a red outline around a field reads as an error. The
+  only accent outline is the 1 px border of the current or chosen item
+  above, always on the raised surface with the primary ink.
 - **A switch that is on is ink**, not the accent: a column of red switches
   reads as a column of alarms.
 - **Focus is neutral** (`AppScheme.focus`). A red ring around a field reads
@@ -119,8 +120,9 @@ read it as `AppScheme.accent`, with `onAccent` for ink on top of it).
   warning's amber — is a wait: the dot of a pending status and the
   breathing edge of its row (see "Motion").
 - Chains own a hue for identification only — Bitcoin orange, Liquid teal —
-  and it appears on the asset's glyph (`AssetLogo`), as a 6 px dot beside
-  a network name, and as the line of Liquid's own balance chart. Never a
+  and it appears on the asset's glyph (`AssetLogo`, also the chain's logo
+  in a `ChainSwitch`), as a 6 px dot beside a network name, and as the line
+  of Liquid's own balance chart. Never a
   title colour, a border, or a card fill.
 
 ## Colour as data
@@ -234,7 +236,7 @@ Radius by size; nested radii add up (inner = outer − padding, floor 4).
 | Token | px | Use |
 | --- | --- | --- |
 | `radiusXs` | 4 | tags, keycaps |
-| `radiusSm` | 6 | chips, a segment inside its track |
+| `radiusSm` | 6 | chips |
 | `radiusMd` | 8 | buttons, fields, rows |
 | `radiusLg` | 12 | cards |
 | `radiusXl` | 16 | the hero, dialogs, sheets |
@@ -296,11 +298,13 @@ Desktop metrics; the phone's follow below.
   1.5 px `focus` border; error is `danger`. A field's label is an `eyebrow`
   above it, never floating inside.
 - **Segmented control** (`SegmentedSwitch`, `ChainSwitch`) — a `well` track
-  with a hairline, 2 px inner padding, radius 8; the chosen segment is
-  `thumb`, radius 6, primary ink, with a 12 × 2 bar in the accent at its
-  foot; the others `inkSecondary`. 32 tall.
+  with a hairline, 2 px inner padding, radius 12; segments 34 tall (40 on a
+  phone), 14 px labels; the chosen segment is `thumb`, radius 10, primary
+  ink, inside the accent's 1 px border (`CurrentMark`); the others
+  `inkSecondary`. 40 tall on desktop. A chain's segment leads with its
+  20 px logo (`AssetLogo`), whether chosen or not.
 - **Chip** (`ChoiceTile`) — 32 tall outline; selected is the raised surface
-  with the accent's 6 px dot before its label.
+  with its outline in the accent.
 - **Option card** (`SelectableOptionCard`, `ChoiceList`) — a card with a
   radio. Selected: `edgeStrong` border, the radio's dot in the accent.
   Never a filled slab.
@@ -350,13 +354,13 @@ Desktop metrics; the phone's follow below.
 - **Desktop**: a sidebar 264 wide on `chrome`. The wallet switcher at the
   top; rows 40 tall, radius 8, 2 apart, a 20 px icon and the label (15 px)
   on one line; group labels are `eyebrow` in `inkFaint`, 24 above and 8
-  below. The current row is `thumb` with the primary ink and the
-  `CurrentMark` on its leading edge. Sync state and the network sit at the
+  below. The current row is `thumb` with the primary ink inside the
+  `CurrentMark` border. Sync state and the network sit at the
   foot. Three groups: Wallet, Liquid (Liquid assets, Loans, LiquiDEX, Peg —
   a loan is a Liquid covenant), System.
 - **Phone**: a header (the wallet, the sync state) and a tab bar on `chrome`
-  with every destination visible and labelled, the `CurrentMark` over the
-  current one. No carousel. Send and Receive live on the Dashboard; Wallet
+  with every destination visible and labelled, the `CurrentMark` round the
+  current one's pill. No carousel. Send and Receive live on the Dashboard; Wallet
   info lives in Settings.
 
 ## Flows
@@ -450,12 +454,17 @@ Desktop metrics; the phone's follow below.
 - **The register** (the entry screen). The wallets are the rows of one
   card, not a grid of tiles: a spine in the wallet's own colour, the glyph
   of its kind, its name over how its keys are held and when it was last
-  opened, then its chains and its fingerprint in columns that line up down
-  the rows. The screen exists to get back into a wallet, almost always the
-  same one, so the cursor starts on the wallet opened last and Enter opens
-  it; the arrows and the pointer move the cursor, and 1–9 open a row
-  outright. The rows keep the order of their kinds, so a digit means the
-  same wallet every day; the keys are printed as keycaps at the foot.
+  opened, then in columns that line up down the rows: its chains as their
+  logos alone, a multisig's threshold beside a key ("2-of-3"), its
+  fingerprint beside a fingerprint glyph, and its digit in a 32 px circle.
+  The screen exists to get back into a wallet, almost always the same one,
+  so the cursor starts on the wallet opened last and Enter opens it; the
+  arrows and the pointer move the cursor, and 1–9 open a row outright. The
+  rows keep the order of their kinds, so a digit means the same wallet
+  every day; the keys are printed as keycaps at the foot. The foot's left
+  corner is the network switch (Testnet / Regtest, the testnet dot); the
+  top bar carries Tor (a placeholder until the engine has a transport) and
+  the theme, then a hairline, then the storage lock.
 
 ## The seal
 

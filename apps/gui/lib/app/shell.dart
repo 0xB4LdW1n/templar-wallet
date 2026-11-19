@@ -1252,8 +1252,8 @@ class _SidebarSection extends StatelessWidget {
 
 /// A destination. Rows are 40 tall and 2 apart; icons sit in one column and
 /// labels start on one line. The current row is the raised surface with the
-/// primary ink — a surface step — and wears the [CurrentMark], a short bar
-/// in the accent on its leading edge.
+/// primary ink — a surface step — and wears the [CurrentMark], a 1 px
+/// border in the accent.
 class _SidebarItem extends StatefulWidget {
   const _SidebarItem({
     required this.route,
@@ -1306,63 +1306,63 @@ class _SidebarItemState extends State<_SidebarItem> {
           child: GestureDetector(
             onTap: go,
             behavior: HitTestBehavior.opaque,
-            child: AnimatedContainer(
-              duration: AppMotion.of(context, AppMotion.instant),
-              height: AppSpacing.navRowHeight,
-              decoration: BoxDecoration(
-                color: active
-                    ? s.thumb
-                    : _hover
-                    ? s.hover
-                    : s.hover.withValues(alpha: 0),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              ),
-              foregroundDecoration: _focus
-                  ? BoxDecoration(
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                      border: Border.all(color: s.focus, width: 2),
-                    )
-                  : null,
-              child: Stack(
-                alignment: AlignmentDirectional.centerStart,
-                children: [
-                  // "You are here": the one mark of the accent on the chrome.
-                  CurrentMark(active: active),
-                  Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: widget.expanded ? AppSpacing.md : 0,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: widget.expanded
-                          ? MainAxisAlignment.start
-                          : MainAxisAlignment.center,
-                      children: [
-                        // The current destination's glyph wears the accent,
-                        // with the bar on its edge; its label stays ink.
-                        Icon(
-                          widget.icon,
-                          size: AppSpacing.navIcon,
-                          color: active ? s.accentGlyph : ink,
+            // "You are here": the one mark of the accent on the chrome.
+            child: CurrentMark(
+              active: active,
+              radius: AppSpacing.radiusMd,
+              child: AnimatedContainer(
+                duration: AppMotion.of(context, AppMotion.instant),
+                height: AppSpacing.navRowHeight,
+                decoration: BoxDecoration(
+                  color: active
+                      ? s.thumb
+                      : _hover
+                      ? s.hover
+                      : s.hover.withValues(alpha: 0),
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                ),
+                foregroundDecoration: _focus
+                    ? BoxDecoration(
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.radiusMd,
                         ),
-                        if (widget.expanded) ...[
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Text(
-                              widget.label,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.navItem.copyWith(
-                                color: ink,
-                                fontWeight: active
-                                    ? FontWeight.w500
-                                    : FontWeight.w400,
-                              ),
+                        border: Border.all(color: s.focus, width: 2),
+                      )
+                    : null,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: widget.expanded ? AppSpacing.md : 0,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: widget.expanded
+                        ? MainAxisAlignment.start
+                        : MainAxisAlignment.center,
+                    children: [
+                      // The current destination's glyph wears the accent,
+                      // inside its border; its label stays ink.
+                      Icon(
+                        widget.icon,
+                        size: AppSpacing.navIcon,
+                        color: active ? s.accentGlyph : ink,
+                      ),
+                      if (widget.expanded) ...[
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Text(
+                            widget.label,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.navItem.copyWith(
+                              color: ink,
+                              fontWeight: active
+                                  ? FontWeight.w500
+                                  : FontWeight.w400,
                             ),
                           ),
-                        ],
+                        ),
                       ],
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),

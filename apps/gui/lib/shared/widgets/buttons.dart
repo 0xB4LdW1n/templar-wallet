@@ -370,9 +370,9 @@ class GhostButton extends StatelessWidget {
 /// One option in a row of choices — the app's chip, and a segmented control
 /// that ran out of room.
 ///
-/// Unselected it is an outline; selected it is the raised surface with a
-/// firmer edge, the primary ink and — the user's mark on what they chose —
-/// the accent dot of a chosen radio. Never an accent fill or ring.
+/// Unselected it is an outline; selected it is the raised surface with the
+/// primary ink and — the user's mark on what they chose — its outline in the
+/// accent, the border a chosen segment wears. Never an accent fill.
 class ChoiceTile extends StatefulWidget {
   const ChoiceTile({
     super.key,
@@ -425,7 +425,11 @@ class _ChoiceTileState extends State<ChoiceTile> {
         : lit
         ? s.hover
         : Colors.transparent;
-    final edge = selected || lit ? s.edgeStrong : s.edge;
+    final edge = selected
+        ? s.accent
+        : lit
+        ? s.edgeStrong
+        : s.edge;
     final ink = !enabled
         ? s.inkFaint.withValues(alpha: 0.6)
         : selected || lit
@@ -456,21 +460,6 @@ class _ChoiceTileState extends State<ChoiceTile> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Chosen, the chip carries the dot of a chosen radio, in the
-          // accent: the user's own mark. The fill, the edge and the ink
-          // still say it without the colour. (A ring in the accent would
-          // read as an error while the accent is red.)
-          if (selected) ...[
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: s.accent,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-          ],
           if (widget.icon != null) ...[
             Icon(
               widget.icon,

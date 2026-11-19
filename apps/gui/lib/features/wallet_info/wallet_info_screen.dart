@@ -586,8 +586,7 @@ class _WalletInfoScreenState extends State<WalletInfoScreen> {
                   if (_info!.liquidDescriptor != null) ...[
                     gap,
                     SectionCard(
-                      // The water drop is Liquid's own glyph, as the asset
-                      // list draws it.
+                      // Liquid's own emblem, as the chain switch draws it.
                       leading: const AssetLogo(
                         ticker: 'LIQUID',
                         size: AppSpacing.xl,

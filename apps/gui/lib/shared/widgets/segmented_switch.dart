@@ -4,6 +4,7 @@ import '../../theme/app_motion.dart';
 import '../../theme/app_scheme.dart';
 import '../../theme/app_spacing.dart';
 import '../../theme/app_typography.dart';
+import 'hybrid_kit.dart' show CurrentMark;
 
 /// One choice in a [SegmentedSwitch].
 class SegOption<T> {
@@ -13,7 +14,7 @@ class SegOption<T> {
     this.icon,
     this.tooltip,
     this.enabled = true,
-    this.dot,
+    this.logo,
   });
 
   final T value;
@@ -28,16 +29,19 @@ class SegOption<T> {
   /// same shape on every screen.
   final bool enabled;
 
-  /// A 6 px dot before the label, in a chain hue. The one place colour may
-  /// appear in the control, and only to identify a chain.
-  final Color? dot;
+  /// A chain's logo before the label (an `AssetLogo`, sized
+  /// [SegmentedSwitch.logoSize]). The one place colour may appear in the
+  /// control, and only to identify a chain. Kept in [SegmentedSwitch.iconOnly]
+  /// mode, where it stands for the label.
+  final Widget? logo;
 }
 
 /// The segmented control (design.md, "Controls").
 ///
 /// A recessed `well` track with a hairline; the chosen segment is the raised
-/// surface with the primary ink, the others are quiet text. No option owns a
-/// colour: which one is chosen is told by the surface step alone.
+/// surface with the primary ink inside the accent's 1 px border
+/// ([CurrentMark]), the others are quiet text. No option owns a colour
+/// beyond a chain's logo.
 ///
 /// Each segment is a focus stop, so Tab walks the options and Space/Enter
 /// picks one. On a phone every segment is a 40 dp row inside a 44 dp track,
@@ -73,17 +77,25 @@ class SegmentedSwitch<T> extends StatelessWidget {
   /// without an icon keep their label.
   final bool iconOnly;
 
+  /// The side of a [SegOption.logo].
+  static const double logoSize = 20;
+
+  /// A segment's height on desktop; the track adds its padding and hairline
+  /// (40 in all). On a phone the segment is 40 and the track 46.
+  static const double segmentHeight = 34;
+
+  /// Space between the track's hairline and its segments.
+  static const double _inset = 2;
+
   @override
   Widget build(BuildContext context) {
     final s = AppScheme.of(context);
     final phone = AppLayout.isPhone(context);
-    // Radii nest: the track's corner minus its 2 px padding is the segment's.
-    final radius = phone ? AppSpacing.radiusLg : AppSpacing.radiusMd;
     return Container(
-      padding: const EdgeInsets.all(2),
+      padding: const EdgeInsets.all(_inset),
       decoration: BoxDecoration(
         color: s.well,
-        borderRadius: BorderRadius.circular(radius),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         border: Border.all(color: s.edge),
       ),
       child: FocusTraversalGroup(
@@ -99,7 +111,7 @@ class SegmentedSwitch<T> extends StatelessWidget {
                   dense: dense,
                   phone: phone,
                   expand: expand,
-                  iconOnly: iconOnly && o.icon != null,
+                  iconOnly: iconOnly && (o.icon != null || o.logo != null),
                   onTap: () => onChanged(o.value),
                 ),
               ),
@@ -169,8 +181,10 @@ class _SegmentState<T> extends State<_Segment<T>> {
     final baseInk = selected || (_hover && enabled) ? s.ink : s.inkSecondary;
     final ink = enabled ? baseInk : baseInk.withValues(alpha: 0.5);
 
-    final labelStyle = (selected ? AppTypography.label : AppTypography.caption)
-        .copyWith(color: ink);
+    final labelStyle = AppTypography.body.copyWith(
+      color: ink,
+      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+    );
     final label = phone || widget.expand
         // Capped segments (phone Flexible / expand) ellipsise the label
         // instead of painting past the track.
@@ -185,23 +199,15 @@ class _SegmentState<T> extends State<_Segment<T>> {
           )
         : Text(widget.option.label, style: labelStyle);
 
-    final dot = widget.option.dot;
+    final logo = widget.option.logo;
     final content = Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        if (dot != null) ...[
-          Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(
-              color: enabled ? dot : dot.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-        ],
-        if (widget.option.icon != null) ...[
+        if (logo != null) ...[
+          Opacity(opacity: enabled ? 1 : 0.5, child: logo),
+          if (!widget.iconOnly) const SizedBox(width: AppSpacing.sm),
+        ] else if (widget.option.icon != null) ...[
           Icon(widget.option.icon, size: AppSpacing.iconSmall, color: ink),
           if (!widget.iconOnly) const SizedBox(width: AppSpacing.sm),
         ],
@@ -209,18 +215,16 @@ class _SegmentState<T> extends State<_Segment<T>> {
       ],
     );
 
-    // Nested inside the track's 2 px padding: 12 − 2 on a phone.
-    final radius = phone
-        ? AppSpacing.radiusPhoneControl - 2
-        : AppSpacing.radiusSm;
+    // Radii nest: the track's corner minus its padding.
+    const radius = AppSpacing.radiusLg - SegmentedSwitch._inset;
     final body = AnimatedContainer(
       duration: AppMotion.of(context, AppMotion.quick),
       curve: AppMotion.settle,
-      height: phone ? 40 : AppSpacing.controlHeightSmall,
+      height: phone ? 40 : SegmentedSwitch.segmentHeight,
       padding: EdgeInsets.symmetric(
         horizontal: widget.dense || widget.iconOnly
-            ? AppSpacing.sm
-            : AppSpacing.md,
+            ? AppSpacing.md
+            : AppSpacing.lg,
       ),
       // The thumb sits in a well: on light that means white on grey, and the
       // card's whisper of a shadow is what gives it an edge there.
@@ -235,30 +239,7 @@ class _SegmentState<T> extends State<_Segment<T>> {
               border: Border.all(color: s.focus, width: 2),
             )
           : null,
-      // The chosen segment carries the accent's mark at its foot: a short
-      // bar, the tab's "you are here", inside the thumb.
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Center(widthFactor: 1, child: content),
-          Positioned(
-            bottom: 2,
-            child: AnimatedOpacity(
-              opacity: selected ? 1 : 0,
-              duration: AppMotion.of(context, AppMotion.quick),
-              curve: AppMotion.settle,
-              child: Container(
-                width: AppSpacing.md,
-                height: 2,
-                decoration: BoxDecoration(
-                  color: s.accent,
-                  borderRadius: BorderRadius.circular(1),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+      child: Center(widthFactor: 1, child: content),
     );
 
     final tappable = Semantics(
@@ -284,7 +265,9 @@ class _SegmentState<T> extends State<_Segment<T>> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: enabled ? widget.onTap : (phone ? _explainDisabled : null),
-          child: body,
+          // The chosen segment wears the accent's border, the sidebar
+          // row's "you are here".
+          child: CurrentMark(active: selected, radius: radius, child: body),
         ),
       ),
     );

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_scheme.dart';
+import 'asset_logo.dart';
 import 'segmented_switch.dart';
 
 /// The Bitcoin / Liquid switch that sits top-right on every screen whose
@@ -8,7 +8,7 @@ import 'segmented_switch.dart';
 /// same place.
 ///
 /// It is the plain [SegmentedSwitch]: the chain is named by its label and
-/// identified by a 6 px dot in its hue, whether chosen or not. The hue never
+/// identified by its logo ([AssetLogo]), whether chosen or not. The hue never
 /// fills, outlines or colours the label.
 ///
 /// Always drawn, even for a wallet with one chain: the chain the wallet lacks
@@ -52,14 +52,21 @@ class ChainSwitch<T> extends StatelessWidget {
   /// [SegmentedSwitch.expand].
   final bool expand;
 
-  /// Icons only, names in the tooltip / semantics — for a phone row the
-  /// switch has to share with other controls. The chain icons appear only in
-  /// this mode; with labels the dot is enough.
+  /// Logos only, names in the tooltip / semantics — for a phone row the
+  /// switch has to share with other controls.
   final bool iconOnly;
+
+  static const _bitcoinLogo = AssetLogo(
+    ticker: 'BTC',
+    size: SegmentedSwitch.logoSize,
+  );
+  static const _liquidLogo = AssetLogo(
+    ticker: 'LIQUID',
+    size: SegmentedSwitch.logoSize,
+  );
 
   @override
   Widget build(BuildContext context) {
-    final s = AppScheme.of(context);
     return SegmentedSwitch<T>(
       selected: selected,
       onChanged: onChanged,
@@ -75,16 +82,14 @@ class ChainSwitch<T> extends StatelessWidget {
         SegOption(
           value: bitcoin,
           label: 'Bitcoin',
-          icon: iconOnly ? Icons.currency_bitcoin : null,
-          dot: s.bitcoin,
+          logo: _bitcoinLogo,
           enabled: bitcoinEnabled,
           tooltip: bitcoinEnabled ? null : 'This wallet has no Bitcoin side',
         ),
         SegOption(
           value: liquid,
           label: 'Liquid',
-          icon: iconOnly ? Icons.water_drop_outlined : null,
-          dot: s.liquid,
+          logo: _liquidLogo,
           enabled: liquidEnabled,
           tooltip: liquidEnabled
               ? null

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/widgets/asset_logo.dart';
 import '../../shared/widgets/badges.dart';
 import '../../shared/widgets/banners.dart';
 import '../../shared/widgets/buttons.dart';
@@ -94,8 +95,22 @@ class _DesignSystemScreenState extends State<DesignSystemScreen> {
             _section('Segmented control', [
               SegmentedSwitch<String>(
                 options: [
-                  SegOption(value: 'bitcoin', label: 'Bitcoin', dot: s.bitcoin),
-                  SegOption(value: 'liquid', label: 'Liquid', dot: s.liquid),
+                  const SegOption(
+                    value: 'bitcoin',
+                    label: 'Bitcoin',
+                    logo: AssetLogo(
+                      ticker: 'BTC',
+                      size: SegmentedSwitch.logoSize,
+                    ),
+                  ),
+                  const SegOption(
+                    value: 'liquid',
+                    label: 'Liquid',
+                    logo: AssetLogo(
+                      ticker: 'LIQUID',
+                      size: SegmentedSwitch.logoSize,
+                    ),
+                  ),
                   const SegOption(
                     value: 'regtest',
                     label: 'Regtest',
