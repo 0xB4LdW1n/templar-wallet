@@ -1,5 +1,5 @@
 // Receive lists the newest eight previous addresses and hands the rest to
-// the All addresses page; Liquid, with its one reused address, lists none.
+// the All addresses page, on Bitcoin and Liquid alike.
 // Desktop arm only: AppLayout.isPhone needs a mobile platform, which a host
 // test cannot be (see docs/decisions/0005-mobile-shell.md).
 
@@ -50,6 +50,44 @@ class _StubBridge implements WalletBridge {
         label: i == 3 ? 'Faucet' : null,
       ),
   ];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// A Liquid-only wallet: addresses advance with `fresh`, and each comes with
+/// its unconfidential form.
+class _LiquidBridge implements WalletBridge {
+  int index = 2;
+  int freshCalls = 0;
+
+  static AddressInfo _at(int i, {int receivedSats = 0}) => AddressInfo(
+    address: 'tlq1qqliquid$i${'0' * 70}',
+    unconfidentialAddress: 'tex1qplain$i${'0' * 30}',
+    index: i,
+    asset: 'LBTC',
+    receivedSats: receivedSats,
+  );
+
+  @override
+  Future<AddressInfo> generateReceiveAddress(
+    String walletId,
+    String asset, {
+    bool fresh = false,
+  }) async {
+    expect(asset, 'LBTC');
+    if (fresh) {
+      freshCalls++;
+      index++;
+    }
+    return _at(index);
+  }
+
+  @override
+  Future<List<AddressInfo>> listPreviousAddresses(
+    String walletId,
+    String asset,
+  ) async => [_at(0, receivedSats: 5000), _at(1, receivedSats: 7000)];
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -168,5 +206,41 @@ void main() {
     expect(find.text('Address #11'), findsOneWidget);
     expect(find.text('Used'), findsWidgets);
     expect(find.text('Copy address'), findsOneWidget);
+  });
+
+  testWidgets('Liquid: new address, history and the explorer form', (t) async {
+    _desktopWindow(t);
+    final bridge = _LiquidBridge();
+    final state = AppState()
+      ..setActiveWallet('w', liquid: true, bitcoin: false);
+    await t.pumpWidget(
+      MaterialApp(
+        home: ChangeNotifierProvider<AppState>.value(
+          value: state,
+          child: ReceiveScreen(bridge: bridge),
+        ),
+      ),
+    );
+    await t.pumpAndSettle();
+
+    // The confidential address to hand out, its explorer form under it.
+    expect(find.text(_LiquidBridge._at(2).address), findsOneWidget);
+    expect(find.text('On explorers (unconfidential)'), findsOneWidget);
+    expect(
+      find.text(_LiquidBridge._at(2).unconfidentialAddress!),
+      findsOneWidget,
+    );
+
+    // Every address that already received is listed.
+    expect(find.text('Previous addresses'), findsOneWidget);
+    expect(find.text('#0'), findsOneWidget);
+    expect(find.text('#1'), findsOneWidget);
+
+    // "New address" asks the engine for the next one.
+    await t.tap(find.text('New address'));
+    await t.pumpAndSettle();
+    expect(bridge.freshCalls, 1);
+    expect(find.text(_LiquidBridge._at(3).address), findsOneWidget);
+    expect(find.text(_LiquidBridge._at(2).address), findsNothing);
   });
 }

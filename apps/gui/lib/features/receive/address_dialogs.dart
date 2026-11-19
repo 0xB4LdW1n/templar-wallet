@@ -282,6 +282,10 @@ class _AddressDetailState extends State<_AddressDetail> {
                 ),
                 if (a.derivationPath != null)
                   KvRow(label: 'Path', value: a.derivationPath!, divider: true),
+                // The form an explorer shows: the blinding key in the
+                // address above never goes on chain.
+                if (a.unconfidentialAddress case final plain?)
+                  KvRow(label: 'On explorers', value: plain, divider: true),
                 _LabelRow(
                   tag: label == null
                       ? AddAddressTag(onTap: editLabel)

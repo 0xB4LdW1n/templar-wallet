@@ -1340,6 +1340,7 @@ class FfiWalletBridge implements WalletBridge {
         label: j['label'] as String?,
         receivedSats: j['received_sats'] as int? ?? 0,
         derivationPath: j['derivation_path'] as String?,
+        unconfidentialAddress: j['unconfidential_address'] as String?,
       );
 
   static Transaction _transactionFromJson(Map<String, dynamic> j) {

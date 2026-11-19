@@ -482,7 +482,8 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
 
   String get _caption => _selectedAsset == 'BTC'
       ? 'Native SegWit · a fresh address for every payment'
-      : 'Confidential · the same blinded address can be reused';
+      : 'Confidential · amount and asset hidden, a fresh address for '
+            'every payment';
 
   /// Both chains present: the switch earns its place. A one-chain wallet has
   /// nothing to choose, and the address card already says which chain it is.
@@ -541,11 +542,6 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     );
   }
 
-  /// Bitcoin hands out a fresh address per payment, so there is a history
-  /// worth listing. Liquid's confidential address is one and reused: a
-  /// "previous addresses" list there would only ever repeat the card above.
-  bool get _hasPreviousList => _selectedAsset == 'BTC';
-
   /// The newest previous addresses first — the bridge lists by ascending
   /// derivation index, and the ones most likely still in use are the latest.
   List<AddressInfo> get _previousNewestFirst => _previous.reversed.toList();
@@ -556,15 +552,6 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
   /// Two columns: the action on the left at a readable width, the history
   /// on the right taking what is left.
   Widget _desktopBody(BuildContext context) {
-    if (!_hasPreviousList) {
-      return Align(
-        alignment: Alignment.topLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: _addressCardMaxWidth),
-          child: Reveal(child: _addressCard(context)),
-        ),
-      );
-    }
     return LayoutBuilder(
       builder: (context, c) {
         // The card keeps its width while there is room and gives way to an
@@ -620,16 +607,13 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
             isFullWidth: true,
             onPressed: _copyAddress,
           ),
-          // Liquid CT addresses stay stable — no regenerate there.
-          if (_selectedAsset == 'BTC') ...[
-            const SizedBox(height: AppSpacing.sm),
-            SecondaryButton(
-              label: 'New address',
-              icon: Icons.refresh_outlined,
-              isFullWidth: true,
-              onPressed: _newAddress,
-            ),
-          ],
+          const SizedBox(height: AppSpacing.sm),
+          SecondaryButton(
+            label: 'New address',
+            icon: Icons.refresh_outlined,
+            isFullWidth: true,
+            onPressed: _newAddress,
+          ),
           if (_canVerifyOnDevice) ...[
             const SizedBox(height: AppSpacing.sm),
             _HwVerify(
@@ -726,18 +710,15 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
                 const SizedBox(height: AppSpacing.sm),
                 Row(
                   children: [
-                    // Liquid CT addresses stay stable — no regenerate there.
-                    if (_selectedAsset == 'BTC') ...[
-                      Expanded(
-                        child: SecondaryButton(
-                          label: 'New address',
-                          icon: Icons.refresh_outlined,
-                          isFullWidth: true,
-                          onPressed: _newAddress,
-                        ),
+                    Expanded(
+                      child: SecondaryButton(
+                        label: 'New address',
+                        icon: Icons.refresh_outlined,
+                        isFullWidth: true,
+                        onPressed: _newAddress,
                       ),
-                      const SizedBox(width: AppSpacing.sm),
-                    ],
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
                     Expanded(
                       child: SecondaryButton(
                         label: 'Share',
@@ -773,37 +754,34 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
             child: _requestSection(context),
           ),
         ),
-        // Liquid's one address is the card above; nothing to list under it.
-        if (_hasPreviousList) ...[
-          const SizedBox(height: AppSpacing.xl),
-          Reveal(
-            delay: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const ListSectionLabel(label: 'Previous addresses'),
-                ListCard(
-                  children: [
-                    if (previous.isEmpty)
-                      const ListRow(
-                        icon: Icons.inbox_outlined,
-                        title: 'No previous addresses',
-                      )
-                    else ...[
-                      for (final a in preview) _previousRow(context, a),
-                      ListRow(
-                        icon: Icons.list_outlined,
-                        title: 'All addresses',
-                        chevron: true,
-                        onTap: _openAllAddresses,
-                      ),
-                    ],
+        const SizedBox(height: AppSpacing.xl),
+        Reveal(
+          delay: 2,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const ListSectionLabel(label: 'Previous addresses'),
+              ListCard(
+                children: [
+                  if (previous.isEmpty)
+                    const ListRow(
+                      icon: Icons.inbox_outlined,
+                      title: 'No previous addresses',
+                    )
+                  else ...[
+                    for (final a in preview) _previousRow(context, a),
+                    ListRow(
+                      icon: Icons.list_outlined,
+                      title: 'All addresses',
+                      chevron: true,
+                      onTap: _openAllAddresses,
+                    ),
                   ],
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ],
     );
   }
@@ -1186,6 +1164,8 @@ class _AddressWellState extends State<_AddressWell> {
                       widget.info.address,
                       style: AppTypography.mono.copyWith(color: s.ink),
                     ),
+                    if (widget.info.unconfidentialAddress case final plain?)
+                      _UnconfidentialLine(address: plain),
                   ],
                 ),
               ),
@@ -1199,6 +1179,37 @@ class _AddressWellState extends State<_AddressWell> {
           ),
         );
       },
+    );
+  }
+}
+
+/// A Liquid address's unconfidential form, under the confidential one: the
+/// same output script without the blinding key. The key never goes on
+/// chain, so this is what an explorer shows for this address — the line is
+/// here to look a payment up, not to be handed out (paying it sends amount
+/// and asset in the clear).
+class _UnconfidentialLine extends StatelessWidget {
+  const _UnconfidentialLine({required this.address});
+  final String address;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppScheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'On explorers (unconfidential)',
+            style: AppTypography.caption.copyWith(color: s.inkFaint),
+          ),
+          SelectableText(
+            address,
+            style: AppTypography.monoSmall.copyWith(color: s.inkSecondary),
+          ),
+        ],
+      ),
     );
   }
 }

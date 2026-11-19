@@ -42,8 +42,8 @@ abstract class WalletBridge {
 
   /// The wallet's current receive address. With [fresh] the derivation index
   /// advances, so the "New address" button hands out a genuinely new one
-  /// (otherwise an unused address is reused rather than burned). Liquid CT
-  /// addresses are stable and ignore [fresh].
+  /// (otherwise an unused address is reused rather than burned). Bitcoin and
+  /// Liquid alike; a Liquid address also carries its unconfidential form.
   Future<AddressInfo> generateReceiveAddress(
     String walletId,
     String asset, {

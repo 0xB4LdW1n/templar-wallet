@@ -225,6 +225,29 @@ class MockWalletBridge implements WalletBridge {
 
   /// Mock index advances with [fresh], mirroring the real derivation.
   int _mockAddressIndex = 5;
+  int _mockLiquidIndex = 2;
+
+  static bool _isLiquid(String asset) =>
+      asset == 'LBTC' || asset == 'L-BTC' || asset == 'liquid';
+
+  /// A mock Liquid address in both forms: confidential (blech32, `tlq1`)
+  /// and the same script without the blinding key (`tex1`).
+  static AddressInfo _mockLiquidAddress(
+    int i, {
+    String? label,
+    int receivedSats = 0,
+  }) {
+    final n = i.toString().padLeft(2, '0');
+    return AddressInfo(
+      address:
+          'tlq1qqw3z9v9y6qd4t0h3z8m6a4v9k2p5r8s7c6x4d2f9g0h1j3k5l7m9n1p3q5r7t9v2x4z6b8d$n',
+      unconfidentialAddress: 'tex1qn67lnmaljx5jcx3rz2gdcaxneqptt9dvy6dh$n',
+      index: i,
+      asset: 'LBTC',
+      label: label,
+      receivedSats: receivedSats,
+    );
+  }
 
   @override
   Future<AddressInfo> generateReceiveAddress(
@@ -233,16 +256,9 @@ class MockWalletBridge implements WalletBridge {
     bool fresh = false,
   }) async {
     await Future.delayed(const Duration(milliseconds: 300));
-    final isLiquid = asset == 'LBTC' || asset == 'L-BTC' || asset == 'liquid';
-    if (isLiquid) {
-      // Confidential Liquid testnet address (blech32, tlq1 HRP).
-      return const AddressInfo(
-        address:
-            'tlq1qqw3z9v9y6qd4t0h3z8m6a4v9k2p5r8s7c6x4d2f9g0h1j3k5l7m9n1p3q5r7t9v2x4z6b8d0f',
-        index: 5,
-        asset: 'LBTC',
-        derivationPath: "m/84'/1'/0'/0/5",
-      );
+    if (_isLiquid(asset)) {
+      if (fresh) _mockLiquidIndex++;
+      return _mockLiquidAddress(_mockLiquidIndex);
     }
     if (fresh) _mockAddressIndex++;
     final i = _mockAddressIndex;
@@ -261,6 +277,12 @@ class MockWalletBridge implements WalletBridge {
     String asset,
   ) async {
     await Future.delayed(const Duration(milliseconds: 300));
+    if (_isLiquid(asset)) {
+      return [
+        _mockLiquidAddress(0, label: 'Faucet', receivedSats: 100000),
+        _mockLiquidAddress(1, receivedSats: 25000),
+      ];
+    }
     return [
       AddressInfo(
         address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
